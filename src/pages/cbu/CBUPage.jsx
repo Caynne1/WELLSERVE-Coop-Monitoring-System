@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { getAllCBUAccounts } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
+import { createInvoiceForPayment } from '../../services/invoiceService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 export default function CBUPage() {
@@ -40,9 +41,42 @@ export default function CBUPage() {
     if (value <= 0) return toast.error('Enter a valid amount greater than zero.');
     setPosting(true);
     try {
-      const tx = { member_id: depositTarget.account.member_id, account_id: depositTarget.account.id, category: 'cbu', type: 'deposit', amount: value, created_by: user?.id ?? null };
-      console.log('[CBUPage] cbu deposit:', tx);
-      await createTransaction(tx);
+      const account = depositTarget.account;
+      const tx = {
+        member_id:  account.member_id,
+        account_id: account.id,
+        category:   'cbu',
+        type:       'deposit',
+        amount:     value,
+        created_by: user?.id ?? null,
+      };
+      const transaction = await createTransaction(tx);
+
+      // ── Auto-create invoice for this CBU deposit ──────────────────────────
+      const memberName = [
+        account.members?.first_name,
+        account.members?.last_name,
+      ].filter(Boolean).join(' ') || 'Unknown Member';
+
+      try {
+        await createInvoiceForPayment({
+          payment_type: 'cbu',
+          member_id:    account.member_id,
+          member_name:  memberName,
+          amount:       value,
+          purpose:      `CBU Deposit — ${account.account_no || account.id}`,
+          ref_id:       account.id,
+          account_id:   account.id,
+          created_by:   user?.id ?? null,
+        });
+} catch (invoiceErr) {
+  console.error('[CBUPage] Invoice creation failed after deposit:', invoiceErr);
+  toast.error(
+    `⚠️ Deposit posted, but invoice creation failed: ${invoiceErr?.message || 'Unknown error'}. ` +
+    'Run MIGRATION.sql in Supabase to fix the invoices table schema.'
+  );
+}
+
       toast.success('CBU deposit posted.');
       setDepositTarget(null);
       setAmount('');

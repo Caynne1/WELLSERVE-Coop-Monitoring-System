@@ -34,6 +34,9 @@ import SettingsPage from './pages/settings/SettingsPage';
 import StaffPage from './pages/settings/StaffPage';
 import AccountManagementPage from './pages/account-management/AccountManagementPage';
 
+// ── NEW: Cooperative Fund Monitoring ──────────────────────────────────────────
+import CoopMonitoringPage from './pages/coop-monitoring/CoopMonitoringPage';
+
 // Compatibility routes
 import AccountsPage from './pages/accounts/AccountsPage';
 import AccountDetailPage from './pages/accounts/AccountDetailPage';
@@ -127,6 +130,9 @@ export default function App() {
               <Route path="invoices" element={<InvoicesPage />} />
               <Route path="vouchers" element={<VouchersPage />} />
               <Route path="expenses" element={<ExpensesPage />} />
+
+              {/* ── NEW: Cooperative Fund / Account Monitoring ────────────── */}
+              <Route path="coop-monitoring" element={<CoopMonitoringPage />} />
 
               {/* Analytics */}
               <Route path="reports" element={<ReportsPage />} />

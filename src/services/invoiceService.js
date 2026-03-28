@@ -2,12 +2,17 @@ import { supabase } from './supabase';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
 // Only these fields are ever written to the DB.
-// Prevents accidental injection of joined/computed fields.
+// payment_type, ref_id, account_id, fund_added added to support auto-invoice
+// creation from payment flows (loan, cbu, savings, membership).
 
 const INVOICE_COLUMNS = [
   'invoice_no', 'date', 'due_date', 'payee', 'purpose',
   'amount', 'notes', 'status', 'created_by',
-  'member_id',    // optional link to members table (documentation only)
+  'member_id',
+  'payment_type',   // 'loan_payment' | 'cbu' | 'savings' | 'membership'
+  'ref_id',         // loan.id | account.id | membership.id (depends on payment_type)
+  'account_id',     // account.id for cbu / savings deposits
+  'fund_added',     // optional flag used by reporting
 ];
 
 function sanitizeInvoicePayload(payload) {
@@ -19,14 +24,14 @@ function sanitizeInvoicePayload(payload) {
 }
 
 // ── Invoice number generation ─────────────────────────────────────────────────
-// Format: INV-YYYY-NNN
+// Format: SI-YYYY-NNN
 // Counts all invoices for the current year and increments by 1.
 // Not guaranteed to be gap-free (voided records still count),
 // which is correct behaviour for an audit trail.
 
 async function generateInvoiceNo() {
   const year   = new Date().getFullYear();
-  const prefix = `INV-${year}-`;
+  const prefix = `SI-${year}-`;
 
   const { count, error } = await supabase
     .from('invoices')
@@ -35,7 +40,7 @@ async function generateInvoiceNo() {
 
   if (error) throw error;
 
-  const next = String((count || 0) + 1).padStart(3, '0');
+  const next = String((count || 0) + 1).padStart(4, '0');
   return `${prefix}${next}`;
 }
 
@@ -93,6 +98,55 @@ export async function createInvoice(payload) {
     .single();
   if (error) throw error;
   return data;
+}
+
+// ── createInvoiceForPayment ───────────────────────────────────────────────────
+// Convenience wrapper called by every payment flow.
+// Creates an invoice that is immediately marked 'paid' because the money
+// has already been received at the time the payment is posted.
+//
+// payment_type values:
+//   'loan_payment'  — loan repayment
+//   'cbu'           — CBU / capital build-up deposit
+//   'savings'       — savings deposit
+//   'membership'    — membership fee payment
+//
+// ref_id should be:
+//   loan_payment → loan.id
+//   cbu          → account.id  (also pass account_id)
+//   savings      → account.id  (also pass account_id)
+//   membership   → member_membership.id
+
+export async function createInvoiceForPayment({
+  payment_type,
+  member_id,
+  member_name,    // full display name used as payee (e.g. "Juan Dela Cruz")
+  amount,
+  purpose,        // human-readable description of what the payment is for
+  ref_id = null,  // foreign-key reference (loan id, account id, membership id)
+  account_id = null,
+  notes = null,
+  created_by = null,
+  date = null,
+}) {
+  if (!payment_type) throw new Error('payment_type is required for invoice creation.');
+  if (!member_id)    throw new Error('member_id is required for invoice creation.');
+  if (!member_name)  throw new Error('member_name is required for invoice creation.');
+  if (!amount || Number(amount) <= 0) throw new Error('amount must be greater than zero.');
+
+  return createInvoice({
+    date:         date || new Date().toISOString().split('T')[0],
+    payee:        member_name,
+    purpose:      purpose || payment_type,
+    amount:       Number(amount),
+    status:       'paid',   // money already received — invoice is immediately paid
+    member_id,
+    payment_type,
+    ref_id,
+    account_id,
+    notes,
+    created_by,
+  });
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────

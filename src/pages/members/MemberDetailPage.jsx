@@ -32,6 +32,7 @@ import {
   deletePenalty,
 } from '../../services/penaltyService';
 import { exportMemberReport } from '../../utils/excelExport.js';
+import { createInvoiceForPayment } from '../../services/invoiceService';
 
 import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
 
@@ -136,8 +137,8 @@ export default function MemberDetailPage() {
     fetchPenalties();
   }, [fetchMembership, fetchPenalties]);
 
-  const cbuAccount = accounts.find(a => a.account_type === 'cbu');
-  const savingsAccount = accounts.find(a => a.account_type === 'savings');
+  const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
+  const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
   const activeLoans = loans.filter(l => l.status === 'active');
   const displayMembershipType = membership?.membership_type || member?.membership_type || null;
 
@@ -173,6 +174,10 @@ export default function MemberDetailPage() {
     }
   }
 
+  async function refreshEverything() {
+    await Promise.all([fetchAll(), fetchMembership()]);
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20">
@@ -192,6 +197,8 @@ export default function MemberDetailPage() {
       </div>
     );
   }
+
+  const memberFullName = `${member.first_name || ''} ${member.last_name || ''}`.trim();
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -331,6 +338,7 @@ export default function MemberDetailPage() {
           {activeTab === 'membership' && (
             <MembershipTab
               memberId={id}
+              memberName={memberFullName}
               membership={membership}
               payments={membershipPayments}
               upgradeLogs={upgradeLogs}
@@ -363,8 +371,9 @@ export default function MemberDetailPage() {
         cbuAccount={cbuAccount}
         savingsAccount={savingsAccount}
         memberId={id}
+        memberName={memberFullName}
         userId={user?.id}
-        onSuccess={fetchAll}
+        onSuccess={refreshEverything}
       />
 
       <DepositModal
@@ -374,8 +383,9 @@ export default function MemberDetailPage() {
         label="CBU"
         account={cbuAccount}
         memberId={id}
+        memberName={memberFullName}
         userId={user?.id}
-        onSuccess={fetchAll}
+        onSuccess={refreshEverything}
       />
 
       <DepositModal
@@ -385,17 +395,28 @@ export default function MemberDetailPage() {
         label="Savings"
         account={savingsAccount}
         memberId={id}
+        memberName={memberFullName}
         userId={user?.id}
-        onSuccess={fetchAll}
+        onSuccess={refreshEverything}
       />
     </div>
   );
 }
 
-function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberId, userId, onSuccess }) {
+async function createInvoiceStrict(args, label) {
+  try {
+    return await createInvoiceForPayment(args);
+  } catch (e) {
+    console.error(`[${label}] Invoice creation failed:`, e);
+    throw new Error(e?.message || `${label} invoice creation failed.`);
+  }
+}
+
+function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberId, memberName, userId, onSuccess }) {
   const [loanAmt, setLoanAmt] = useState('');
   const [cbuAmt, setCbuAmt] = useState('');
   const [savingsAmt, setSavingsAmt] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -403,6 +424,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
       setLoanAmt('');
       setCbuAmt('');
       setSavingsAmt('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
     }
   }, [open]);
 
@@ -414,6 +436,9 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
     if (loanPay + cbuPay + savingsPay === 0) {
       return toast.error('Enter at least one amount greater than zero.');
     }
+    if (loanPay > 0 && !loan) {
+      return toast.error('Loan record not found.');
+    }
     if (loanPay > 0 && loanPay > (loan?.balance ?? 0)) {
       return toast.error(`Loan payment exceeds remaining balance of ${formatCurrency(loan.balance)}.`);
     }
@@ -422,6 +447,9 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
     }
     if (savingsPay > 0 && !savingsAccount) {
       return toast.error('No Savings account found for this member.');
+    }
+    if (!paymentDate) {
+      return toast.error('Payment date is required.');
     }
 
     setLoading(true);
@@ -433,8 +461,23 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           category: 'loan',
           type: 'loan_payment',
           amount: loanPay,
+          reference: loan.loan_no || null,
           created_by: userId ?? null,
         });
+
+        await createInvoiceStrict(
+          {
+            payment_type: 'loan_payment',
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: loanPay,
+            purpose: `Loan Payment — ${loan.loan_no || loan.id}`,
+            ref_id: loan.id,
+            created_by: userId ?? null,
+            date: paymentDate,
+          },
+          'Loan payment'
+        );
       }
 
       if (cbuPay > 0) {
@@ -444,8 +487,24 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           category: 'cbu',
           type: 'deposit',
           amount: cbuPay,
+          reference: cbuAccount.account_no || null,
           created_by: userId ?? null,
         });
+
+        await createInvoiceStrict(
+          {
+            payment_type: 'cbu',
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: cbuPay,
+            purpose: `CBU Deposit — ${cbuAccount.account_no || cbuAccount.id}`,
+            ref_id: cbuAccount.id,
+            account_id: cbuAccount.id,
+            created_by: userId ?? null,
+            date: paymentDate,
+          },
+          'CBU deposit'
+        );
       }
 
       if (savingsPay > 0) {
@@ -455,12 +514,28 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           category: 'savings',
           type: 'deposit',
           amount: savingsPay,
+          reference: savingsAccount.account_no || null,
           created_by: userId ?? null,
         });
+
+        await createInvoiceStrict(
+          {
+            payment_type: 'savings',
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: savingsPay,
+            purpose: `Savings Deposit — ${savingsAccount.account_no || savingsAccount.id}`,
+            ref_id: savingsAccount.id,
+            account_id: savingsAccount.id,
+            created_by: userId ?? null,
+            date: paymentDate,
+          },
+          'Savings deposit'
+        );
       }
 
       toast.success('Payment posted successfully.');
-      onSuccess();
+      await onSuccess();
       onClose();
     } catch (err) {
       toast.error(err.message || 'Failed to post payment.');
@@ -469,12 +544,17 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
     }
   }
 
+  const fieldClass =
+    'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]';
+
   return (
-    <Modal open={open} onClose={onClose} title="Post Payment">
+    <Modal open={open} onClose={onClose} title="Post Payment" size="md">
       {loan && (
-        <div className="mb-5 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
-          <p className="font-medium text-orange-800">{formatCurrency(loan.amount)} loan</p>
-          <p className="text-orange-600 text-xs mt-0.5">
+        <div className="mb-5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+          <p className="text-sm font-semibold text-orange-900">
+            {formatCurrency(loan.amount)} loan
+          </p>
+          <p className="text-sm text-orange-700 mt-1">
             Remaining balance: <span className="font-semibold">{formatCurrency(loan.balance)}</span>
           </p>
         </div>
@@ -485,57 +565,69 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
       </p>
 
       <div className="space-y-4">
-        {loan && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Loan Payment <span className="text-gray-400">(max {formatCurrency(loan.balance)})</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              max={loan.balance}
-              value={loanAmt}
-              onChange={e => setLoanAmt(e.target.value)}
-              placeholder="0.00"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
-          </div>
-        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Loan Payment <span className="text-gray-400">(max {formatCurrency(loan?.balance ?? 0)})</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max={loan?.balance ?? undefined}
+            value={loanAmt}
+            onChange={e => setLoanAmt(e.target.value)}
+            placeholder="0.00"
+            className={fieldClass}
+          />
+        </div>
 
-        {cbuAccount && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              CBU Deposit <span className="text-gray-400">(current: {formatCurrency(cbuAccount.balance)})</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={cbuAmt}
-              onChange={e => setCbuAmt(e.target.value)}
-              placeholder="0.00"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
-        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            CBU Deposit{' '}
+            <span className="text-gray-400">
+              {cbuAccount ? `(current: ${formatCurrency(cbuAccount.balance)})` : '(no account yet)'}
+            </span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={cbuAmt}
+            onChange={e => setCbuAmt(e.target.value)}
+            placeholder="0.00"
+            disabled={!cbuAccount}
+            className={`${fieldClass} ${!cbuAccount ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
+          />
+        </div>
 
-        {savingsAccount && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Savings Deposit <span className="text-gray-400">(current: {formatCurrency(savingsAccount.balance)})</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={savingsAmt}
-              onChange={e => setSavingsAmt(e.target.value)}
-              placeholder="0.00"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Savings Deposit{' '}
+            <span className="text-gray-400">
+              {savingsAccount ? `(current: ${formatCurrency(savingsAccount.balance)})` : '(no account yet)'}
+            </span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={savingsAmt}
+            onChange={e => setSavingsAmt(e.target.value)}
+            placeholder="0.00"
+            disabled={!savingsAccount}
+            className={`${fieldClass} ${!savingsAccount ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
+          />
+        </div>
+
+        <div className="max-w-[220px]">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+          <input
+            type="date"
+            value={paymentDate}
+            onChange={e => setPaymentDate(e.target.value)}
+            className={fieldClass}
+          />
+        </div>
       </div>
 
       <div className="flex justify-end gap-3 mt-6">
@@ -548,18 +640,23 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
   );
 }
 
-function DepositModal({ open, onClose, accountType, label, account, memberId, userId, onSuccess }) {
+function DepositModal({ open, onClose, accountType, label, account, memberId, memberName, userId, onSuccess }) {
   const [amount, setAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (open) setAmount('');
+    if (open) {
+      setAmount('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+    }
   }, [open]);
 
   async function handleSubmit() {
     const value = parseFloat(amount) || 0;
     if (value <= 0) return toast.error('Enter a valid amount greater than zero.');
     if (!account) return toast.error(`No ${label} account found for this member.`);
+    if (!paymentDate) return toast.error('Payment date is required.');
 
     setLoading(true);
     try {
@@ -569,10 +666,27 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, us
         category: accountType,
         type: 'deposit',
         amount: value,
+        reference: account.account_no || null,
         created_by: userId ?? null,
       });
+
+      await createInvoiceStrict(
+        {
+          payment_type: accountType,
+          member_id: memberId,
+          member_name: memberName || 'Member',
+          amount: value,
+          purpose: `${label} Deposit — ${account.account_no || account.id}`,
+          ref_id: account.id,
+          account_id: account.id,
+          created_by: userId ?? null,
+          date: paymentDate,
+        },
+        `${label} deposit`
+      );
+
       toast.success(`${label} deposit posted.`);
-      onSuccess();
+      await onSuccess();
       onClose();
     } catch (err) {
       toast.error(err.message || `Failed to post ${label} deposit.`);
@@ -588,18 +702,30 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, us
           Current balance: <span className="font-semibold text-gray-800">{formatCurrency(account.balance)}</span>
         </p>
       )}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          value={amount}
-          onChange={e => setAmount(e.target.value)}
-          placeholder="0.00"
-          autoFocus
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            placeholder="0.00"
+            autoFocus
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+          <input
+            type="date"
+            value={paymentDate}
+            onChange={e => setPaymentDate(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
       </div>
       <div className="flex justify-end gap-3 mt-5">
         <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -616,7 +742,7 @@ const MEMBERSHIP_TYPE_OPTS = [
   { value: 'regular', label: 'Regular' },
 ];
 
-function MembershipTab({ memberId, membership, payments, upgradeLogs, loading, userId, onRefresh }) {
+function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, onRefresh }) {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupType, setSetupType] = useState('associate');
   const [setupReq, setSetupReq] = useState('');
@@ -654,9 +780,26 @@ function MembershipTab({ memberId, membership, payments, upgradeLogs, loading, u
         fee_paid_now: paid,
         created_by: userId,
       });
+
+      if (paid > 0) {
+        await createInvoiceStrict(
+          {
+            payment_type: 'membership',
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: paid,
+            purpose: 'Membership Initial Payment',
+            ref_id: null,
+            created_by: userId,
+            date: new Date().toISOString().split('T')[0],
+          },
+          'Membership initial payment'
+        );
+      }
+
       toast.success('Membership record created.');
       setSetupOpen(false);
-      onRefresh();
+      await onRefresh();
     } catch (err) {
       toast.error(err.message || 'Failed to create membership record.');
     } finally {
@@ -682,11 +825,27 @@ function MembershipTab({ memberId, membership, payments, upgradeLogs, loading, u
         payNotes || null,
         userId
       );
+
+      await createInvoiceStrict(
+        {
+          payment_type: 'membership',
+          member_id: memberId,
+          member_name: memberName || 'Member',
+          amount: amt,
+          purpose: 'Membership Fee Payment',
+          ref_id: membership.id,
+          date: payDate,
+          notes: payNotes || null,
+          created_by: userId,
+        },
+        'Membership payment'
+      );
+
       toast.success('Membership payment recorded.');
       setPayOpen(false);
       setPayAmount('');
       setPayNotes('');
-      onRefresh();
+      await onRefresh();
     } catch (err) {
       toast.error(err.message || 'Failed to record payment.');
     } finally {
@@ -709,7 +868,7 @@ function MembershipTab({ memberId, membership, payments, upgradeLogs, loading, u
       toast.success('Member upgraded to Regular.');
       setUpgradeOpen(false);
       setUpgradeNotes('');
-      onRefresh();
+      await onRefresh();
     } catch (err) {
       toast.error(err.message || 'Failed to upgrade membership.');
     } finally {

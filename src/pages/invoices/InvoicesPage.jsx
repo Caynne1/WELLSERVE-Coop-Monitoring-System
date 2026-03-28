@@ -36,6 +36,20 @@ const STATUS_LABEL = {
   voided: 'Voided',
 };
 
+const PAYMENT_TYPE_LABEL = {
+  loan_payment: 'Loan Payment',
+  cbu:          'CBU Deposit',
+  savings:      'Savings Deposit',
+  membership:   'Membership Fee',
+};
+
+const PAYMENT_TYPE_STYLE = {
+  loan_payment: 'bg-orange-100 text-orange-700',
+  cbu:          'bg-green-100 text-green-700',
+  savings:      'bg-blue-100 text-blue-700',
+  membership:   'bg-purple-100 text-purple-700',
+};
+
 const EMPTY_FORM = {
   date:     new Date().toISOString().split('T')[0],
   due_date: '',
@@ -312,7 +326,7 @@ export default function InvoicesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Invoice No.', 'Date', 'Due Date', 'Payee', 'Purpose', 'Amount', 'Status', ''].map(h => (
+                  {['Invoice No.', 'Date', 'Due Date', 'Payee', 'Purpose', 'Payment Type', 'Amount', 'Status', ''].map(h => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -377,6 +391,15 @@ export default function InvoicesPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         <p className="truncate max-w-[180px]">{invoice.purpose}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        {invoice.payment_type ? (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_TYPE_STYLE[invoice.payment_type] || 'bg-gray-100 text-gray-600'}`}>
+                            {PAYMENT_TYPE_LABEL[invoice.payment_type] || invoice.payment_type}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
                         {formatCurrency(invoice.amount)}
@@ -626,6 +649,16 @@ export default function InvoicesPage() {
                   <span className="text-gray-900 text-right">{value}</span>
                 </div>
               ))}
+
+              {/* Payment Type — shown when set by an automatic payment flow */}
+              {viewTarget.payment_type && (
+                <div className="flex items-start justify-between px-4 py-3 text-sm">
+                  <span className="text-gray-400 font-medium w-28 flex-shrink-0">Payment Type</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_TYPE_STYLE[viewTarget.payment_type] || 'bg-gray-100 text-gray-600'}`}>
+                    {PAYMENT_TYPE_LABEL[viewTarget.payment_type] || viewTarget.payment_type}
+                  </span>
+                </div>
+              )}
 
               {/* [ADDED] Linked member row — only rendered when present ───── */}
               {viewTarget.members && (

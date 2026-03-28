@@ -13,6 +13,7 @@ import MemberSearchInput from '../../components/shared/MemberSearchInput';
 
 import { createLoan, updateLoan, getLoanById } from '../../services/loanService';
 import { createTransaction } from '../../services/transactionService';
+import { createInvoiceForPayment } from '../../services/invoiceService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import {
   getMemberById,
@@ -310,6 +311,12 @@ export default function LoanFormPage() {
       } else {
         loan = await createLoan(values);
 
+        // helper — full member display name for invoices
+        const memberDisplayName = [
+          selectedMember?.first_name,
+          selectedMember?.last_name,
+        ].filter(Boolean).join(' ') || 'Member';
+
         // loan release transaction stays source-of-truth
         await createTransaction({
           member_id: loan.member_id,
@@ -338,6 +345,19 @@ export default function LoanFormPage() {
               amount: shareCapital,
               created_by: user?.id ?? null,
             });
+            // ── Auto-invoice: CBU share capital deposit ──────────────────────
+            try {
+              await createInvoiceForPayment({
+                payment_type: 'cbu',
+                member_id:    loan.member_id,
+                member_name:  memberDisplayName,
+                amount:       shareCapital,
+                purpose:      `CBU Share Capital — Loan Onboarding (${loan.loan_no || loan.id})`,
+                ref_id:       cbuAccount.id,
+                account_id:   cbuAccount.id,
+                created_by:   user?.id ?? null,
+              });
+            } catch (e) { console.error('[LoanFormPage] cbu invoice failed:', e); }
           }
 
           if (regularSavings > 0 && savingsAccount) {
@@ -349,6 +369,19 @@ export default function LoanFormPage() {
               amount: regularSavings,
               created_by: user?.id ?? null,
             });
+            // ── Auto-invoice: savings deposit ────────────────────────────────
+            try {
+              await createInvoiceForPayment({
+                payment_type: 'savings',
+                member_id:    loan.member_id,
+                member_name:  memberDisplayName,
+                amount:       regularSavings,
+                purpose:      `Regular Savings Deposit — Loan Onboarding (${loan.loan_no || loan.id})`,
+                ref_id:       savingsAccount.id,
+                account_id:   savingsAccount.id,
+                created_by:   user?.id ?? null,
+              });
+            } catch (e) { console.error('[LoanFormPage] savings invoice failed:', e); }
           }
         }
       }
@@ -356,6 +389,12 @@ export default function LoanFormPage() {
       // 3. membership reference/setup on loan page
       const feeRequired = parseFloat(values.membership_fee_required) || 0;
       const feePaid = parseFloat(values.membership_fee_paid) || 0;
+
+      // helper — full member display name for invoices (may not be in scope above for edit path)
+      const memberDisplayNameForMembership = [
+        selectedMember?.first_name,
+        selectedMember?.last_name,
+      ].filter(Boolean).join(' ') || 'Member';
 
       if (!membership && feeRequired > 0) {
         const ms = await createMembership({
@@ -366,6 +405,20 @@ export default function LoanFormPage() {
           created_by: user?.id,
         });
         setMembership(ms);
+        // ── Auto-invoice: initial membership fee paid at loan onboarding ────
+        if (feePaid > 0) {
+          try {
+            await createInvoiceForPayment({
+              payment_type: 'membership',
+              member_id:    values.member_id,
+              member_name:  memberDisplayNameForMembership,
+              amount:       feePaid,
+              purpose:      'Initial Membership Fee — Loan Onboarding',
+              ref_id:       ms.id,
+              created_by:   user?.id ?? null,
+            });
+          } catch (e) { console.error('[LoanFormPage] membership invoice (new) failed:', e); }
+        }
       } else if (membership && feePaid > 0) {
         await recordMembershipPayment(
           membership.id,
@@ -375,6 +428,18 @@ export default function LoanFormPage() {
           'Payment collected during loan onboarding',
           user?.id
         );
+        // ── Auto-invoice: membership payment on existing record ──────────────
+        try {
+          await createInvoiceForPayment({
+            payment_type: 'membership',
+            member_id:    values.member_id,
+            member_name:  memberDisplayNameForMembership,
+            amount:       feePaid,
+            purpose:      'Membership Fee Payment — Loan Onboarding',
+            ref_id:       membership.id,
+            created_by:   user?.id ?? null,
+          });
+        } catch (e) { console.error('[LoanFormPage] membership invoice (existing) failed:', e); }
       }
 
       // 4. upload loan documents if provided

@@ -43,6 +43,7 @@ const navGroups = [
       { to: '/invoices', icon: Receipt, label: 'Invoices' },
       { to: '/vouchers', icon: FileText, label: 'Vouchers' },
       { to: '/expenses', icon: TrendingUp, label: 'Expenses' },
+      { to: '/coop-monitoring', icon: LayoutDashboard, label: 'Account Monitoring' },
     ],
   },
   {
