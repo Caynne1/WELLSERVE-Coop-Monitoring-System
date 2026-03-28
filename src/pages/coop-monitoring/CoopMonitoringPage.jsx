@@ -2,17 +2,20 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign,
   RefreshCw, ArrowUpRight, ArrowDownRight,
-  LayoutDashboard,
+  LayoutDashboard, Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal';
+import { useAuth } from '../../context/AuthContext';
 import {
   computeCoopSummaryFromInvoices,
   CATEGORY_LABEL,
   CATEGORY_COLOR,
+  recordManualFundDeposit,
 } from '../../services/coopFundService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
@@ -20,7 +23,7 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 
 function CategoryBadge({ category }) {
   const label = CATEGORY_LABEL[category] || category || '—';
-  const cls   = CATEGORY_COLOR[category] || 'text-gray-600 bg-gray-100';
+  const cls = CATEGORY_COLOR[category] || 'text-gray-600 bg-gray-100';
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cls}`}>
       {label}
@@ -87,17 +90,25 @@ function TxRow({ tx }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CoopMonitoringPage() {
-  const [loading, setLoading]             = useState(true);
-  const [fund, setFund]                   = useState({ balance: 0, cash_in: 0, cash_out: 0 });
-  const [transactions, setTransactions]   = useState([]);
-  const [typeFilter, setTypeFilter]       = useState('');   // '' | 'cash_in' | 'cash_out'
-  const [catFilter, setCatFilter]         = useState('');
-  const [refreshing, setRefreshing]       = useState(false);
+  const { user } = useAuth();
+
+  const [loading, setLoading] = useState(true);
+  const [fund, setFund] = useState({ balance: 0, cash_in: 0, cash_out: 0 });
+  const [transactions, setTransactions] = useState([]);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [fundModalOpen, setFundModalOpen] = useState(false);
+  const [fundAmount, setFundAmount] = useState('');
+  const [fundDate, setFundDate] = useState(new Date().toISOString().split('T')[0]);
+  const [fundDescription, setFundDescription] = useState('');
+  const [savingFund, setSavingFund] = useState(false);
 
   const fetchData = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      else         setRefreshing(true);
+      else setRefreshing(true);
 
       const { fund: f, transactions: txs } = await computeCoopSummaryFromInvoices();
       setFund(f);
@@ -113,15 +124,50 @@ export default function CoopMonitoringPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  async function handleAddFund() {
+    const value = parseFloat(fundAmount) || 0;
+
+    if (value <= 0) {
+      return toast.error('Enter a valid amount.');
+    }
+
+    if (!fundDate) {
+      return toast.error('Date is required.');
+    }
+
+    setSavingFund(true);
+    try {
+      await recordManualFundDeposit({
+        amount: value,
+        date: fundDate,
+        description: fundDescription,
+        created_by: user?.id ?? null,
+      });
+
+      toast.success('Fund added successfully.');
+
+      setFundModalOpen(false);
+      setFundAmount('');
+      setFundDescription('');
+      setFundDate(new Date().toISOString().split('T')[0]);
+
+      await fetchData(true);
+    } catch (err) {
+      console.error('[CoopMonitoringPage] add fund error:', err);
+      toast.error(err.message || 'Failed to add fund.');
+    } finally {
+      setSavingFund(false);
+    }
+  }
+
   // ── Client-side filtering ────────────────────────────────────────────────────
 
   const filtered = transactions.filter(tx => {
     const matchType = !typeFilter || tx.type === typeFilter;
-    const matchCat  = !catFilter  || tx.category === catFilter;
+    const matchCat = !catFilter || tx.category === catFilter;
     return matchType && matchCat;
   });
 
-  // Unique categories for filter dropdown
   const categories = [...new Set(transactions.map(tx => tx.category).filter(Boolean))];
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -132,14 +178,23 @@ export default function CoopMonitoringPage() {
         title="Account Monitoring"
         subtitle="Cooperative fund — cash inflow and outflow overview"
         action={
-          <Button
-            variant="outline"
-            icon={<RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />}
-            onClick={() => fetchData(true)}
-            disabled={refreshing}
-          >
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              icon={<Plus size={14} />}
+              onClick={() => setFundModalOpen(true)}
+            >
+              Add Fund
+            </Button>
+            <Button
+              variant="outline"
+              icon={<RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />}
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+            >
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -147,7 +202,6 @@ export default function CoopMonitoringPage() {
         <div className="flex justify-center py-24"><Spinner /></div>
       ) : (
         <>
-          {/* ── Summary cards ── */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
             <StatCard
               icon={<DollarSign size={22} className="text-emerald-600" />}
@@ -175,10 +229,8 @@ export default function CoopMonitoringPage() {
             />
           </div>
 
-          {/* ── Breakdown by type ── */}
           <CashInBreakdown transactions={transactions} />
 
-          {/* ── Filters ── */}
           <div className="flex flex-wrap gap-3 mb-4">
             <select
               value={typeFilter}
@@ -215,7 +267,6 @@ export default function CoopMonitoringPage() {
             </p>
           </div>
 
-          {/* ── Transaction table ── */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
               <LayoutDashboard size={15} className="text-gray-400" />
@@ -292,6 +343,58 @@ export default function CoopMonitoringPage() {
           </div>
         </>
       )}
+
+      <Modal
+        open={fundModalOpen}
+        onClose={() => setFundModalOpen(false)}
+        title="Add Fund"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={fundAmount}
+              onChange={e => setFundAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+            <input
+              type="date"
+              value={fundDate}
+              onChange={e => setFundDate(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input
+              type="text"
+              value={fundDescription}
+              onChange={e => setFundDescription(e.target.value)}
+              placeholder="Manual fund deposit"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-5">
+          <Button variant="outline" onClick={() => setFundModalOpen(false)}>
+            Cancel
+          </Button>
+          <Button loading={savingFund} onClick={handleAddFund} icon={<Plus size={14} />}>
+            Add Fund
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -302,11 +405,12 @@ function CashInBreakdown({ transactions }) {
   const cashInTx = transactions.filter(tx => tx.type === 'cash_in');
 
   const groups = [
-    { key: 'loan_payment', label: 'Loan Payments',    color: 'bg-orange-400' },
-    { key: 'cbu',          label: 'CBU Deposits',     color: 'bg-green-400'  },
-    { key: 'savings',      label: 'Savings Deposits', color: 'bg-blue-400'   },
-    { key: 'membership',   label: 'Membership Fees',  color: 'bg-purple-400' },
-    { key: 'invoice',      label: 'Other Invoices',   color: 'bg-gray-400'   },
+    { key: 'loan_payment', label: 'Loan Payments', color: 'bg-orange-400' },
+    { key: 'cbu', label: 'CBU Deposits', color: 'bg-green-400' },
+    { key: 'savings', label: 'Savings Deposits', color: 'bg-blue-400' },
+    { key: 'membership', label: 'Membership Fees', color: 'bg-purple-400' },
+    { key: 'capital', label: 'Capital / Fund Deposit', color: 'bg-indigo-400' },
+    { key: 'invoice', label: 'Other Invoices', color: 'bg-gray-400' },
   ].map(g => ({
     ...g,
     total: cashInTx.filter(tx => tx.category === g.key).reduce((s, tx) => s + tx.amount, 0),

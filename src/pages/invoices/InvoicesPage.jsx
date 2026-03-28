@@ -80,6 +80,7 @@ export default function InvoicesPage() {
   // Filters
   const [search, setSearch]           = useState('');
   const [statFilter, setStatFilter]   = useState('');
+  const [typeFilter, setTypeFilter]   = useState('');
 
   // Add / Edit modal
   const [formOpen, setFormOpen]       = useState(false);
@@ -125,12 +126,19 @@ export default function InvoicesPage() {
       inv.payee?.toLowerCase().includes(q)      ||
       inv.purpose?.toLowerCase().includes(q)    ||
       inv.invoice_no?.toLowerCase().includes(q) ||
-      // [ADDED] also search by linked member name
       `${inv.members?.first_name || ''} ${inv.members?.last_name || ''}`
         .toLowerCase().includes(q)
     );
+
     const matchStat = !statFilter || inv.status === statFilter;
-    return matchSearch && matchStat;
+    const matchType =
+  !typeFilter
+    ? true
+    : typeFilter === 'others'
+      ? !['loan_payment', 'cbu', 'savings'].includes(inv.payment_type || '')
+      : (inv.payment_type || '') === typeFilter;
+
+    return matchSearch && matchStat && matchType;
   });
 
   // ── Summary stats ────────────────────────────────────────────────────────────
@@ -292,30 +300,46 @@ export default function InvoicesPage() {
       </div>
 
       {/* ── Filters ── */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by payee, purpose, member, or invoice no..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
-          />
-        </div>
-        <select
-          value={statFilter}
-          onChange={e => setStatFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-            focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
-        >
-          <option value="">All Status</option>
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-          <option value="voided">Voided</option>
-        </select>
-      </div>
+ <div className="flex flex-col sm:flex-row gap-3 mb-4">
+  <div className="relative flex-1 max-w-sm">
+    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+    <input
+      type="text"
+      placeholder="Search by payee, purpose, member, or invoice no..."
+      value={search}
+      onChange={e => setSearch(e.target.value)}
+      className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg
+        focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+    />
+  </div>
+
+  <select
+    value={statFilter}
+    onChange={e => setStatFilter(e.target.value)}
+    className="px-3 py-2 text-sm border border-gray-200 rounded-lg
+      focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+  >
+    <option value="">All Status</option>
+    <option value="unpaid">Unpaid</option>
+    <option value="paid">Paid</option>
+    <option value="voided">Voided</option>
+  </select>
+
+  <select
+    value={typeFilter}
+    onChange={e => setTypeFilter(e.target.value)}
+    className="px-3 py-2 text-sm border border-gray-200 rounded-lg
+      focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+  >
+    <option value="">All Type</option>
+    <option value="loan_payment">Loan Payment</option>
+    <option value="cbu">CBU Deposit</option>
+    <option value="savings">Savings Deposit</option>
+    <option value="salary">Salary</option>
+    <option value="maintenance">Maintenance</option>
+    <option value="">Others</option>
+  </select>
+</div>
 
       {/* ── Table ── */}
       {loading ? (

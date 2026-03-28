@@ -1,8 +1,7 @@
 import { supabase } from './supabase';
+import { createInvoice } from './invoiceService';
 
 // ── Primary: reads from coop_fund + fund_transactions ────────────────────────
-// These tables are populated automatically by the DB trigger on invoices.
-// Run MIGRATION.sql first to set them up.
 
 export async function getCoopFund() {
   const { data, error } = await supabase
@@ -30,11 +29,8 @@ export async function getFundTransactions(filters = {}) {
 }
 
 // ── Fallback: compute directly from invoices + vouchers ──────────────────────
-// Use this when coop_fund is not yet set up or as a cross-check.
-// Returns the same shape as getCoopFund() + getFundTransactions().
 
 export async function computeCoopSummaryFromInvoices() {
-  // Cash In — all paid invoices
   const { data: paidInvoices, error: invErr } = await supabase
     .from('invoices')
     .select('id, invoice_no, date, payee, purpose, amount, payment_type, created_at')
@@ -43,7 +39,6 @@ export async function computeCoopSummaryFromInvoices() {
 
   if (invErr) throw invErr;
 
-  // Cash Out — all approved vouchers
   const { data: approvedVouchers, error: vchErr } = await supabase
     .from('vouchers')
     .select('id, voucher_no, date, payee, purpose, amount, created_at')
@@ -52,10 +47,9 @@ export async function computeCoopSummaryFromInvoices() {
 
   if (vchErr) throw vchErr;
 
-  const cashIn  = (paidInvoices    || []).reduce((s, r) => s + (r.amount || 0), 0);
+  const cashIn  = (paidInvoices || []).reduce((s, r) => s + (r.amount || 0), 0);
   const cashOut = (approvedVouchers || []).reduce((s, r) => s + (r.amount || 0), 0);
 
-  // Unify into fund_transactions-shaped rows for the UI
   const cashInRows = (paidInvoices || []).map(inv => ({
     id:          inv.id,
     type:        'cash_in',
@@ -76,18 +70,50 @@ export async function computeCoopSummaryFromInvoices() {
     created_at:  vch.created_at,
   }));
 
-  // Merge and sort by created_at descending
   const allRows = [...cashInRows, ...cashOutRows].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
 
   return {
-    fund:         { balance: cashIn - cashOut, cash_in: cashIn, cash_out: cashOut },
+    fund: { balance: cashIn - cashOut, cash_in: cashIn, cash_out: cashOut },
     transactions: allRows,
   };
 }
 
-// ── Category display helpers ──────────────────────────────────────────────────
+// ── NEW: Manual Fund Deposit (THIS IS THE ADDITION) ──────────────────────────
+
+export async function recordManualFundDeposit({
+  amount,
+  date,
+  description,
+  created_by = null,
+}) {
+  const value = parseFloat(amount) || 0;
+
+  if (value <= 0) {
+    throw new Error('Amount must be greater than zero.');
+  }
+
+  if (!date) {
+    throw new Error('Date is required.');
+  }
+
+  return await createInvoice({
+    date,
+    payee: 'Cooperative Fund',
+    purpose: description?.trim() || 'Manual Fund Deposit',
+    amount: value,
+    status: 'paid',
+    payment_type: 'capital',
+    created_by,
+    member_id: null,
+    ref_id: null,
+    account_id: null,
+    fund_added: false,
+  });
+}
+
+// ── Category display helpers ─────────────────────────────────────────────────
 
 export const CATEGORY_LABEL = {
   loan_payment:  'Loan Payment',
@@ -99,6 +125,7 @@ export const CATEGORY_LABEL = {
   voucher:       'Voucher',
   invoice:       'Invoice',
   void_reversal: 'Void Reversal',
+  capital:       'Capital / Fund Deposit', // NEW
 };
 
 export const CATEGORY_COLOR = {
@@ -111,4 +138,5 @@ export const CATEGORY_COLOR = {
   voucher:       'text-red-700 bg-red-50',
   invoice:       'text-gray-700 bg-gray-100',
   void_reversal: 'text-gray-500 bg-gray-100',
+  capital:       'text-indigo-700 bg-indigo-50', // NEW
 };

@@ -60,7 +60,7 @@ const navGroups = [
 ];
 
 const ADMIN_ONLY_ITEMS = [
-  { to: '/account-management', icon: ShieldCheck, label: 'Account Management' },
+  { to: '/account-management', icon: ShieldCheck, label: 'Accounts' },
 ];
 
 export default function Sidebar({ onClose }) {
