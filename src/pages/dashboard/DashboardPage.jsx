@@ -1,232 +1,239 @@
 import {
-  Users, CreditCard, PiggyBank, Wallet,
-  TrendingUp, ArrowUpRight, ArrowDownLeft, Layers,
+  Users,
+  CreditCard,
+  PiggyBank,
+  Wallet,
+  TrendingUp,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Layers,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeDashboard } from '../../hooks/useRealtimeDashboard';
 import Spinner from '../../components/ui/Spinner';
 import { formatCurrency, formatRelativeTime } from '../../utils/formatters';
 
-// ── All logic unchanged ────────────────────────────────────────
-
 const INFLOW_TYPES = ['deposit', 'loan_release'];
 
-// ── Brand stat card ────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Stat Card
+// ─────────────────────────────────────────────
 function StatCard({ label, value, icon, iconBg, iconColor, valueColor, onClick }) {
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      style={{
-        background: '#ffffff',
-        borderRadius: '16px',
-        border: '1px solid #e8f5eb',
-        padding: '20px',
-        boxShadow: '0 1px 4px rgba(39,60,44,0.06)',
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 0.2s, transform 0.15s',
-      }}
-      onMouseEnter={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 4px 16px rgba(39,60,44,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-      onMouseLeave={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 1px 4px rgba(39,60,44,0.06)'; e.currentTarget.style.transform = 'translateY(0)'; } }}
+      className="app-card app-card-hover w-full text-left p-5"
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '14px' }}>
-        <div style={{
-          width: '44px', height: '44px', borderRadius: '12px',
-          background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <span style={{ color: iconColor, display: 'flex' }}>{icon}</span>
+      <div className="mb-4 flex items-start justify-between">
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-xl"
+          style={{ background: iconBg }}
+        >
+          <span style={{ color: iconColor }}>{icon}</span>
         </div>
-        {onClick && (
-          <div style={{
-            width: '26px', height: '26px', borderRadius: '8px',
-            background: '#f3f4f4', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <ArrowUpRight size={13} style={{ color: '#9ca3af' }} />
-          </div>
-        )}
+
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-gray-400">
+          <ArrowUpRight size={13} />
+        </div>
       </div>
-      <p style={{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '4px' }}>
-        {label}
-      </p>
-      <p style={{ fontSize: '22px', fontWeight: '800', color: valueColor, lineHeight: 1 }}>
+
+      <p className="stat-label mb-1">{label}</p>
+
+      <p
+        className="tabular-nums text-[26px] font-bold leading-none tracking-tight"
+        style={{ color: valueColor }}
+      >
         {value}
       </p>
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Loan Portfolio (same style as stat cards)
+// ─────────────────────────────────────────────
+function PortfolioCard({ stats, navigate }) {
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/loans')}
+      className="app-card app-card-hover w-full text-left p-5"
+    >
+      <div className="mb-4 flex items-start justify-between">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100">
+          <Layers size={20} className="text-emerald-600" />
+        </div>
+
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-gray-400">
+          <ArrowUpRight size={13} />
+        </div>
+      </div>
+
+      <p className="stat-label mb-1">Loan Portfolio</p>
+
+      <p className="tabular-nums text-[26px] font-bold leading-none tracking-tight text-gray-900">
+        {formatCurrency(stats?.totalLoanOutstanding ?? 0)}
+      </p>
+
+      <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+        <TrendingUp size={13} />
+        <span>{stats?.activeLoans ?? 0} active loans</span>
+      </div>
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Recent Transactions
+// ─────────────────────────────────────────────
+function RecentTransactionsCard({ stats, navigate }) {
+  return (
+    <div className="app-card p-5">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">
+            Recent Transactions
+          </h3>
+          <p className="text-sm text-gray-500">
+            Latest cooperative activity
+          </p>
+        </div>
+
+        <button
+          onClick={() => navigate('/transactions')}
+          className="text-sm font-medium text-emerald-700 hover:underline"
+        >
+          View all
+        </button>
+      </div>
+
+      {!stats?.recentTransactions?.length ? (
+        <div className="text-center text-sm text-gray-400 py-10">
+          No transactions yet
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {stats.recentTransactions.slice(0, 5).map((tx) => {
+            const isInflow = INFLOW_TYPES.includes(tx.type);
+
+            return (
+              <div key={tx.id} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                      isInflow
+                        ? 'bg-emerald-50 text-emerald-600'
+                        : 'bg-red-50 text-red-500'
+                    }`}
+                  >
+                    {isInflow ? (
+                      <ArrowDownLeft size={15} />
+                    ) : (
+                      <ArrowUpRight size={15} />
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 capitalize">
+                      {tx.type?.replace(/_/g, ' ')}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {formatRelativeTime(tx.created_at)}
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-sm font-semibold ${
+                    isInflow ? 'text-emerald-600' : 'text-red-500'
+                  }`}
+                >
+                  {formatCurrency(tx.amount)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
+// ─────────────────────────────────────────────
+// MAIN PAGE
+// ─────────────────────────────────────────────
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { stats, loading } = useRealtimeDashboard();
 
-  if (loading) return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', paddingTop: '96px' }}>
-      <Spinner />
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center pt-24">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-
-      {/* ── Page heading ── */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: '800', color: '#273C2C', margin: 0 }}>Dashboard</h1>
-        <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '3px' }}>WELLSERVE Cooperative overview</p>
+    <div className="mx-auto max-w-7xl px-6 py-6">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="section-title">Dashboard</h1>
+        <p className="section-subtitle">
+          WELLSERVE Cooperative overview
+        </p>
       </div>
 
-      {/* ── 4 stat cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-
+      {/* Top Stats */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total Members"
           value={stats?.totalMembers ?? 0}
-          icon={<Users size={22} />}
-          iconBg="#AEECEF40"
-          iconColor="#000066"
-          valueColor="#000066"
+          icon={<Users size={20} />}
+          iconBg="rgba(59,130,246,0.10)"
+          iconColor="#2563EB"
+          valueColor="#111827"
           onClick={() => navigate('/members')}
         />
+
         <StatCard
           label="Total CBU Balance"
           value={formatCurrency(stats?.totalCBU ?? 0)}
-          icon={<PiggyBank size={22} />}
-          iconBg="#D6FADC"
-          iconColor="#07A04E"
-          valueColor="#07A04E"
+          icon={<PiggyBank size={20} />}
+          iconBg="rgba(16,185,129,0.12)"
+          iconColor="#059669"
+          valueColor="#059669"
           onClick={() => navigate('/cbu')}
         />
+
         <StatCard
           label="Total Savings"
           value={formatCurrency(stats?.totalSavings ?? 0)}
-          icon={<Wallet size={22} />}
-          iconBg="#D6FADC"
-          iconColor="#7EB751"
-          valueColor="#7EB751"
+          icon={<Wallet size={20} />}
+          iconBg="rgba(132,204,22,0.14)"
+          iconColor="#65A30D"
+          valueColor="#65A30D"
           onClick={() => navigate('/savings')}
         />
+
         <StatCard
           label="Active Loans"
           value={stats?.activeLoans ?? 0}
-          icon={<CreditCard size={22} />}
-          iconBg="#fff7ed"
-          iconColor="#ea580c"
-          valueColor="#ea580c"
+          icon={<CreditCard size={20} />}
+          iconBg="rgba(249,115,22,0.12)"
+          iconColor="#EA580C"
+          valueColor="#EA580C"
           onClick={() => navigate('/loans')}
         />
       </div>
 
-      {/* ── Bottom row ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      {/* Bottom Section (FIXED GRID) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PortfolioCard stats={stats} navigate={navigate} />
 
-        {/* Loan portfolio — brand dark green card */}
-        <div
-          onClick={() => navigate('/loans')}
-          style={{
-            background: '#273C2C',
-            borderRadius: '18px',
-            padding: '24px',
-            cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(39,60,44,0.22)',
-            transition: 'box-shadow 0.2s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 8px 28px rgba(39,60,44,0.32)'; }}
-          onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 20px rgba(39,60,44,0.22)'; }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-            <div style={{
-              width: '34px', height: '34px', borderRadius: '10px',
-              background: 'rgba(7,160,78,0.20)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Layers size={16} style={{ color: '#7EB751' }} />
-            </div>
-            <p style={{ fontSize: '13px', fontWeight: '600', color: 'rgba(255,255,255,0.70)', margin: 0 }}>
-              Loan Portfolio
-            </p>
-          </div>
-
-          <p style={{ fontSize: '30px', fontWeight: '800', color: '#ffffff', lineHeight: 1, margin: 0 }}>
-            {formatCurrency(stats?.totalLoanOutstanding ?? 0)}
-          </p>
-          <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', marginTop: '6px' }}>
-            Total outstanding balance
-          </p>
-
-          <div style={{
-            marginTop: '18px', paddingTop: '16px',
-            borderTop: '1px solid rgba(255,255,255,0.12)',
-            display: 'flex', alignItems: 'center', gap: '6px',
-            fontSize: '11px', color: '#7EB751',
-          }}>
-            <TrendingUp size={13} />
-            <span>{stats?.activeLoans ?? 0} active loans</span>
-          </div>
-        </div>
-
-        {/* Recent transactions */}
-        <div style={{
-          background: '#ffffff',
-          borderRadius: '18px',
-          border: '1px solid #e8f5eb',
-          padding: '24px',
-          boxShadow: '0 1px 4px rgba(39,60,44,0.06)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#273C2C', margin: 0 }}>
-              Recent Transactions
-            </h3>
-            <button
-              onClick={() => navigate('/transactions')}
-              style={{
-                fontSize: '11px', color: '#07A04E', fontWeight: '600',
-                background: 'none', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '3px', padding: 0,
-              }}
-            >
-              View all <ArrowUpRight size={12} />
-            </button>
-          </div>
-
-          {!stats?.recentTransactions?.length ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', textAlign: 'center' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#f3f4f4', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
-                <ArrowDownLeft size={18} style={{ color: '#d1d5db' }} />
-              </div>
-              <p style={{ fontSize: '13px', color: '#9ca3af' }}>No recent transactions.</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {stats.recentTransactions.slice(0, 5).map(tx => {
-                const isInflow = INFLOW_TYPES.includes(tx.type);
-                return (
-                  <div key={tx.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{
-                        width: '32px', height: '32px', borderRadius: '50%',
-                        background: isInflow ? '#D6FADC' : '#fef2f2',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                      }}>
-                        {isInflow
-                          ? <ArrowDownLeft size={14} style={{ color: '#07A04E' }} />
-                          : <ArrowUpRight  size={14} style={{ color: '#dc2626' }} />}
-                      </div>
-                      <div>
-                        <p style={{ fontSize: '13px', fontWeight: '600', color: '#273C2C', textTransform: 'capitalize', margin: 0 }}>
-                          {tx.type?.replace(/_/g, ' ') || 'Transaction'}
-                        </p>
-                        <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '1px' }}>
-                          {formatRelativeTime(tx.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: isInflow ? '#07A04E' : '#dc2626' }}>
-                      {formatCurrency(tx.amount)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        <div className="xl:col-span-3">
+          <RecentTransactionsCard stats={stats} navigate={navigate} />
         </div>
       </div>
     </div>
