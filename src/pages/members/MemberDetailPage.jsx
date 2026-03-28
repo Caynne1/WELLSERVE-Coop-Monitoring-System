@@ -13,7 +13,7 @@ import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
 
-import { getMemberById } from '../../services/memberService';
+import { getMemberById, initializeMemberAccounts } from '../../services/memberService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import { getLoansByMemberId } from '../../services/loanService';
 import { getTransactionsByMemberId, createTransaction } from '../../services/transactionService';
@@ -72,25 +72,35 @@ export default function MemberDetailPage() {
   const [penaltyLoading, setPenaltyLoading] = useState(false);
 
   async function fetchAll() {
-    try {
-      setLoading(true);
-      const [memberData, accountsData, loansData, txData] = await Promise.all([
-        getMemberById(id),
-        getAccountsByMemberId(id),
-        getLoansByMemberId(id),
-        getTransactionsByMemberId(id),
-      ]);
+  try {
+    setLoading(true);
 
-      setMember(memberData);
-      setAccounts(accountsData || []);
-      setLoans(loansData || []);
-      setTransactions(txData || []);
-    } catch {
-      toast.error('Failed to load member data');
-    } finally {
-      setLoading(false);
+    const [memberData, initialAccounts, loansData, txData] = await Promise.all([
+      getMemberById(id),
+      getAccountsByMemberId(id),
+      getLoansByMemberId(id),
+      getTransactionsByMemberId(id),
+    ]);
+
+    let finalAccounts = initialAccounts || [];
+    const accountTypes = finalAccounts.map(a => String(a.account_type).toLowerCase());
+
+    if (!accountTypes.includes('cbu') || !accountTypes.includes('savings')) {
+      await initializeMemberAccounts(id);
+      finalAccounts = await getAccountsByMemberId(id);
     }
+
+    setMember(memberData);
+    setAccounts(finalAccounts || []);
+    setLoans(loansData || []);
+    setTransactions(txData || []);
+  } catch (err) {
+    console.error('[MemberDetailPage] fetchAll failed:', err);
+    toast.error('Failed to load member data');
+  } finally {
+    setLoading(false);
   }
+}
 
   const fetchMembership = useCallback(async () => {
     try {
@@ -582,41 +592,33 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            CBU Deposit{' '}
-            <span className="text-gray-400">
-              {cbuAccount ? `(current: ${formatCurrency(cbuAccount.balance)})` : '(no account yet)'}
-            </span>
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={cbuAmt}
-            onChange={e => setCbuAmt(e.target.value)}
-            placeholder="0.00"
-            disabled={!cbuAccount}
-            className={`${fieldClass} ${!cbuAccount ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
-          />
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+              CBU Deposit <span className="text-gray-400">(current: {formatCurrency(cbuAccount?.balance ?? 0)})</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={cbuAmt}
+              onChange={e => setCbuAmt(e.target.value)}
+              placeholder="0.00"
+              className={fieldClass}
+            />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Savings Deposit{' '}
-            <span className="text-gray-400">
-              {savingsAccount ? `(current: ${formatCurrency(savingsAccount.balance)})` : '(no account yet)'}
-            </span>
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={savingsAmt}
-            onChange={e => setSavingsAmt(e.target.value)}
-            placeholder="0.00"
-            disabled={!savingsAccount}
-            className={`${fieldClass} ${!savingsAccount ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
-          />
+                Savings Deposit <span className="text-gray-400">(current: {formatCurrency(savingsAccount?.balance ?? 0)})</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={savingsAmt}
+                onChange={e => setSavingsAmt(e.target.value)}
+                placeholder="0.00"
+                className={fieldClass}
+            />
         </div>
 
         <div className="max-w-[220px]">
