@@ -9,7 +9,7 @@ const INVOICE_COLUMNS = [
   'invoice_no', 'date', 'due_date', 'payee', 'purpose',
   'amount', 'notes', 'status', 'created_by',
   'member_id',
-  'payment_type',   // 'loan_payment' | 'cbu' | 'savings' | 'membership'
+  'payment_type',   // 'loan_payment' | 'cbu' | 'savings' | 'membership' | 'capital'
   'ref_id',         // loan.id | account.id | membership.id (depends on payment_type)
   'account_id',     // account.id for cbu / savings deposits
   'fund_added',     // optional flag used by reporting
@@ -24,24 +24,20 @@ function sanitizeInvoicePayload(payload) {
 }
 
 // ── Invoice number generation ─────────────────────────────────────────────────
-// Format: SI-YYYY-NNN
-// Counts all invoices for the current year and increments by 1.
-// Not guaranteed to be gap-free (voided records still count),
-// which is correct behaviour for an audit trail.
+// SAFE VERSION: uses PostgreSQL sequence via RPC.
+// This avoids duplicate SI numbers when multiple users create invoices at once.
 
 async function generateInvoiceNo() {
-  const year   = new Date().getFullYear();
-  const prefix = `SI-${year}-`;
+  const year = new Date().getFullYear();
 
-  const { count, error } = await supabase
-    .from('invoices')
-    .select('*', { count: 'exact', head: true })
-    .like('invoice_no', `${prefix}%`);
+  const { data, error } = await supabase.rpc('next_invoice_no', {
+    p_year: year,
+  });
 
   if (error) throw error;
+  if (!data) throw new Error('Failed to generate invoice number.');
 
-  const next = String((count || 0) + 1).padStart(4, '0');
-  return `${prefix}${next}`;
+  return data;
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
@@ -59,14 +55,16 @@ export async function getInvoices(filters = {}) {
   if (error) throw error;
   if (!invoices || invoices.length === 0) return [];
 
-  // ── Optional join: attach linked member for display in detail modal ───────
+  // Optional join: attach linked member for display in detail modal
   const memberIds = [...new Set(invoices.map(inv => inv.member_id).filter(Boolean))];
   if (memberIds.length === 0) return invoices;
 
-  const { data: members } = await supabase
+  const { data: members, error: memberError } = await supabase
     .from('members')
     .select('id, first_name, last_name, member_no')
     .in('id', memberIds);
+
+  if (memberError) throw memberError;
 
   const memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
   return invoices.map(inv => ({
@@ -81,6 +79,7 @@ export async function getInvoiceById(id) {
     .select('*')
     .eq('id', id)
     .single();
+
   if (error) throw error;
   return data;
 }
@@ -91,11 +90,13 @@ export async function getInvoiceById(id) {
 export async function createInvoice(payload) {
   const invoice_no = await generateInvoiceNo();
   const clean = sanitizeInvoicePayload({ ...payload, invoice_no });
+
   const { data, error } = await supabase
     .from('invoices')
     .insert(clean)
     .select()
     .single();
+
   if (error) throw error;
   return data;
 }
@@ -110,6 +111,7 @@ export async function createInvoice(payload) {
 //   'cbu'           — CBU / capital build-up deposit
 //   'savings'       — savings deposit
 //   'membership'    — membership fee payment
+//   'capital'       — manual cooperative fund deposit
 //
 // ref_id should be:
 //   loan_payment → loan.id
@@ -120,26 +122,26 @@ export async function createInvoice(payload) {
 export async function createInvoiceForPayment({
   payment_type,
   member_id,
-  member_name,    // full display name used as payee (e.g. "Juan Dela Cruz")
+  member_name,
   amount,
-  purpose,        // human-readable description of what the payment is for
-  ref_id = null,  // foreign-key reference (loan id, account id, membership id)
+  purpose,
+  ref_id = null,
   account_id = null,
   notes = null,
   created_by = null,
   date = null,
 }) {
   if (!payment_type) throw new Error('payment_type is required for invoice creation.');
-  if (!member_id)    throw new Error('member_id is required for invoice creation.');
-  if (!member_name)  throw new Error('member_name is required for invoice creation.');
+  if (!member_id) throw new Error('member_id is required for invoice creation.');
+  if (!member_name) throw new Error('member_name is required for invoice creation.');
   if (!amount || Number(amount) <= 0) throw new Error('amount must be greater than zero.');
 
   return createInvoice({
-    date:         date || new Date().toISOString().split('T')[0],
-    payee:        member_name,
-    purpose:      purpose || payment_type,
-    amount:       Number(amount),
-    status:       'paid',   // money already received — invoice is immediately paid
+    date: date || new Date().toISOString().split('T')[0],
+    payee: member_name,
+    purpose: purpose || payment_type,
+    amount: Number(amount),
+    status: 'paid',
     member_id,
     payment_type,
     ref_id,
@@ -164,6 +166,7 @@ export async function updateInvoice(id, payload) {
     .eq('id', id)
     .select()
     .single();
+
   if (error) throw error;
   return data;
 }
@@ -179,6 +182,7 @@ export async function markInvoicePaid(id) {
     .eq('id', id)
     .select()
     .single();
+
   if (error) throw error;
   return data;
 }
@@ -191,6 +195,7 @@ export async function voidInvoice(id) {
     .eq('id', id)
     .select()
     .single();
+
   if (error) throw error;
   return data;
 }
