@@ -1,108 +1,114 @@
-import { Menu, Bell, LogOut } from 'lucide-react';
+import { Menu, X, Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import WellserveLogo from '../../components/shared/WellserveLogo';
 
-export default function Topbar({ onMenuClick }) {
+export default function Topbar({ onMenuClick, isSidebarOpen = false }) {
   const { user, signOut } = useAuth();
   const initials = user?.email?.[0]?.toUpperCase() || 'A';
 
   return (
     <header
       style={{
-        height: '60px',
+        height: '64px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingLeft: '18px',
         paddingRight: '18px',
-        background: 'linear-gradient(135deg, #14532D, #1F7A63)',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+        background: 'linear-gradient(135deg, #0F3D91 0%, #1552C0 55%, #1D67E0 100%)',
+        borderBottom: '1px solid rgba(255,255,255,0.10)',
+        boxShadow: '0 6px 18px rgba(15, 61, 145, 0.18)',
         flexShrink: 0,
         position: 'relative',
-        zIndex: 10,
+        zIndex: 20,
       }}
     >
       {/* Left */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button
           onClick={onMenuClick}
-          className="lg:hidden"
+          title={isSidebarOpen ? 'Close menu' : 'Open menu'}
           style={{
-            padding: '7px',
-            borderRadius: '10px',
-            background: 'transparent',
-            border: 'none',
+            width: '40px',
+            height: '40px',
+            borderRadius: '12px',
+            background: isSidebarOpen ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.14)',
             cursor: 'pointer',
-            color: 'rgba(255,255,255,0.82)',
+            color: '#ffffff',
             display: 'flex',
             alignItems: 'center',
-            transition: 'background 0.15s ease, color 0.15s ease',
+            justifyContent: 'center',
+            transition: 'all 0.18s ease',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-            e.currentTarget.style.color = '#ffffff';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.18)';
+            e.currentTarget.style.transform = 'translateY(-1px)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'rgba(255,255,255,0.82)';
+            e.currentTarget.style.background = isSidebarOpen
+              ? 'rgba(255,255,255,0.16)'
+              : 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.transform = 'translateY(0)';
           }}
         >
-          <Menu size={20} />
+          {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
-        <div className="hidden lg:flex" style={{ alignItems: 'center', gap: '10px' }}>
-          <WellserveLogo size={34} variant="light" />
-          <div style={{ lineHeight: 1 }}>
-            <p
-              style={{
-                fontSize: '14px',
-                fontWeight: '800',
-                color: '#ffffff',
-                letterSpacing: '2px',
-                margin: 0,
-                textTransform: 'uppercase',
-              }}
-            >
-              WELLSERVE
-            </p>
-            <p
-              style={{
-                fontSize: '8.5px',
-                color: 'rgba(255,255,255,0.62)',
-                letterSpacing: '1.1px',
-                margin: 0,
-                textTransform: 'uppercase',
-                marginTop: '3px',
-              }}
-            >
-              Credit Cooperative
-            </p>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+          <p
+            style={{
+              fontSize: '15px',
+              fontWeight: '800',
+              color: '#ffffff',
+              margin: 0,
+              letterSpacing: '0.3px',
+            }}
+          >
+            Dashboard
+          </p>
+          <p
+            style={{
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.72)',
+              margin: 0,
+              marginTop: '5px',
+            }}
+          >
+            WELLSERVE Credit Cooperative
+          </p>
         </div>
       </div>
 
       {/* Right */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
           title="Notifications"
           style={{
-            padding: '7px',
-            borderRadius: '10px',
-            background: 'transparent',
-            border: 'none',
+            width: '38px',
+            height: '38px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.12)',
             cursor: 'pointer',
-            color: 'rgba(255,255,255,0.70)',
+            color: 'rgba(255,255,255,0.82)',
             display: 'flex',
             alignItems: 'center',
-            transition: 'background 0.15s ease, color 0.15s ease',
+            justifyContent: 'center',
+            transition: 'all 0.18s ease',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.16)';
             e.currentTarget.style.color = '#ffffff';
+            e.currentTarget.style.transform = 'translateY(-1px)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'rgba(255,255,255,0.70)';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.color = 'rgba(255,255,255,0.82)';
+            e.currentTarget.style.transform = 'translateY(0)';
           }}
         >
           <Bell size={17} />
@@ -111,19 +117,20 @@ export default function Topbar({ onMenuClick }) {
         <div
           style={{
             width: '1px',
-            height: '22px',
+            height: '24px',
             background: 'rgba(255,255,255,0.18)',
-            margin: '0 6px',
+            margin: '0 4px',
           }}
         />
 
         <div
           style={{
-            width: '34px',
-            height: '34px',
+            width: '36px',
+            height: '36px',
             borderRadius: '9999px',
-            background: '#22C55E',
-            border: '1.5px solid rgba(255,255,255,0.30)',
+            background: 'linear-gradient(135deg, #60A5FA, #2563EB)',
+            border: '1.5px solid rgba(255,255,255,0.28)',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -162,9 +169,9 @@ export default function Topbar({ onMenuClick }) {
           <p
             style={{
               fontSize: '9px',
-              color: 'rgba(255,255,255,0.60)',
-              marginTop: '3px',
-              letterSpacing: '0.4px',
+              color: 'rgba(255,255,255,0.68)',
+              marginTop: '4px',
+              letterSpacing: '0.35px',
             }}
           >
             Administrator
@@ -175,24 +182,30 @@ export default function Topbar({ onMenuClick }) {
           onClick={signOut}
           title="Sign out"
           style={{
-            padding: '7px',
-            borderRadius: '10px',
-            background: 'transparent',
-            border: 'none',
+            width: '38px',
+            height: '38px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.12)',
             cursor: 'pointer',
-            color: 'rgba(255,255,255,0.62)',
+            color: 'rgba(255,255,255,0.76)',
             display: 'flex',
             alignItems: 'center',
-            marginLeft: '4px',
-            transition: 'background 0.15s ease, color 0.15s ease',
+            justifyContent: 'center',
+            marginLeft: '2px',
+            transition: 'all 0.18s ease',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(220,60,60,0.16)';
-            e.currentTarget.style.color = '#fecaca';
+            e.currentTarget.style.background = 'rgba(239,68,68,0.18)';
+            e.currentTarget.style.color = '#ffffff';
+            e.currentTarget.style.transform = 'translateY(-1px)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'rgba(255,255,255,0.62)';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.color = 'rgba(255,255,255,0.76)';
+            e.currentTarget.style.transform = 'translateY(0)';
           }}
         >
           <LogOut size={15} />

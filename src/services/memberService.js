@@ -80,7 +80,35 @@ export async function updateMember(id, payload) {
   return data;
 }
 
-export async function deleteMember(id) {
+async function getMemberDeleteDependencies(memberId) {
+  const tablesToCheck = [
+    'invoices',
+    'transactions',
+    'loans',
+    'penalties',
+    'member_memberships',
+  ];
+
+  const dependencies = {};
+
+  for (const table of tablesToCheck) {
+    const { count, error } = await supabase
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .eq('member_id', memberId);
+
+    if (error) throw error;
+    dependencies[table] = count || 0;
+  }
+
+  return dependencies;
+}
+
+function hasProtectedRecords(dependencies) {
+  return Object.values(dependencies).some(count => count > 0);
+}
+
+async function hardDeleteMember(id) {
   const { error: accountsError } = await supabase
     .from('accounts')
     .delete()
@@ -88,12 +116,61 @@ export async function deleteMember(id) {
 
   if (accountsError) throw accountsError;
 
-  const { error } = await supabase
+  const { error: memberError } = await supabase
     .from('members')
     .delete()
     .eq('id', id);
 
-  if (error) throw error;
+  if (memberError) throw memberError;
+
+  return {
+    success: true,
+    action: 'deleted',
+    message: 'Member deleted successfully.',
+  };
+}
+
+export async function deleteMember(id) {
+  // Read current member status first so the UI can use one delete button
+  // while the backend decides whether to archive or hard-delete.
+  const member = await getMemberById(id);
+  const currentStatus = member?.status || 'active';
+
+  const dependencies = await getMemberDeleteDependencies(id);
+  const protectedExists = hasProtectedRecords(dependencies);
+
+  // Case 1:
+  // Active member with protected/accounting records → archive instead of delete
+  if (currentStatus === 'active' && protectedExists) {
+    const { data, error: updateError } = await supabase
+      .from('members')
+      .update({ status: 'inactive' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    return {
+      success: true,
+      action: 'archived',
+      member: data,
+      message:
+        'Member has existing financial/history records and was moved to Inactive instead of being deleted.',
+    };
+  }
+
+  // Case 2:
+  // Inactive member with protected/accounting records → block permanent delete
+  if (currentStatus === 'inactive' && protectedExists) {
+    throw new Error(
+      'This inactive member still has financial/history records and cannot be permanently deleted.'
+    );
+  }
+
+  // Case 3:
+  // No protected records → safe hard delete
+  return await hardDeleteMember(id);
 }
 
 export async function initializeMemberAccounts(memberId) {
@@ -160,6 +237,7 @@ export async function getMemberStats() {
   return {
     total: data.length,
     active: data.filter(m => m.status === 'active').length,
+    inactive: data.filter(m => m.status === 'inactive').length,
     associate: data.filter(m => m.membership_type === 'associate').length,
     regular: data.filter(m => m.membership_type === 'regular').length,
   };

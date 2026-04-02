@@ -13,6 +13,7 @@ import {
   Printer,
   Download,
   Filter,
+  RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -21,7 +22,7 @@ import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import AddMemberModal from '../../components/members/AddMemberModal';
-import { getMembers, deleteMember } from '../../services/memberService';
+import { getMembers, deleteMember, updateMember } from '../../services/memberService';
 import { formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
 
@@ -31,6 +32,7 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [statusTab, setStatusTab] = useState('active'); // active | inactive
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
 
@@ -52,13 +54,29 @@ export default function MembersPage() {
 
   async function handleDelete(id) {
     try {
-      await deleteMember(id);
-      setMembers(prev => prev.filter(m => m.id !== id));
-      toast.success('Member deleted');
-    } catch {
-      toast.error('Failed to delete member');
+      const result = await deleteMember(id);
+
+      if (result?.action === 'archived') {
+        toast.success(result.message);
+      } else {
+        toast.success(result?.message || 'Member deleted');
+      }
+
+      await fetchMembers();
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete member');
     } finally {
       setConfirmDelete(null);
+    }
+  }
+
+  async function handleReactivate(member) {
+    try {
+      await updateMember(member.id, { status: 'active' });
+      toast.success('Member reactivated');
+      await fetchMembers();
+    } catch (err) {
+      toast.error(err.message || 'Failed to reactivate member');
     }
   }
 
@@ -79,9 +97,14 @@ export default function MembersPage() {
       const memberType = (m.membership_type || '').toLowerCase();
       const matchesType = typeFilter === 'all' ? true : memberType === typeFilter;
 
-      return matchesSearch && matchesType;
+      const matchesStatus =
+        statusTab === 'active'
+          ? (m.status || 'active') === 'active'
+          : m.status === 'inactive';
+
+      return matchesSearch && matchesType && matchesStatus;
     });
-  }, [members, search, typeFilter]);
+  }, [members, search, typeFilter, statusTab]);
 
   function handleExportCSV() {
     try {
@@ -96,7 +119,10 @@ export default function MembersPage() {
         joined: member.created_at ? formatDate(member.created_at) : '',
       }));
 
-      exportToCSV('members_report.csv', rows);
+      exportToCSV(
+        statusTab === 'inactive' ? 'inactive_members_report.csv' : 'members_report.csv',
+        rows
+      );
       toast.success('CSV exported successfully');
     } catch (err) {
       toast.error(err.message || 'Failed to export CSV');
@@ -157,6 +183,30 @@ export default function MembersPage() {
             </Button>
           }
         />
+      </div>
+
+      <div className="mt-4 flex gap-2 print:hidden">
+        <button
+          onClick={() => setStatusTab('active')}
+          className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            statusTab === 'active'
+              ? 'bg-[#07A04E] text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Active Members
+        </button>
+
+        <button
+          onClick={() => setStatusTab('inactive')}
+          className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            statusTab === 'inactive'
+              ? 'bg-[#07A04E] text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          Inactive Members
+        </button>
       </div>
 
       <div className="mt-6 mb-4 flex items-center justify-between gap-4 flex-wrap print:hidden">
@@ -229,6 +279,9 @@ export default function MembersPage() {
           <div className="text-right">
             <p className="text-sm font-semibold text-gray-800">Members Report</p>
             <p className="text-xs text-gray-500">
+              Status: {statusTab === 'active' ? 'Active Members' : 'Inactive Members'}
+            </p>
+            <p className="text-xs text-gray-500">
               Type Filter: {typeFilter === 'all' ? 'All Members' : typeFilter}
             </p>
             <p className="text-xs text-gray-500">
@@ -269,9 +322,11 @@ export default function MembersPage() {
                           <p className="text-sm">
                             {search || typeFilter !== 'all'
                               ? 'No members match your filter.'
-                              : 'No members yet.'}
+                              : statusTab === 'inactive'
+                                ? 'No inactive members.'
+                                : 'No members yet.'}
                           </p>
-                          {!search && typeFilter === 'all' && (
+                          {!search && typeFilter === 'all' && statusTab === 'active' && (
                             <Button
                               size="sm"
                               onClick={() => setAddMemberOpen(true)}
@@ -380,6 +435,7 @@ export default function MembersPage() {
                             >
                               <Eye size={15} />
                             </button>
+
                             <button
                               onClick={() => navigate(`/members/${member.id}/edit`)}
                               title="Edit member"
@@ -387,9 +443,20 @@ export default function MembersPage() {
                             >
                               <Pencil size={15} />
                             </button>
+
+                            {member.status === 'inactive' && (
+                              <button
+                                onClick={() => handleReactivate(member)}
+                                title="Reactivate member"
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                              >
+                                <RotateCcw size={15} />
+                              </button>
+                            )}
+
                             <button
                               onClick={() => setConfirmDelete(member)}
-                              title="Delete member"
+                              title={member.status === 'inactive' ? 'Delete permanently' : 'Delete member'}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                             >
                               <Trash2 size={15} />
@@ -417,9 +484,13 @@ export default function MembersPage() {
 
       <ConfirmDialog
         open={!!confirmDelete}
-        title="Delete Member"
-        message={`Are you sure you want to delete ${confirmDelete?.first_name} ${confirmDelete?.last_name}? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={confirmDelete?.status === 'inactive' ? 'Delete Permanently' : 'Delete Member'}
+        message={
+          confirmDelete?.status === 'inactive'
+            ? `Are you sure you want to permanently delete ${confirmDelete?.first_name} ${confirmDelete?.last_name}? This should only be used for mistakenly added members with no remaining protected records.`
+            : `Are you sure you want to delete ${confirmDelete?.first_name} ${confirmDelete?.last_name}? Members with existing records will be moved to Inactive instead of being permanently deleted.`
+        }
+        confirmLabel={confirmDelete?.status === 'inactive' ? 'Delete Permanently' : 'Delete'}
         confirmVariant="danger"
         onConfirm={() => handleDelete(confirmDelete?.id)}
         onCancel={() => setConfirmDelete(null)}
@@ -435,4 +506,4 @@ export default function MembersPage() {
       />
     </div>
   );
-} 
+}
