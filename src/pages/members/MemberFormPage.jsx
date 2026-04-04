@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Save, UserPlus } from 'lucide-react';
+import { ArrowLeft, Save, UserPlus, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -17,6 +17,11 @@ import {
   initializeMemberAccounts,
 } from '../../services/memberService';
 
+import { getAccountsByMemberId, updateAccount } from '../../services/accountService';
+import { createTransaction } from '../../services/transactionService';
+import { createMembership } from '../../services/membershipService';
+import { createInvoiceForPayment } from '../../services/invoiceService';
+
 import { useAuth } from '../../context/AuthContext';
 
 const STATUS_OPTIONS = [
@@ -29,6 +34,36 @@ const MEMBERSHIP_TYPE_OPTIONS = [
   { value: 'associate', label: 'Associate' },
   { value: 'regular', label: 'Regular' },
 ];
+
+const PAYMENT_MODE_OPTIONS = [
+  { value: 'none', label: 'No payment yet' },
+  { value: 'partial', label: 'Partial payment' },
+  { value: 'full', label: 'Full payment' },
+];
+
+const MEMBERSHIP_BREAKDOWN = {
+  associate: {
+    label: 'Entry Membership',
+    membership_fee: 300,
+    cbu: 1000,
+    savings: 500,
+  },
+  regular: {
+    label: 'Full Pledge Member',
+    membership_fee: 1500,
+    cbu: 3000,
+    savings: 500,
+  },
+};
+
+async function createInvoiceStrict(args, label) {
+  try {
+    return await createInvoiceForPayment(args);
+  } catch (e) {
+    console.error(`[${label}] Invoice creation failed:`, e);
+    throw new Error(e?.message || `${label} invoice creation failed.`);
+  }
+}
 
 export function MemberFormContent({
   memberId: memberIdProp,
@@ -51,6 +86,8 @@ export function MemberFormContent({
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isDirty },
   } = useForm({
     defaultValues: {
@@ -72,16 +109,60 @@ export function MemberFormContent({
       membership_type: 'associate',
       notes: '',
       date_joined: '',
+      payment_mode: 'none',
+      membership_paid: '',
+      cbu_paid: '',
+      savings_paid: '',
+      payment_date: '',
+      cbu_account_no: '',
+      savings_account_no: '',
     },
   });
+
+  const membershipType = watch('membership_type');
+  const paymentMode = watch('payment_mode');
+  const membershipPaid = parseFloat(watch('membership_paid')) || 0;
+  const cbuPaid = parseFloat(watch('cbu_paid')) || 0;
+  const savingsPaid = parseFloat(watch('savings_paid')) || 0;
+
+  const breakdown = MEMBERSHIP_BREAKDOWN[membershipType];
+
+  const total =
+    (breakdown?.membership_fee || 0) +
+    (breakdown?.cbu || 0) +
+    (breakdown?.savings || 0);
 
   useEffect(() => {
     if (isEdit) loadMember();
   }, [memberId]);
 
+  useEffect(() => {
+    if (!breakdown || isEdit) return;
+
+    if (paymentMode === 'full') {
+      setValue('membership_paid', String(breakdown.membership_fee));
+      setValue('cbu_paid', String(breakdown.cbu));
+      setValue('savings_paid', String(breakdown.savings));
+      if (!watch('payment_date')) {
+        setValue('payment_date', new Date().toISOString().split('T')[0]);
+      }
+    }
+
+    if (paymentMode === 'none') {
+      setValue('membership_paid', '');
+      setValue('cbu_paid', '');
+      setValue('savings_paid', '');
+    }
+  }, [paymentMode, membershipType, isEdit, breakdown, setValue]);
+
   async function loadMember() {
     try {
       const data = await getMemberById(memberId);
+      const accounts = await getAccountsByMemberId(memberId);
+
+      const cbu = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
+      const savings = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+
       reset({
         first_name: data.first_name || '',
         last_name: data.last_name || '',
@@ -101,6 +182,13 @@ export function MemberFormContent({
         membership_type: data.membership_type || 'associate',
         notes: data.notes || '',
         date_joined: data.date_joined || '',
+        payment_mode: 'none',
+        membership_paid: '',
+        cbu_paid: '',
+        savings_paid: '',
+        payment_date: '',
+        cbu_account_no: cbu?.account_no || '',
+        savings_account_no: savings?.account_no || '',
       });
     } catch {
       toast.error('Failed to load member');
@@ -120,12 +208,45 @@ export function MemberFormContent({
       }
 
       const payload = {
-        ...values,
+        first_name: values.first_name,
+        last_name: values.last_name,
+        middle_initial: values.middle_initial,
+        member_no: values.member_no,
+        email: values.email,
+        phone: values.phone,
+        address: values.address,
+        civil_status: values.civil_status,
+        sex: values.sex,
+        date_of_birth: values.date_of_birth,
+        res_tel_no: values.res_tel_no,
+        occupation: values.occupation,
+        tin_no: values.tin_no,
+        sss_id_no: values.sss_id_no,
+        status: values.status,
+        membership_type: values.membership_type,
+        notes: values.notes,
         date_joined: values.date_joined || new Date().toISOString().split('T')[0],
       };
 
       if (isEdit) {
         await updateMember(memberId, payload);
+
+        const existingAccounts = await getAccountsByMemberId(memberId);
+        const cbuAccount = (existingAccounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
+        const savingsAccount = (existingAccounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+
+        if (cbuAccount) {
+          await updateAccount(cbuAccount.id, {
+            account_no: values.cbu_account_no || null,
+          });
+        }
+
+        if (savingsAccount) {
+          await updateAccount(savingsAccount.id, {
+            account_no: values.savings_account_no || null,
+          });
+        }
+
         toast.success('Member updated successfully');
 
         if (inModal) {
@@ -137,13 +258,154 @@ export function MemberFormContent({
         return;
       }
 
+      const selectedBreakdown = MEMBERSHIP_BREAKDOWN[values.membership_type];
+      const paymentDate = values.payment_date || new Date().toISOString().split('T')[0];
+
+      let postedMembershipPaid = 0;
+      let postedCbuPaid = 0;
+      let postedSavingsPaid = 0;
+
+      if (values.payment_mode === 'full') {
+        postedMembershipPaid = selectedBreakdown.membership_fee;
+        postedCbuPaid = selectedBreakdown.cbu;
+        postedSavingsPaid = selectedBreakdown.savings;
+      } else if (values.payment_mode === 'partial') {
+        postedMembershipPaid = parseFloat(values.membership_paid) || 0;
+        postedCbuPaid = parseFloat(values.cbu_paid) || 0;
+        postedSavingsPaid = parseFloat(values.savings_paid) || 0;
+      }
+
+      if (postedMembershipPaid < 0 || postedCbuPaid < 0 || postedSavingsPaid < 0) {
+        toast.error('Paid amounts cannot be negative.');
+        return;
+      }
+
+      if (postedMembershipPaid > selectedBreakdown.membership_fee) {
+        toast.error(`Membership payment cannot exceed ₱${selectedBreakdown.membership_fee.toLocaleString()}.`);
+        return;
+      }
+
+      if (postedCbuPaid > selectedBreakdown.cbu) {
+        toast.error(`Initial CBU payment cannot exceed ₱${selectedBreakdown.cbu.toLocaleString()}.`);
+        return;
+      }
+
+      if (postedSavingsPaid > selectedBreakdown.savings) {
+        toast.error(`Initial Savings payment cannot exceed ₱${selectedBreakdown.savings.toLocaleString()}.`);
+        return;
+      }
+
+      if (values.payment_mode !== 'none' && !paymentDate) {
+        toast.error('Payment date is required.');
+        return;
+      }
+
       const newMember = await createMember(payload);
       const newMemberId = newMember.id;
+      const memberName = `${newMember.first_name || ''} ${newMember.last_name || ''}`.trim();
 
-      try {
-        await initializeMemberAccounts(newMemberId);
-      } catch (initErr) {
-        console.warn('[MemberFormPage] Account init warning:', initErr);
+      await initializeMemberAccounts(newMemberId);
+
+      const accounts = await getAccountsByMemberId(newMemberId);
+      const cbuAccount = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
+      const savingsAccount = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+
+      if (cbuAccount && values.cbu_account_no) {
+        await updateAccount(cbuAccount.id, {
+          account_no: values.cbu_account_no,
+        });
+      }
+
+      if (savingsAccount && values.savings_account_no) {
+        await updateAccount(savingsAccount.id, {
+          account_no: values.savings_account_no,
+        });
+      }
+
+      const refreshedAccounts = await getAccountsByMemberId(newMemberId);
+      const refreshedCbuAccount = (refreshedAccounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
+      const refreshedSavingsAccount = (refreshedAccounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+
+      await createMembership({
+        member_id: newMemberId,
+        membership_type: values.membership_type,
+        fee_required: selectedBreakdown.membership_fee,
+        fee_paid_now: postedMembershipPaid,
+        created_by: user.id,
+      });
+
+      if (postedMembershipPaid > 0) {
+        await createInvoiceStrict(
+          {
+            payment_type: 'membership',
+            member_id: newMemberId,
+            member_name: memberName || 'Member',
+            amount: postedMembershipPaid,
+            purpose: 'Membership Initial Payment',
+            ref_id: null,
+            created_by: user.id,
+            date: paymentDate,
+          },
+          'Membership initial payment'
+        );
+      }
+
+      if (postedCbuPaid > 0) {
+        if (!refreshedCbuAccount) throw new Error('CBU account not found after member initialization.');
+
+        await createTransaction({
+          member_id: newMemberId,
+          account_id: refreshedCbuAccount.id,
+          category: 'cbu',
+          type: 'deposit',
+          amount: postedCbuPaid,
+          reference: refreshedCbuAccount.account_no || null,
+          created_by: user.id,
+        });
+
+        await createInvoiceStrict(
+          {
+            payment_type: 'cbu',
+            member_id: newMemberId,
+            member_name: memberName || 'Member',
+            amount: postedCbuPaid,
+            purpose: 'Initial CBU Deposit',
+            ref_id: refreshedCbuAccount.id,
+            account_id: refreshedCbuAccount.id,
+            created_by: user.id,
+            date: paymentDate,
+          },
+          'Initial CBU deposit'
+        );
+      }
+
+      if (postedSavingsPaid > 0) {
+        if (!refreshedSavingsAccount) throw new Error('Savings account not found after member initialization.');
+
+        await createTransaction({
+          member_id: newMemberId,
+          account_id: refreshedSavingsAccount.id,
+          category: 'savings',
+          type: 'deposit',
+          amount: postedSavingsPaid,
+          reference: refreshedSavingsAccount.account_no || null,
+          created_by: user.id,
+        });
+
+        await createInvoiceStrict(
+          {
+            payment_type: 'savings',
+            member_id: newMemberId,
+            member_name: memberName || 'Member',
+            amount: postedSavingsPaid,
+            purpose: 'Initial Savings Deposit',
+            ref_id: refreshedSavingsAccount.id,
+            account_id: refreshedSavingsAccount.id,
+            created_by: user.id,
+            date: paymentDate,
+          },
+          'Initial savings deposit'
+        );
       }
 
       toast.success('Member added successfully.');
@@ -155,6 +417,7 @@ export function MemberFormContent({
         navigate(`/members/${newMemberId}`);
       }
     } catch (err) {
+      console.error('[MemberFormPage] save failed:', err);
       toast.error(err.message || 'Failed to save member');
     } finally {
       setLoading(false);
@@ -175,7 +438,7 @@ export function MemberFormContent({
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-start gap-2">
           <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
           <span>
-            This page is for <strong>member registration only</strong>. Financial onboarding and membership fee setup are handled in the Loan Page.
+            You may register a member only, or register and post initial onboarding payments at the same time.
           </span>
         </div>
       )}
@@ -261,6 +524,137 @@ export function MemberFormContent({
             options={MEMBERSHIP_TYPE_OPTIONS}
             {...register('membership_type', { required: 'Membership type is required' })}
           />
+
+          {breakdown && (
+            <div className="sm:col-span-2 mt-2">
+              <div className="p-4 rounded-xl border bg-blue-50/40 border-blue-100">
+                <h4 className="text-sm font-semibold text-blue-800 mb-3">
+                  Membership Breakdown
+                </h4>
+
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Membership Entry</span>
+                    <span>₱{breakdown.membership_fee.toLocaleString()}</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span>Initial CBU</span>
+                    <span>₱{breakdown.cbu.toLocaleString()}</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span>Initial Savings</span>
+                    <span>₱{breakdown.savings.toLocaleString()}</span>
+                  </div>
+
+                  <div className="border-t my-2 border-blue-100"></div>
+
+                  <div className="flex justify-between font-semibold text-base text-blue-900">
+                    <span>Total Amount</span>
+                    <span>₱{total.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isEdit && breakdown && (
+            <div className="sm:col-span-2 mt-2">
+              <div className="p-4 rounded-xl border bg-green-50/40 border-green-100">
+                <div className="flex items-center gap-2 mb-3 text-green-800">
+                  <DollarSign size={16} />
+                  <h4 className="text-sm font-semibold">Onboarding Payment Option</h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Select
+                    label="Payment Mode"
+                    options={PAYMENT_MODE_OPTIONS}
+                    {...register('payment_mode')}
+                  />
+
+                  {paymentMode !== 'none' && (
+                    <Input
+                      label="Payment Date"
+                      type="date"
+                      {...register('payment_date')}
+                    />
+                  )}
+                </div>
+
+                {paymentMode !== 'none' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                    <Input
+                      label={`Membership Entry Paid (max ₱${breakdown.membership_fee.toLocaleString()})`}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      disabled={paymentMode === 'full'}
+                      {...register('membership_paid')}
+                    />
+
+                    <Input
+                      label={`Initial CBU Paid (max ₱${breakdown.cbu.toLocaleString()})`}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      disabled={paymentMode === 'full'}
+                      {...register('cbu_paid')}
+                    />
+
+                    <Input
+                      label={`Initial Savings Paid (max ₱${breakdown.savings.toLocaleString()})`}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      disabled={paymentMode === 'full'}
+                      {...register('savings_paid')}
+                    />
+                  </div>
+                )}
+
+                {paymentMode !== 'none' && (
+                  <div className="mt-4 p-3 rounded-lg bg-white border border-green-100 text-sm">
+                    <div className="flex justify-between">
+                      <span>Membership Remaining</span>
+                      <span>₱{Math.max(0, breakdown.membership_fee - membershipPaid).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span>CBU Remaining</span>
+                      <span>₱{Math.max(0, breakdown.cbu - cbuPaid).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span>Savings Remaining</span>
+                      <span>₱{Math.max(0, breakdown.savings - savingsPaid).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="sm:col-span-2 mt-2">
+            <div className="p-4 rounded-xl border bg-purple-50/40 border-purple-100">
+              <h4 className="text-sm font-semibold text-purple-800 mb-3">
+                Account Details
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="CBU Account No."
+                  placeholder="Enter CBU account number"
+                  {...register('cbu_account_no')}
+                />
+
+                <Input
+                  label="Savings Account No."
+                  placeholder="Enter Savings account number"
+                  {...register('savings_account_no')}
+                />
+              </div>
+            </div>
+          </div>
 
           <div className="sm:col-span-2">
             <Input

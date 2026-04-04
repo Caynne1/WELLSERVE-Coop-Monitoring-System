@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Receipt, Search, Plus, Pencil, Ban, Eye,
-  DollarSign, CheckCircle, Clock, X,
+  DollarSign, CheckCircle, Clock, X, Printer, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -10,7 +10,6 @@ import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-// [ADDED] Member search for the optional member link field
 import MemberSearchInput from '../../components/shared/MemberSearchInput';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -26,135 +25,143 @@ import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatte
 
 const STATUS_BADGE = {
   unpaid: 'warning',
-  paid:   'success',
+  paid: 'success',
   voided: 'danger',
 };
 
 const STATUS_LABEL = {
   unpaid: 'Unpaid',
-  paid:   'Paid',
+  paid: 'Paid',
   voided: 'Voided',
 };
 
+const PAYMENT_TYPE_OPTIONS = [
+  { value: '', label: 'Others' },
+  { value: 'loan_payment', label: 'Loan Payment' },
+  { value: 'cbu', label: 'CBU Deposit' },
+  { value: 'savings', label: 'Savings Deposit' },
+];
+
 const PAYMENT_TYPE_LABEL = {
   loan_payment: 'Loan Payment',
-  cbu:          'CBU Deposit',
-  savings:      'Savings Deposit',
-  membership:   'Membership Fee',
+  cbu: 'CBU Deposit',
+  savings: 'Savings Deposit',
+  membership: 'Membership Fee',
+  capital: 'Manual Fund Deposit',
 };
 
 const PAYMENT_TYPE_STYLE = {
   loan_payment: 'bg-orange-100 text-orange-700',
-  cbu:          'bg-green-100 text-green-700',
-  savings:      'bg-blue-100 text-blue-700',
-  membership:   'bg-purple-100 text-purple-700',
+  cbu: 'bg-green-100 text-green-700',
+  savings: 'bg-blue-100 text-blue-700',
+  membership: 'bg-purple-100 text-purple-700',
+  capital: 'bg-indigo-100 text-indigo-700',
 };
 
 const EMPTY_FORM = {
-  date:     new Date().toISOString().split('T')[0],
-  due_date: '',
-  payee:    '',
-  purpose:  '',
-  amount:   '',
-  notes:    '',
-  // member_id is tracked separately via selectedMember state,
-  // not as a plain form string, because MemberSearchInput manages its own display.
+  date: new Date().toISOString().split('T')[0],
+  payee: '',
+  purpose: '',
+  amount: '',
+  notes: '',
+  payment_type: '',
 };
 
-// ── Overdue helper ────────────────────────────────────────────────────────────
-
-function isOverdue(invoice) {
-  if (invoice.status !== 'unpaid' || !invoice.due_date) return false;
-  return new Date(invoice.due_date) < new Date(new Date().toDateString());
+function getAccountNoDisplay(invoice) {
+  if (invoice.payment_type === 'cbu' || invoice.payment_type === 'savings') {
+    return invoice.accounts?.account_no || '—';
+  }
+  if (invoice.payment_type === 'capital') {
+    return 'COOP FUND';
+  }
+  return '—';
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+function getPaymentSource(invoice) {
+  return invoice.payment_type ? 'System' : 'Manual';
+}
 
 export default function InvoicesPage() {
   const { user } = useAuth();
 
-  // Data
-  const [invoices, setInvoices]       = useState([]);
-  const [loading, setLoading]         = useState(true);
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Filters
-  const [search, setSearch]           = useState('');
-  const [statFilter, setStatFilter]   = useState('');
-  const [typeFilter, setTypeFilter]   = useState('');
+  const [search, setSearch] = useState('');
+  const [statFilter, setStatFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
-  // Add / Edit modal
-  const [formOpen, setFormOpen]       = useState(false);
-  const [editTarget, setEditTarget]   = useState(null);
-  const [form, setForm]               = useState(EMPTY_FORM);
-  const [formErr, setFormErr]         = useState({});
-  const [saving, setSaving]           = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [formErr, setFormErr] = useState({});
+  const [saving, setSaving] = useState(false);
 
-  // [ADDED] Selected member object for the optional member link
   const [selectedMember, setSelectedMember] = useState(null);
 
-  // View detail modal
-  const [viewTarget, setViewTarget]   = useState(null);
+  const [viewTarget, setViewTarget] = useState(null);
 
-  // Mark paid confirm modal
-  const [paidTarget, setPaidTarget]   = useState(null);
-  const [marking, setMarking]         = useState(false);
+  const [paidTarget, setPaidTarget] = useState(null);
+  const [marking, setMarking] = useState(false);
 
-  // Void confirm modal
-  const [voidTarget, setVoidTarget]   = useState(null);
-  const [voiding, setVoiding]         = useState(false);
-
-  // ── Fetch ────────────────────────────────────────────────────────────────────
+  const [voidTarget, setVoidTarget] = useState(null);
+  const [voiding, setVoiding] = useState(false);
 
   const fetchInvoices = useCallback(async () => {
     try {
       setLoading(true);
-      setInvoices(await getInvoices());
+      const data = await getInvoices({
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+      });
+      setInvoices(data);
     } catch {
       toast.error('Failed to load invoices.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo]);
 
-  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
 
-  // ── Client-side filtering ────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    return invoices.filter(inv => {
+      const q = search.toLowerCase();
 
-  const filtered = invoices.filter(inv => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || (
-      inv.payee?.toLowerCase().includes(q)      ||
-      inv.purpose?.toLowerCase().includes(q)    ||
-      inv.invoice_no?.toLowerCase().includes(q) ||
-      `${inv.members?.first_name || ''} ${inv.members?.last_name || ''}`
-        .toLowerCase().includes(q)
-    );
+      const matchSearch = !q || (
+        inv.payee?.toLowerCase().includes(q) ||
+        inv.purpose?.toLowerCase().includes(q) ||
+        inv.invoice_no?.toLowerCase().includes(q) ||
+        `${inv.members?.first_name || ''} ${inv.members?.last_name || ''}`.toLowerCase().includes(q) ||
+        getAccountNoDisplay(inv).toLowerCase().includes(q)
+      );
 
-    const matchStat = !statFilter || inv.status === statFilter;
-    const matchType =
-  !typeFilter
-    ? true
-    : typeFilter === 'others'
-      ? !['loan_payment', 'cbu', 'savings'].includes(inv.payment_type || '')
-      : (inv.payment_type || '') === typeFilter;
+      const matchStat = !statFilter || inv.status === statFilter;
 
-    return matchSearch && matchStat && matchType;
-  });
+      const matchType =
+        !typeFilter
+          ? true
+          : typeFilter === 'others'
+            ? !['loan_payment', 'cbu', 'savings'].includes(inv.payment_type || '')
+            : (inv.payment_type || '') === typeFilter;
 
-  // ── Summary stats ────────────────────────────────────────────────────────────
+      return matchSearch && matchStat && matchType;
+    });
+  }, [invoices, search, statFilter, typeFilter]);
 
-  const unpaidList  = invoices.filter(inv => inv.status === 'unpaid');
-  const paidList    = invoices.filter(inv => inv.status === 'paid');
-  const overdueList = invoices.filter(isOverdue);
+  const unpaidList = invoices.filter(inv => inv.status === 'unpaid');
+  const paidList = invoices.filter(inv => inv.status === 'paid');
   const totalUnpaid = unpaidList.reduce((s, inv) => s + (inv.amount || 0), 0);
-  const totalPaid   = paidList.reduce((s, inv)   => s + (inv.amount || 0), 0);
-
-  // ── Form helpers ─────────────────────────────────────────────────────────────
+  const totalPaid = paidList.reduce((s, inv) => s + (inv.amount || 0), 0);
 
   function openAdd() {
     setEditTarget(null);
     setForm({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
-    setSelectedMember(null);   // [ADDED] reset member selection
+    setSelectedMember(null);
     setFormErr({});
     setFormOpen(true);
   }
@@ -162,14 +169,15 @@ export default function InvoicesPage() {
   function openEdit(invoice) {
     setEditTarget(invoice);
     setForm({
-      date:     invoice.date     || '',
-      due_date: invoice.due_date || '',
-      payee:    invoice.payee    || '',
-      purpose:  invoice.purpose  || '',
-      amount:   invoice.amount?.toString() || '',
-      notes:    invoice.notes    || '',
+      date: invoice.date || '',
+      payee: invoice.payee || '',
+      purpose: invoice.purpose || '',
+      amount: invoice.amount?.toString() || '',
+      notes: invoice.notes || '',
+      payment_type: ['loan_payment', 'cbu', 'savings'].includes(invoice.payment_type || '')
+        ? invoice.payment_type
+        : '',
     });
-    // [ADDED] Pre-populate selectedMember from the joined members field
     setSelectedMember(invoice.members || null);
     setFormErr({});
     setFormOpen(true);
@@ -182,41 +190,44 @@ export default function InvoicesPage() {
 
   function validateForm() {
     const errs = {};
-    if (!form.date)           errs.date    = 'Date is required.';
-    if (!form.payee.trim())   errs.payee   = 'Payee is required.';
+    if (!form.date) errs.date = 'Date is required.';
+    if (!form.payee.trim()) errs.payee = 'Payee is required.';
     if (!form.purpose.trim()) errs.purpose = 'Purpose is required.';
     const amt = parseFloat(form.amount);
-    if (!form.amount || isNaN(amt) || amt <= 0)
+    if (!form.amount || isNaN(amt) || amt <= 0) {
       errs.amount = 'Enter a valid amount greater than zero.';
-    if (form.due_date && form.date && form.due_date < form.date)
-      errs.due_date = 'Due date cannot be before the invoice date.';
+    }
     return errs;
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
-
   async function handleSave() {
     const errs = validateForm();
-    if (Object.keys(errs).length) { setFormErr(errs); return; }
+    if (Object.keys(errs).length) {
+      setFormErr(errs);
+      return;
+    }
 
     setSaving(true);
     try {
       const payload = {
-        date:       form.date,
-        due_date:   form.due_date     || null,
-        payee:      form.payee.trim(),
-        purpose:    form.purpose.trim(),
-        amount:     parseFloat(form.amount),
-        notes:      form.notes.trim() || null,
-        created_by: user?.id          ?? null,
-        member_id:  selectedMember?.id || null,   // [ADDED] null when not linked
+        date: form.date,
+        payee: form.payee.trim(),
+        purpose: form.purpose.trim(),
+        amount: parseFloat(form.amount),
+        notes: form.notes.trim() || null,
+        payment_type: form.payment_type || null,
+        created_by: user?.id ?? null,
+        member_id: selectedMember?.id || null,
       };
 
       if (editTarget) {
         await updateInvoice(editTarget.id, payload);
         toast.success('Invoice updated.');
       } else {
-        await createInvoice(payload);
+        await createInvoice({
+          ...payload,
+          status: 'unpaid',
+        });
         toast.success('Invoice created.');
       }
 
@@ -228,8 +239,6 @@ export default function InvoicesPage() {
       setSaving(false);
     }
   }
-
-  // ── Mark Paid ────────────────────────────────────────────────────────────────
 
   async function handleMarkPaid() {
     if (!paidTarget) return;
@@ -246,8 +255,6 @@ export default function InvoicesPage() {
     }
   }
 
-  // ── Void ─────────────────────────────────────────────────────────────────────
-
   async function handleVoid() {
     if (!voidTarget) return;
     setVoiding(true);
@@ -263,7 +270,117 @@ export default function InvoicesPage() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  function handlePrintPreview() {
+    const rowsHtml = filtered.map(invoice => `
+      <tr>
+        <td style="padding:8px;border:1px solid #ddd;">${invoice.invoice_no || '—'}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${formatDate(invoice.date)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${getAccountNoDisplay(invoice)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${invoice.payee || '—'}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${invoice.purpose || '—'}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others'}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${getPaymentSource(invoice)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${formatCurrency(invoice.amount)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${STATUS_LABEL[invoice.status] || invoice.status}</td>
+      </tr>
+    `).join('');
+
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) {
+      toast.error('Unable to open print preview.');
+      return;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Invoice Print Preview</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #222; }
+            h1 { margin: 0 0 4px; }
+            p { margin: 0 0 16px; color: #666; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th { background: #f5f5f5; text-align: left; padding: 8px; border: 1px solid #ddd; }
+            td { vertical-align: top; }
+          </style>
+        </head>
+        <body>
+          <h1>Invoice Report</h1>
+          <p>Generated: ${new Date().toLocaleString()}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice No.</th>
+                <th>Date</th>
+                <th>Account No.</th>
+                <th>Payee</th>
+                <th>Purpose</th>
+                <th>Payment Type</th>
+                <th>Payment Source</th>
+                <th>Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="9" style="padding:12px;border:1px solid #ddd;">No invoices found.</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+  }
+
+  function handleExportCSV() {
+    try {
+      const headers = [
+        'Invoice No.',
+        'Date',
+        'Account No.',
+        'Payee',
+        'Purpose',
+        'Payment Type',
+        'Payment Source',
+        'Amount',
+        'Status',
+      ];
+
+      const rows = filtered.map(invoice => [
+        invoice.invoice_no || '',
+        formatDate(invoice.date),
+        getAccountNoDisplay(invoice),
+        invoice.payee || '',
+        invoice.purpose || '',
+        PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others',
+        getPaymentSource(invoice),
+        invoice.amount || 0,
+        STATUS_LABEL[invoice.status] || invoice.status || '',
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row =>
+          row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')
+        ),
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `invoices_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('Invoice export generated.');
+    } catch {
+      toast.error('Failed to export invoice report.');
+    }
+  }
 
   return (
     <div className="p-6">
@@ -271,13 +388,20 @@ export default function InvoicesPage() {
         title="Invoices"
         subtitle="Manage cooperative invoices and track payments"
         action={
-          <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
-            New Invoice
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" icon={<Printer size={15} />} onClick={handlePrintPreview}>
+              Print
+            </Button>
+            <Button variant="outline" icon={<Download size={15} />} onClick={handleExportCSV}>
+              Export
+            </Button>
+            <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
+              New Invoice
+            </Button>
+          </div>
         }
       />
 
-      {/* ── Summary cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
         <SummaryCard
           icon={<Clock size={20} className="text-amber-500" />}
@@ -293,55 +417,58 @@ export default function InvoicesPage() {
         />
         <SummaryCard
           icon={<DollarSign size={20} className="text-red-500" />}
-          label="Overdue"
-          value={overdueList.length}
+          label="Paid Records"
+          value={paidList.length}
           bg="bg-red-50"
         />
       </div>
 
-      {/* ── Filters ── */}
- <div className="flex flex-col sm:flex-row gap-3 mb-4">
-  <div className="relative flex-1 max-w-sm">
-    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-    <input
-      type="text"
-      placeholder="Search by payee, purpose, member, or invoice no..."
-      value={search}
-      onChange={e => setSearch(e.target.value)}
-      className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg
-        focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
-    />
-  </div>
+      <div className="flex flex-col lg:flex-row gap-3 mb-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by payee, purpose, member, invoice no, or account no..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+          />
+        </div>
 
-  <select
-    value={statFilter}
-    onChange={e => setStatFilter(e.target.value)}
-    className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-      focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
-  >
-    <option value="">All Status</option>
-    <option value="unpaid">Unpaid</option>
-    <option value="paid">Paid</option>
-    <option value="voided">Voided</option>
-  </select>
+        <select
+          value={statFilter}
+          onChange={e => setStatFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+        >
+          <option value="">All Status</option>
+          <option value="paid">Paid</option>
+          <option value="unpaid">Unpaid</option>
+        </select>
 
-  <select
-    value={typeFilter}
-    onChange={e => setTypeFilter(e.target.value)}
-    className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-      focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
-  >
-    <option value="">All Type</option>
-    <option value="loan_payment">Loan Payment</option>
-    <option value="cbu">CBU Deposit</option>
-    <option value="savings">Savings Deposit</option>
-    <option value="salary">Salary</option>
-    <option value="maintenance">Maintenance</option>
-    <option value="">Others</option>
-  </select>
-</div>
+        <select
+          value={typeFilter}
+          onChange={e => setTypeFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+        >
+          <option value="">All Type</option>
+          <option value="loan_payment">Loan Payment</option>
+          <option value="cbu">CBU Deposit</option>
+          <option value="savings">Savings Deposit</option>
+          <option value="others">Others</option>
+        </select>
 
-      {/* ── Table ── */}
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={e => setDateFrom(e.target.value)}
+        />
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={e => setDateTo(e.target.value)}
+        />
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-20"><Spinner /></div>
       ) : (
@@ -350,7 +477,7 @@ export default function InvoicesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Invoice No.', 'Date', 'Due Date', 'Payee', 'Purpose', 'Payment Type', 'Amount', 'Status', ''].map(h => (
+                  {['Invoice No.', 'Date', 'Account No.', 'Payee', 'Purpose', 'Payment Type', 'Payment Source', 'Amount', 'Status', ''].map(h => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -363,128 +490,125 @@ export default function InvoicesPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-gray-400">
+                    <td colSpan={10} className="text-center py-12 text-gray-400">
                       <Receipt size={32} className="mx-auto mb-2 text-gray-200" />
-                      {search || statFilter
+                      {search || statFilter || typeFilter || dateFrom || dateTo
                         ? 'No invoices match your filters.'
                         : 'No invoices created yet.'}
                     </td>
                   </tr>
-                ) : filtered.map(invoice => {
-                  const overdue = isOverdue(invoice);
-                  return (
-                    <tr
-                      key={invoice.id}
-                      className={`hover:bg-[#D6FADC]/20 transition-colors ${
-                        invoice.status === 'voided' ? 'opacity-50' : ''
-                      }`}
-                    >
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs font-semibold text-gray-700
-                          bg-gray-100 px-2 py-0.5 rounded">
-                          {invoice.invoice_no}
+                ) : filtered.map(invoice => (
+                  <tr
+                    key={invoice.id}
+                    className={`hover:bg-[#D6FADC]/20 transition-colors ${
+                      invoice.status === 'voided' ? 'opacity-50' : ''
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                        {invoice.invoice_no}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      {formatDate(invoice.date)}
+                    </td>
+
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="font-mono text-xs text-gray-700">
+                        {getAccountNoDisplay(invoice)}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{invoice.payee}</p>
+                      {invoice.members && (
+                        <p className="text-xs text-[#07A04E] font-mono mt-0.5">
+                          {invoice.members.first_name} {invoice.members.last_name}
+                          {invoice.members.member_no && ` · ${invoice.members.member_no}`}
+                        </p>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-600">
+                      <p className="truncate max-w-[220px]">{invoice.purpose}</p>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {invoice.payment_type ? (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_TYPE_STYLE[invoice.payment_type] || 'bg-gray-100 text-gray-600'}`}>
+                          {PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others'}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                        {formatDate(invoice.date)}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {invoice.due_date ? (
-                          <span className={overdue ? 'text-red-600 font-medium' : 'text-gray-600'}>
-                            {formatDate(invoice.due_date)}
-                            {overdue && (
-                              <span className="ml-1.5 text-xs bg-red-100 text-red-600
-                                px-1.5 py-0.5 rounded-full font-semibold">
-                                Overdue
-                              </span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{invoice.payee}</p>
-                        {/* [ADDED] Show linked member name below payee when present */}
-                        {invoice.members && (
-                          <p className="text-xs text-[#07A04E] font-mono mt-0.5">
-                            {invoice.members.first_name} {invoice.members.last_name}
-                            {invoice.members.member_no && ` · ${invoice.members.member_no}`}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">
-                        <p className="truncate max-w-[180px]">{invoice.purpose}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        {invoice.payment_type ? (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_TYPE_STYLE[invoice.payment_type] || 'bg-gray-100 text-gray-600'}`}>
-                            {PAYMENT_TYPE_LABEL[invoice.payment_type] || invoice.payment_type}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
-                        {formatCurrency(invoice.amount)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={STATUS_BADGE[invoice.status] || 'default'} dot>
-                          {STATUS_LABEL[invoice.status] || invoice.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 justify-end">
+                      ) : (
+                        <span className="text-gray-400 text-xs">Others</span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Badge variant={getPaymentSource(invoice) === 'System' ? 'info' : 'default'}>
+                        {getPaymentSource(invoice)}
+                      </Badge>
+                    </td>
+
+                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
+                      {formatCurrency(invoice.amount)}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Badge variant={STATUS_BADGE[invoice.status] || 'default'} dot>
+                        {STATUS_LABEL[invoice.status] || invoice.status}
+                      </Badge>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={() => setViewTarget(invoice)}
+                          title="View Details"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-blue-50 transition-colors"
+                        >
+                          <Eye size={15} />
+                        </button>
+
+                        {invoice.status === 'unpaid' && (
                           <button
-                            onClick={() => setViewTarget(invoice)}
-                            title="View Details"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066]
-                              hover:bg-blue-50 transition-colors"
+                            onClick={() => openEdit(invoice)}
+                            title="Edit Invoice"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-blue-50 transition-colors"
                           >
-                            <Eye size={15} />
+                            <Pencil size={15} />
                           </button>
-                          {invoice.status === 'unpaid' && (
-                            <button
-                              onClick={() => openEdit(invoice)}
-                              title="Edit Invoice"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066]
-                                hover:bg-blue-50 transition-colors"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                          )}
-                          {invoice.status === 'unpaid' && (
-                            <button
-                              onClick={() => setPaidTarget(invoice)}
-                              title="Mark as Paid"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-green-600
-                                hover:bg-green-50 transition-colors"
-                            >
-                              <CheckCircle size={15} />
-                            </button>
-                          )}
-                          {invoice.status === 'unpaid' && (
-                            <button
-                              onClick={() => setVoidTarget(invoice)}
-                              title="Void Invoice"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600
-                                hover:bg-red-50 transition-colors"
-                            >
-                              <Ban size={15} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        )}
+
+                        {invoice.status === 'unpaid' && (
+                          <button
+                            onClick={() => setPaidTarget(invoice)}
+                            title="Mark as Paid"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                          >
+                            <CheckCircle size={15} />
+                          </button>
+                        )}
+
+                        {invoice.status === 'unpaid' && (
+                          <button
+                            onClick={() => setVoidTarget(invoice)}
+                            title="Void Invoice"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Ban size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
           {filtered.length > 0 && (
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50
-              flex items-center justify-between">
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
               <p className="text-xs text-gray-500">
                 Showing {filtered.length} of {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
               </p>
@@ -503,7 +627,6 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* ── Add / Edit Modal ── */}
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
@@ -511,23 +634,21 @@ export default function InvoicesPage() {
         size="md"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Invoice Date"
-              required
-              type="date"
-              value={form.date}
-              onChange={e => setField('date', e.target.value)}
-              error={formErr.date}
-            />
-            <Input
-              label="Due Date"
-              type="date"
-              value={form.due_date}
-              onChange={e => setField('due_date', e.target.value)}
-              error={formErr.due_date}
-            />
-          </div>
+          <Input
+            label="Invoice Date"
+            required
+            type="date"
+            value={form.date}
+            onChange={e => setField('date', e.target.value)}
+            error={formErr.date}
+          />
+
+          <SelectLike
+            label="Payment Type"
+            value={form.payment_type}
+            onChange={value => setField('payment_type', value)}
+            options={PAYMENT_TYPE_OPTIONS}
+          />
 
           <Input
             label="Payee"
@@ -561,15 +682,13 @@ export default function InvoicesPage() {
             error={formErr.amount}
           />
 
-          {/* [ADDED] Optional member link ──────────────────────────────────── */}
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">
               Linked Member
               <span className="ml-1.5 text-xs font-normal text-gray-400">(optional)</span>
             </label>
             {selectedMember ? (
-              <div className="flex items-center justify-between px-3 py-2 text-sm
-                border border-[#07A04E]/40 rounded-lg bg-[#D6FADC]/30">
+              <div className="flex items-center justify-between px-3 py-2 text-sm border border-[#07A04E]/40 rounded-lg bg-[#D6FADC]/30">
                 <div>
                   <span className="font-medium text-gray-900">
                     {selectedMember.first_name} {selectedMember.last_name}
@@ -607,8 +726,7 @@ export default function InvoicesPage() {
               placeholder="Optional notes..."
               value={form.notes}
               onChange={e => setField('notes', e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition resize-none"
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition resize-none"
             />
           </div>
 
@@ -634,7 +752,6 @@ export default function InvoicesPage() {
         </div>
       </Modal>
 
-      {/* ── View Detail Modal ── */}
       <Modal
         open={!!viewTarget}
         onClose={() => setViewTarget(null)}
@@ -644,12 +761,10 @@ export default function InvoicesPage() {
         {viewTarget && (
           <>
             <div className="flex items-center justify-between mb-5">
-              <span className="font-mono text-sm font-bold text-gray-800
-                bg-gray-100 px-3 py-1 rounded-lg">
+              <span className="font-mono text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">
                 {viewTarget.invoice_no}
               </span>
               <div className="flex items-center gap-2">
-                {isOverdue(viewTarget) && <Badge variant="danger">Overdue</Badge>}
                 <Badge variant={STATUS_BADGE[viewTarget.status] || 'default'} dot>
                   {STATUS_LABEL[viewTarget.status] || viewTarget.status}
                 </Badge>
@@ -659,14 +774,13 @@ export default function InvoicesPage() {
             <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
               {[
                 ['Invoice Date', formatDate(viewTarget.date)],
-                ['Due Date',     viewTarget.due_date ? formatDate(viewTarget.due_date) : '—'],
-                ['Payee',        viewTarget.payee],
-                ['Purpose',      viewTarget.purpose],
-                ['Amount',       <span key="amt" className="font-semibold text-gray-900">
-                                   {formatCurrency(viewTarget.amount)}
-                                 </span>],
-                ['Notes',        viewTarget.notes || '—'],
-                ['Created',      formatDateTime(viewTarget.created_at)],
+                ['Account No.', getAccountNoDisplay(viewTarget)],
+                ['Payee', viewTarget.payee],
+                ['Purpose', viewTarget.purpose],
+                ['Amount', <span key="amt" className="font-semibold text-gray-900">{formatCurrency(viewTarget.amount)}</span>],
+                ['Payment Source', getPaymentSource(viewTarget)],
+                ['Notes', viewTarget.notes || '—'],
+                ['Created', formatDateTime(viewTarget.created_at)],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-start justify-between px-4 py-3 text-sm">
                   <span className="text-gray-400 font-medium w-28 flex-shrink-0">{label}</span>
@@ -674,20 +788,15 @@ export default function InvoicesPage() {
                 </div>
               ))}
 
-              {/* Payment Type — shown when set by an automatic payment flow */}
-              {viewTarget.payment_type && (
-                <div className="flex items-start justify-between px-4 py-3 text-sm">
-                  <span className="text-gray-400 font-medium w-28 flex-shrink-0">Payment Type</span>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_TYPE_STYLE[viewTarget.payment_type] || 'bg-gray-100 text-gray-600'}`}>
-                    {PAYMENT_TYPE_LABEL[viewTarget.payment_type] || viewTarget.payment_type}
-                  </span>
-                </div>
-              )}
+              <div className="flex items-start justify-between px-4 py-3 text-sm">
+                <span className="text-gray-400 font-medium w-28 flex-shrink-0">Payment Type</span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_TYPE_STYLE[viewTarget.payment_type] || 'bg-gray-100 text-gray-600'}`}>
+                  {PAYMENT_TYPE_LABEL[viewTarget.payment_type] || 'Others'}
+                </span>
+              </div>
 
-              {/* [ADDED] Linked member row — only rendered when present ───── */}
               {viewTarget.members && (
-                <div className="flex items-start justify-between px-4 py-3 text-sm
-                  bg-[#D6FADC]/30">
+                <div className="flex items-start justify-between px-4 py-3 text-sm bg-[#D6FADC]/30">
                   <span className="text-gray-400 font-medium w-28 flex-shrink-0">
                     Member
                   </span>
@@ -737,7 +846,6 @@ export default function InvoicesPage() {
         )}
       </Modal>
 
-      {/* ── Mark Paid Confirm Modal ── */}
       <Modal
         open={!!paidTarget}
         onClose={() => setPaidTarget(null)}
@@ -779,7 +887,6 @@ export default function InvoicesPage() {
         )}
       </Modal>
 
-      {/* ── Void Confirm Modal ── */}
       <Modal
         open={!!voidTarget}
         onClose={() => setVoidTarget(null)}
@@ -827,8 +934,6 @@ export default function InvoicesPage() {
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
 function SummaryCard({ icon, label, value, bg }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
@@ -839,6 +944,25 @@ function SummaryCard({ icon, label, value, bg }) {
         <p className="text-xs text-gray-400">{label}</p>
         <p className="text-lg font-bold text-gray-900">{value}</p>
       </div>
+    </div>
+  );
+}
+
+function SelectLike({ label, value, onChange, options }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-sm font-medium text-gray-700">{label}</label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+      >
+        {options.map(opt => (
+          <option key={`${opt.value}-${opt.label}`} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

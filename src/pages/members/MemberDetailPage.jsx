@@ -72,35 +72,35 @@ export default function MemberDetailPage() {
   const [penaltyLoading, setPenaltyLoading] = useState(false);
 
   async function fetchAll() {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const [memberData, initialAccounts, loansData, txData] = await Promise.all([
-      getMemberById(id),
-      getAccountsByMemberId(id),
-      getLoansByMemberId(id),
-      getTransactionsByMemberId(id),
-    ]);
+      const [memberData, initialAccounts, loansData, txData] = await Promise.all([
+        getMemberById(id),
+        getAccountsByMemberId(id),
+        getLoansByMemberId(id),
+        getTransactionsByMemberId(id),
+      ]);
 
-    let finalAccounts = initialAccounts || [];
-    const accountTypes = finalAccounts.map(a => String(a.account_type).toLowerCase());
+      let finalAccounts = initialAccounts || [];
+      const accountTypes = finalAccounts.map(a => String(a.account_type).toLowerCase());
 
-    if (!accountTypes.includes('cbu') || !accountTypes.includes('savings')) {
-      await initializeMemberAccounts(id);
-      finalAccounts = await getAccountsByMemberId(id);
+      if (!accountTypes.includes('cbu') || !accountTypes.includes('savings')) {
+        await initializeMemberAccounts(id);
+        finalAccounts = await getAccountsByMemberId(id);
+      }
+
+      setMember(memberData);
+      setAccounts(finalAccounts || []);
+      setLoans(loansData || []);
+      setTransactions(txData || []);
+    } catch (err) {
+      console.error('[MemberDetailPage] fetchAll failed:', err);
+      toast.error('Failed to load member data');
+    } finally {
+      setLoading(false);
     }
-
-    setMember(memberData);
-    setAccounts(finalAccounts || []);
-    setLoans(loansData || []);
-    setTransactions(txData || []);
-  } catch (err) {
-    console.error('[MemberDetailPage] fetchAll failed:', err);
-    toast.error('Failed to load member data');
-  } finally {
-    setLoading(false);
   }
-}
 
   const fetchMembership = useCallback(async () => {
     try {
@@ -481,7 +481,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             member_id: memberId,
             member_name: memberName || 'Member',
             amount: loanPay,
-            purpose: `Loan Payment — ${loan.loan_no || loan.id}`,
+            purpose: 'Loan Payment',
             ref_id: loan.id,
             created_by: userId ?? null,
             date: paymentDate,
@@ -507,7 +507,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             member_id: memberId,
             member_name: memberName || 'Member',
             amount: cbuPay,
-            purpose: `CBU Deposit — ${cbuAccount.account_no || cbuAccount.id}`,
+            purpose: 'CBU Deposit',
             ref_id: cbuAccount.id,
             account_id: cbuAccount.id,
             created_by: userId ?? null,
@@ -534,7 +534,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             member_id: memberId,
             member_name: memberName || 'Member',
             amount: savingsPay,
-            purpose: `Savings Deposit — ${savingsAccount.account_no || savingsAccount.id}`,
+            purpose: 'Savings Deposit',
             ref_id: savingsAccount.id,
             account_id: savingsAccount.id,
             created_by: userId ?? null,
@@ -592,33 +592,33 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
         </div>
 
         <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-              CBU Deposit <span className="text-gray-400">(current: {formatCurrency(cbuAccount?.balance ?? 0)})</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={cbuAmt}
-              onChange={e => setCbuAmt(e.target.value)}
-              placeholder="0.00"
-              className={fieldClass}
-            />
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            CBU Deposit <span className="text-gray-400">(current: {formatCurrency(cbuAccount?.balance ?? 0)})</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={cbuAmt}
+            onChange={e => setCbuAmt(e.target.value)}
+            placeholder="0.00"
+            className={fieldClass}
+          />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-                Savings Deposit <span className="text-gray-400">(current: {formatCurrency(savingsAccount?.balance ?? 0)})</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={savingsAmt}
-                onChange={e => setSavingsAmt(e.target.value)}
-                placeholder="0.00"
-                className={fieldClass}
-            />
+            Savings Deposit <span className="text-gray-400">(current: {formatCurrency(savingsAccount?.balance ?? 0)})</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={savingsAmt}
+            onChange={e => setSavingsAmt(e.target.value)}
+            placeholder="0.00"
+            className={fieldClass}
+          />
         </div>
 
         <div className="max-w-[220px]">
@@ -678,7 +678,7 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
           member_id: memberId,
           member_name: memberName || 'Member',
           amount: value,
-          purpose: `${label} Deposit — ${account.account_no || account.id}`,
+          purpose: `${label} Deposit`,
           ref_id: account.id,
           account_id: account.id,
           created_by: userId ?? null,

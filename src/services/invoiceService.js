@@ -1,18 +1,13 @@
 import { supabase } from './supabase';
 
-// ── Column whitelist ──────────────────────────────────────────────────────────
-// Only these fields are ever written to the DB.
-// payment_type, ref_id, account_id, fund_added added to support auto-invoice
-// creation from payment flows (loan, cbu, savings, membership).
-
 const INVOICE_COLUMNS = [
   'invoice_no', 'date', 'due_date', 'payee', 'purpose',
   'amount', 'notes', 'status', 'created_by',
   'member_id',
-  'payment_type',   // 'loan_payment' | 'cbu' | 'savings' | 'membership' | 'capital'
-  'ref_id',         // loan.id | account.id | membership.id (depends on payment_type)
-  'account_id',     // account.id for cbu / savings deposits
-  'fund_added',     // optional flag used by reporting
+  'payment_type',
+  'ref_id',
+  'account_id',
+  'fund_added',
 ];
 
 function sanitizeInvoicePayload(payload) {
@@ -22,10 +17,6 @@ function sanitizeInvoicePayload(payload) {
     )
   );
 }
-
-// ── Invoice number generation ─────────────────────────────────────────────────
-// SAFE VERSION: uses PostgreSQL sequence via RPC.
-// This avoids duplicate SI numbers when multiple users create invoices at once.
 
 async function generateInvoiceNo() {
   const year = new Date().getFullYear();
@@ -40,8 +31,6 @@ async function generateInvoiceNo() {
   return data;
 }
 
-// ── Read ──────────────────────────────────────────────────────────────────────
-
 export async function getInvoices(filters = {}) {
   let query = supabase
     .from('invoices')
@@ -50,26 +39,43 @@ export async function getInvoices(filters = {}) {
     .order('created_at', { ascending: false });
 
   if (filters.status) query = query.eq('status', filters.status);
+  if (filters.from) query = query.gte('date', filters.from);
+  if (filters.to) query = query.lte('date', filters.to);
 
   const { data: invoices, error } = await query;
   if (error) throw error;
   if (!invoices || invoices.length === 0) return [];
 
-  // Optional join: attach linked member for display in detail modal
   const memberIds = [...new Set(invoices.map(inv => inv.member_id).filter(Boolean))];
-  if (memberIds.length === 0) return invoices;
+  const accountIds = [...new Set(invoices.map(inv => inv.account_id).filter(Boolean))];
 
-  const { data: members, error: memberError } = await supabase
-    .from('members')
-    .select('id, first_name, last_name, member_no')
-    .in('id', memberIds);
+  let memberMap = {};
+  let accountMap = {};
 
-  if (memberError) throw memberError;
+  if (memberIds.length > 0) {
+    const { data: members, error: memberError } = await supabase
+      .from('members')
+      .select('id, first_name, last_name, member_no')
+      .in('id', memberIds);
 
-  const memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
+    if (memberError) throw memberError;
+    memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
+  }
+
+  if (accountIds.length > 0) {
+    const { data: accounts, error: accountError } = await supabase
+      .from('accounts')
+      .select('id, account_no, account_type, member_id')
+      .in('id', accountIds);
+
+    if (accountError) throw accountError;
+    accountMap = Object.fromEntries((accounts || []).map(a => [a.id, a]));
+  }
+
   return invoices.map(inv => ({
     ...inv,
     members: inv.member_id ? (memberMap[inv.member_id] || null) : null,
+    accounts: inv.account_id ? (accountMap[inv.account_id] || null) : null,
   }));
 }
 
@@ -83,9 +89,6 @@ export async function getInvoiceById(id) {
   if (error) throw error;
   return data;
 }
-
-// ── Create ────────────────────────────────────────────────────────────────────
-// invoice_no is always auto-generated — callers must not pass it in.
 
 export async function createInvoice(payload) {
   const invoice_no = await generateInvoiceNo();
@@ -101,24 +104,6 @@ export async function createInvoice(payload) {
   return data;
 }
 
-// ── createInvoiceForPayment ───────────────────────────────────────────────────
-// Convenience wrapper called by every payment flow.
-// Creates an invoice that is immediately marked 'paid' because the money
-// has already been received at the time the payment is posted.
-//
-// payment_type values:
-//   'loan_payment'  — loan repayment
-//   'cbu'           — CBU / capital build-up deposit
-//   'savings'       — savings deposit
-//   'membership'    — membership fee payment
-//   'capital'       — manual cooperative fund deposit
-//
-// ref_id should be:
-//   loan_payment → loan.id
-//   cbu          → account.id  (also pass account_id)
-//   savings      → account.id  (also pass account_id)
-//   membership   → member_membership.id
-
 export async function createInvoiceForPayment({
   payment_type,
   member_id,
@@ -132,7 +117,9 @@ export async function createInvoiceForPayment({
   date = null,
 }) {
   if (!payment_type) throw new Error('payment_type is required for invoice creation.');
-  if (!member_id) throw new Error('member_id is required for invoice creation.');
+  if (!member_id && payment_type !== 'capital') {
+    throw new Error('member_id is required for invoice creation.');
+  }
   if (!member_name) throw new Error('member_name is required for invoice creation.');
   if (!amount || Number(amount) <= 0) throw new Error('amount must be greater than zero.');
 
@@ -151,10 +138,6 @@ export async function createInvoiceForPayment({
   });
 }
 
-// ── Update ────────────────────────────────────────────────────────────────────
-// Only safe to call on unpaid invoices. The page enforces this.
-// invoice_no and status are stripped so they can never be overwritten via edit.
-
 export async function updateInvoice(id, payload) {
   const clean = sanitizeInvoicePayload(payload);
   delete clean.invoice_no;
@@ -171,10 +154,6 @@ export async function updateInvoice(id, payload) {
   return data;
 }
 
-// ── Status transitions ────────────────────────────────────────────────────────
-// Each function handles exactly one transition.
-// The DB check constraint is the final guard.
-
 export async function markInvoicePaid(id) {
   const { data, error } = await supabase
     .from('invoices')
@@ -187,7 +166,6 @@ export async function markInvoicePaid(id) {
   return data;
 }
 
-// Soft delete — rows are never hard-deleted.
 export async function voidInvoice(id) {
   const { data, error } = await supabase
     .from('invoices')
