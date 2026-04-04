@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, useWatch } from 'react-hook-form';
-import { ArrowLeft, Save, Calculator, UploadCloud, FileSpreadsheet } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Calculator,
+  UploadCloud,
+  FileSpreadsheet,
+  Eye,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -20,18 +27,15 @@ import {
   updateMember,
 } from '../../services/memberService';
 import {
-  getMembershipByMemberId,
-  createMembership,
-  recordMembershipPayment,
-  computeFeeBalance,
-} from '../../services/membershipService';
-import {
   uploadLoanDocument,
   getLoanDocumentsByLoanId,
 } from '../../services/loanDocumentService';
 import { useAuth } from '../../context/AuthContext';
-import { computeMonthlyAmortization } from '../../utils/loanCalculator';
-import { formatCurrency } from '../../utils/formatters';
+import {
+  generateLoanPreview,
+  frequencyDisplayLabel,
+} from '../../utils/loanCalculator';
+import { formatCurrency, formatDate } from '../../utils/formatters';
 
 const STATUS_OPTS = [
   { value: 'active', label: 'Active' },
@@ -41,10 +45,21 @@ const STATUS_OPTS = [
 ];
 
 const FREQUENCY_OPTS = [
-  { value: 'monthly', label: 'Monthly' },
   { value: 'weekly', label: 'Weekly' },
+  { value: 'semi_monthly', label: 'Semi-Monthly' },
+  { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
-  { value: 'chattel', label: 'Chattel' },
+  { value: 'yearly', label: 'Yearly' },
+];
+
+const LOAN_METHOD_OPTS = [
+  { value: 'diminishing', label: 'Diminishing' },
+  { value: 'straight', label: 'Straight' },
+];
+
+const INSURANCE_MODE_OPTS = [
+  { value: 'fixed', label: 'Fixed' },
+  { value: 'manual', label: 'Manual' },
 ];
 
 const emptyMemberProfile = {
@@ -66,6 +81,10 @@ const emptyMemberProfile = {
   beneficiary_tel: '',
 };
 
+function round2(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
 export default function LoanFormPage() {
   const { user } = useAuth();
   const { id } = useParams();
@@ -77,10 +96,10 @@ export default function LoanFormPage() {
   const [initialLoading, setInitialLoading] = useState(isEdit);
   const [selectedMember, setSelectedMember] = useState(null);
   const [memberProfile, setMemberProfile] = useState(emptyMemberProfile);
-  const [membership, setMembership] = useState(null);
   const [signatureFiles, setSignatureFiles] = useState([]);
   const [leaderSignatureFile, setLeaderSignatureFile] = useState(null);
   const [existingDocuments, setExistingDocuments] = useState([]);
+  const [previewReady, setPreviewReady] = useState(false);
 
   const {
     register,
@@ -88,21 +107,22 @@ export default function LoanFormPage() {
     reset,
     setValue,
     control,
+    getValues,
     formState: { errors },
   } = useForm({
     defaultValues: {
       member_id: '',
       amount: '',
-      interest_rate: '',
+      interest_rate: '2.5',
       term_months: '',
       monthly_amortization: '',
       release_date: '',
       status: 'active',
       purpose: '',
       notes: '',
-      repayment_frequency: 'monthly',
+      repayment_frequency: 'weekly',
+      loan_method: 'diminishing',
 
-      // financial onboarding
       loan_proposal: '',
       service_fee: '',
       share_capital: '',
@@ -110,15 +130,20 @@ export default function LoanFormPage() {
       regular_savings: '',
       total_loan_payable: '',
 
-      // team leader
+      service_fee_percent: '2',
+      cbu_retention_percent: '2.5',
+      notarial_fee: '200',
+      insurance_mode: 'fixed',
+      insurance_fixed_rate_percent: '0',
+      insurance_manual_amount: '',
+
+      cbu_per_period: '25',
+      savings_per_period: '25',
+
       team_leader_name: '',
       team_leader_id_no: '',
       team_leader_account_no: '',
       team_leader_mobile: '',
-
-      // membership reference / setup
-      membership_fee_required: '',
-      membership_fee_paid: '',
     },
   });
 
@@ -126,44 +151,104 @@ export default function LoanFormPage() {
   const watchedRate = useWatch({ control, name: 'interest_rate' });
   const watchedTerm = useWatch({ control, name: 'term_months' });
   const watchedFrequency = useWatch({ control, name: 'repayment_frequency' });
+  const watchedMethod = useWatch({ control, name: 'loan_method' });
+  const watchedReleaseDate = useWatch({ control, name: 'release_date' });
+
   const watchedProposal = useWatch({ control, name: 'loan_proposal' });
-  const watchedMembershipFeeRequired = useWatch({ control, name: 'membership_fee_required' });
-  const watchedMembershipFeePaid = useWatch({ control, name: 'membership_fee_paid' });
+  const watchedShareCapital = useWatch({ control, name: 'share_capital' });
+  const watchedRegularSavings = useWatch({ control, name: 'regular_savings' });
 
-  const calcSummary = (() => {
-    const amount = parseFloat(watchedAmount || watchedProposal) || 0;
-    const annualRate = (parseFloat(watchedRate) || 0) / 100;
-    const termMonths = parseInt(watchedTerm) || 0;
+  const watchedServiceFeePercent = useWatch({ control, name: 'service_fee_percent' });
+  const watchedCbuRetentionPercent = useWatch({ control, name: 'cbu_retention_percent' });
+  const watchedNotarialFee = useWatch({ control, name: 'notarial_fee' });
+  const watchedInsuranceMode = useWatch({ control, name: 'insurance_mode' });
+  const watchedInsuranceFixedRatePercent = useWatch({ control, name: 'insurance_fixed_rate_percent' });
+  const watchedInsuranceManualAmount = useWatch({ control, name: 'insurance_manual_amount' });
 
-    if (amount <= 0 || termMonths <= 0) return null;
+  const watchedCbuPerPeriod = useWatch({ control, name: 'cbu_per_period' });
+  const watchedSavingsPerPeriod = useWatch({ control, name: 'savings_per_period' });
 
-    const monthlyPayment = computeMonthlyAmortization(amount, annualRate, termMonths);
-    const totalPayable = monthlyPayment * termMonths;
-    const totalInterest = totalPayable - amount;
-    const weeklyPayment = (monthlyPayment * 12) / 52;
-    const termWeeks = Math.round(termMonths * (52 / 12));
-    const quarterlyPayment = monthlyPayment * 3;
+  const preview = useMemo(() => {
+    const amount = parseFloat(watchedAmount || 0);
+    const termMonths = parseInt(watchedTerm || 0, 10);
+    const monthlyInterestRate = parseFloat(watchedRate || 0);
 
-    return {
-      monthlyPayment,
-      weeklyPayment,
-      quarterlyPayment,
-      totalPayable,
-      totalInterest,
-      termWeeks,
-    };
-  })();
+    if (amount <= 0 || termMonths <= 0 || monthlyInterestRate < 0) {
+      return null;
+    }
+
+    return generateLoanPreview({
+      amount,
+      termMonths,
+      monthlyInterestRate,
+      paymentFrequency: watchedFrequency || 'weekly',
+      loanMethod: watchedMethod || 'diminishing',
+      startDate: watchedReleaseDate || new Date(),
+      cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 25) || 0,
+      savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 25) || 0,
+      serviceFeePercent: parseFloat(watchedServiceFeePercent || 2) || 0,
+      cbuRetentionPercent: parseFloat(watchedCbuRetentionPercent || 2.5) || 0,
+      notarialFee: parseFloat(watchedNotarialFee || 200) || 0,
+      insuranceMode: watchedInsuranceMode || 'fixed',
+      insuranceAmount: parseFloat(watchedInsuranceManualAmount || 0) || 0,
+      insuranceFixedRatePercent: parseFloat(watchedInsuranceFixedRatePercent || 0) || 0,
+    });
+  }, [
+    watchedAmount,
+    watchedTerm,
+    watchedRate,
+    watchedFrequency,
+    watchedMethod,
+    watchedReleaseDate,
+    watchedCbuPerPeriod,
+    watchedSavingsPerPeriod,
+    watchedServiceFeePercent,
+    watchedCbuRetentionPercent,
+    watchedNotarialFee,
+    watchedInsuranceMode,
+    watchedInsuranceFixedRatePercent,
+    watchedInsuranceManualAmount,
+  ]);
 
   useEffect(() => {
-    if (!calcSummary) return;
+    const proposal = parseFloat(watchedProposal || watchedAmount || 0) || 0;
+    const serviceFee = proposal * ((parseFloat(watchedServiceFeePercent || 2) || 0) / 100);
+    setValue('service_fee', serviceFee ? round2(serviceFee).toFixed(2) : '');
 
-    setValue('monthly_amortization', calcSummary.monthlyPayment.toFixed(2));
-    setValue('total_loan_payable', calcSummary.totalPayable.toFixed(2));
+    setPreviewReady(false);
+  }, [
+    watchedProposal,
+    watchedAmount,
+    watchedServiceFeePercent,
+    watchedRate,
+    watchedTerm,
+    watchedFrequency,
+    watchedMethod,
+    watchedReleaseDate,
+    watchedShareCapital,
+    watchedRegularSavings,
+    watchedInsuranceMode,
+    watchedInsuranceFixedRatePercent,
+    watchedInsuranceManualAmount,
+    watchedCbuPerPeriod,
+    watchedSavingsPerPeriod,
+    watchedCbuRetentionPercent,
+    watchedNotarialFee,
+    setValue,
+  ]);
 
-    const proposal = parseFloat(watchedProposal) || parseFloat(watchedAmount) || 0;
-    const serviceFee = proposal * 0.035;
-    setValue('service_fee', serviceFee ? serviceFee.toFixed(2) : '');
-  }, [calcSummary?.monthlyPayment, calcSummary?.totalPayable, watchedProposal, watchedAmount, setValue]);
+  useEffect(() => {
+    if (!preview) {
+      setValue('monthly_amortization', '');
+      setValue('total_loan_payable', '');
+      setValue('loan_insurance', '');
+      return;
+    }
+
+    setValue('monthly_amortization', String(round2(preview.summary.payment_per_period)));
+    setValue('total_loan_payable', String(round2(preview.summary.total_payments_collected)));
+    setValue('loan_insurance', String(round2(preview.deductions.insurance)));
+  }, [preview, setValue]);
 
   useEffect(() => {
     async function bootstrapCreate() {
@@ -185,29 +270,36 @@ export default function LoanFormPage() {
         reset({
           member_id: data.member_id,
           amount: data.amount || '',
-          interest_rate: data.interest_rate || '',
+          interest_rate: data.interest_rate || '2.5',
           term_months: data.term_months || '',
           monthly_amortization: data.monthly_amortization || '',
           release_date: data.release_date?.split('T')[0] || '',
           status: data.status || 'active',
           purpose: data.purpose || '',
           notes: data.notes || '',
-          repayment_frequency: data.repayment_frequency || 'monthly',
+          repayment_frequency: data.repayment_frequency || 'weekly',
+          loan_method: data.loan_method || 'diminishing',
 
-          loan_proposal: data.loan_proposal || '',
+          loan_proposal: data.loan_proposal || data.amount || '',
           service_fee: data.service_fee || '',
           share_capital: data.share_capital || '',
           loan_insurance: data.loan_insurance || '',
           regular_savings: data.regular_savings || '',
           total_loan_payable: data.total_loan_payable || '',
 
+          service_fee_percent: data.service_fee_percent || '2',
+          cbu_retention_percent: data.cbu_retention_percent || '2.5',
+          notarial_fee: data.notarial_fee || '200',
+          insurance_mode: data.insurance_mode || 'fixed',
+          insurance_fixed_rate_percent: data.insurance_fixed_rate_percent || '0',
+          insurance_manual_amount: data.insurance_manual_amount || '',
+          cbu_per_period: data.cbu_per_period || '25',
+          savings_per_period: data.savings_per_period || '25',
+
           team_leader_name: data.team_leader_name || '',
           team_leader_id_no: data.team_leader_id_no || '',
           team_leader_account_no: data.team_leader_account_no || '',
           team_leader_mobile: data.team_leader_mobile || '',
-
-          membership_fee_required: '',
-          membership_fee_paid: '',
         });
 
         if (data.members) {
@@ -230,11 +322,12 @@ export default function LoanFormPage() {
       }
     }
 
-    if (isEdit) bootstrapEdit();
-    else {
+    if (isEdit) {
+      bootstrapEdit();
+    } else {
       bootstrapCreate().finally(() => setInitialLoading(false));
     }
-  }, [id, isEdit, navigate, reset, searchParams, setValue]);
+  }, [id, isEdit, navigate, reset, searchParams]);
 
   async function applySelectedMember(member) {
     setSelectedMember(member);
@@ -258,25 +351,46 @@ export default function LoanFormPage() {
       beneficiary_address: member.beneficiary_address || '',
       beneficiary_tel: member.beneficiary_tel || '',
     });
-
-    try {
-      const ms = await getMembershipByMemberId(member.id);
-      setMembership(ms || null);
-
-      if (ms) {
-        setValue('membership_fee_required', ms.fee_required || '');
-        setValue('membership_fee_paid', '');
-      } else {
-        setValue('membership_fee_required', '');
-        setValue('membership_fee_paid', '');
-      }
-    } catch {
-      setMembership(null);
-    }
   }
 
   function handleMemberProfileChange(field, value) {
     setMemberProfile(prev => ({ ...prev, [field]: value }));
+  }
+
+  function handlePreview() {
+    const values = getValues();
+
+    if (!values.member_id) {
+      toast.error('Please select a member first.');
+      return;
+    }
+
+    const amount = parseFloat(values.amount || 0);
+    const termMonths = parseInt(values.term_months || 0, 10);
+    const monthlyInterestRate = parseFloat(values.interest_rate || 0);
+
+    if (amount <= 0) {
+      toast.error('Loan amount must be greater than zero.');
+      return;
+    }
+
+    if (termMonths <= 0) {
+      toast.error('Term months must be greater than zero.');
+      return;
+    }
+
+    if (monthlyInterestRate < 0) {
+      toast.error('Interest rate cannot be negative.');
+      return;
+    }
+
+    if (!preview) {
+      toast.error('Unable to generate preview.');
+      return;
+    }
+
+    setPreviewReady(true);
+    toast.success('Loan preview generated.');
   }
 
   async function onSubmit(values) {
@@ -285,9 +399,13 @@ export default function LoanFormPage() {
       return;
     }
 
+    if (!previewReady || !preview) {
+      toast.error('Please preview the loan schedule first before saving.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // 1. persist missing / updated member profile fields from loan page
       await updateMember(values.member_id, {
         middle_initial: memberProfile.middle_initial,
         address: memberProfile.address,
@@ -304,20 +422,45 @@ export default function LoanFormPage() {
         beneficiary_tel: memberProfile.beneficiary_tel,
       });
 
-      // 2. create/update loan
+      const principalAmount = parseFloat(values.amount || 0);
+      const shareCapital = parseFloat(values.share_capital || 0) || 0;
+      const regularSavings = parseFloat(values.regular_savings || 0) || 0;
+
+      const payload = {
+        ...values,
+        amount: principalAmount,
+        balance: principalAmount,
+        monthly_amortization: round2(preview.summary.payment_per_period),
+        total_loan_payable: round2(preview.summary.total_payments_collected),
+        service_fee: round2(preview.deductions.service_fee),
+        loan_insurance: round2(preview.deductions.insurance),
+        loan_proposal: parseFloat(values.loan_proposal || principalAmount) || principalAmount,
+        repayment_frequency: values.repayment_frequency,
+        loan_method: values.loan_method,
+        service_fee_percent: parseFloat(values.service_fee_percent || 2) || 0,
+        cbu_retention_percent: parseFloat(values.cbu_retention_percent || 2.5) || 0,
+        notarial_fee: parseFloat(values.notarial_fee || 200) || 0,
+        insurance_mode: values.insurance_mode,
+        insurance_fixed_rate_percent: parseFloat(values.insurance_fixed_rate_percent || 0) || 0,
+        insurance_manual_amount: parseFloat(values.insurance_manual_amount || 0) || 0,
+        cbu_per_period: parseFloat(values.cbu_per_period || 25) || 0,
+        savings_per_period: parseFloat(values.savings_per_period || 25) || 0,
+        preview_summary_json: JSON.stringify(preview.summary),
+        preview_deductions_json: JSON.stringify(preview.deductions),
+        preview_schedule_json: JSON.stringify(preview.schedule),
+      };
+
       let loan;
       if (isEdit) {
-        loan = await updateLoan(id, values);
+        loan = await updateLoan(id, payload);
       } else {
-        loan = await createLoan(values);
+        loan = await createLoan(payload);
 
-        // helper — full member display name for invoices
         const memberDisplayName = [
           selectedMember?.first_name,
           selectedMember?.last_name,
         ].filter(Boolean).join(' ') || 'Member';
 
-        // loan release transaction stays source-of-truth
         await createTransaction({
           member_id: loan.member_id,
           loan_id: loan.id,
@@ -326,10 +469,6 @@ export default function LoanFormPage() {
           amount: loan.amount,
           created_by: user?.id ?? null,
         });
-
-        // optional CBU from share capital
-        const shareCapital = parseFloat(values.share_capital) || 0;
-        const regularSavings = parseFloat(values.regular_savings) || 0;
 
         if (shareCapital > 0 || regularSavings > 0) {
           const accounts = await getAccountsByMemberId(loan.member_id);
@@ -345,19 +484,21 @@ export default function LoanFormPage() {
               amount: shareCapital,
               created_by: user?.id ?? null,
             });
-            // ── Auto-invoice: CBU share capital deposit ──────────────────────
+
             try {
               await createInvoiceForPayment({
                 payment_type: 'cbu',
-                member_id:    loan.member_id,
-                member_name:  memberDisplayName,
-                amount:       shareCapital,
-                purpose:      `CBU Share Capital — Loan Onboarding (${loan.loan_no || loan.id})`,
-                ref_id:       cbuAccount.id,
-                account_id:   cbuAccount.id,
-                created_by:   user?.id ?? null,
+                member_id: loan.member_id,
+                member_name: memberDisplayName,
+                amount: shareCapital,
+                purpose: 'CBU Share Capital',
+                ref_id: cbuAccount.id,
+                account_id: cbuAccount.id,
+                created_by: user?.id ?? null,
               });
-            } catch (e) { console.error('[LoanFormPage] cbu invoice failed:', e); }
+            } catch (e) {
+              console.error('[LoanFormPage] cbu invoice failed:', e);
+            }
           }
 
           if (regularSavings > 0 && savingsAccount) {
@@ -369,80 +510,25 @@ export default function LoanFormPage() {
               amount: regularSavings,
               created_by: user?.id ?? null,
             });
-            // ── Auto-invoice: savings deposit ────────────────────────────────
+
             try {
               await createInvoiceForPayment({
                 payment_type: 'savings',
-                member_id:    loan.member_id,
-                member_name:  memberDisplayName,
-                amount:       regularSavings,
-                purpose:      `Regular Savings Deposit — Loan Onboarding (${loan.loan_no || loan.id})`,
-                ref_id:       savingsAccount.id,
-                account_id:   savingsAccount.id,
-                created_by:   user?.id ?? null,
+                member_id: loan.member_id,
+                member_name: memberDisplayName,
+                amount: regularSavings,
+                purpose: 'Regular Savings Deposit',
+                ref_id: savingsAccount.id,
+                account_id: savingsAccount.id,
+                created_by: user?.id ?? null,
               });
-            } catch (e) { console.error('[LoanFormPage] savings invoice failed:', e); }
+            } catch (e) {
+              console.error('[LoanFormPage] savings invoice failed:', e);
+            }
           }
         }
       }
 
-      // 3. membership reference/setup on loan page
-      const feeRequired = parseFloat(values.membership_fee_required) || 0;
-      const feePaid = parseFloat(values.membership_fee_paid) || 0;
-
-      // helper — full member display name for invoices (may not be in scope above for edit path)
-      const memberDisplayNameForMembership = [
-        selectedMember?.first_name,
-        selectedMember?.last_name,
-      ].filter(Boolean).join(' ') || 'Member';
-
-      if (!membership && feeRequired > 0) {
-        const ms = await createMembership({
-          member_id: values.member_id,
-          membership_type: selectedMember?.membership_type || 'associate',
-          fee_required: feeRequired,
-          fee_paid_now: feePaid,
-          created_by: user?.id,
-        });
-        setMembership(ms);
-        // ── Auto-invoice: initial membership fee paid at loan onboarding ────
-        if (feePaid > 0) {
-          try {
-            await createInvoiceForPayment({
-              payment_type: 'membership',
-              member_id:    values.member_id,
-              member_name:  memberDisplayNameForMembership,
-              amount:       feePaid,
-              purpose:      'Initial Membership Fee — Loan Onboarding',
-              ref_id:       ms.id,
-              created_by:   user?.id ?? null,
-            });
-          } catch (e) { console.error('[LoanFormPage] membership invoice (new) failed:', e); }
-        }
-      } else if (membership && feePaid > 0) {
-        await recordMembershipPayment(
-          membership.id,
-          values.member_id,
-          feePaid,
-          new Date().toISOString().split('T')[0],
-          'Payment collected during loan onboarding',
-          user?.id
-        );
-        // ── Auto-invoice: membership payment on existing record ──────────────
-        try {
-          await createInvoiceForPayment({
-            payment_type: 'membership',
-            member_id:    values.member_id,
-            member_name:  memberDisplayNameForMembership,
-            amount:       feePaid,
-            purpose:      'Membership Fee Payment — Loan Onboarding',
-            ref_id:       membership.id,
-            created_by:   user?.id ?? null,
-          });
-        } catch (e) { console.error('[LoanFormPage] membership invoice (existing) failed:', e); }
-      }
-
-      // 4. upload loan documents if provided
       if (loan?.id) {
         for (let i = 0; i < signatureFiles.length; i += 1) {
           const file = signatureFiles[i];
@@ -477,17 +563,12 @@ export default function LoanFormPage() {
     }
   }
 
-  const membershipRemaining =
-    membership
-      ? computeFeeBalance(membership) - (parseFloat(watchedMembershipFeePaid) || 0)
-      : (parseFloat(watchedMembershipFeeRequired) || 0) - (parseFloat(watchedMembershipFeePaid) || 0);
-
   if (initialLoading) {
     return <div className="flex justify-center py-24"><Spinner /></div>;
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto">
       <button
         onClick={() => navigate('/loans')}
         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 mb-4 transition-colors"
@@ -497,7 +578,7 @@ export default function LoanFormPage() {
 
       <PageHeader
         title={isEdit ? 'Edit Loan' : 'New Loan'}
-        subtitle={isEdit ? 'Update loan details and onboarding data' : 'Create a loan and complete financial onboarding'}
+        subtitle={isEdit ? 'Update loan details and preview schedule before saving' : 'Create a loan with schedule preview and deduction breakdown'}
       />
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-6">
@@ -638,7 +719,7 @@ export default function LoanFormPage() {
             Loan Details
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <Input
               label="Loan Amount"
               type="number"
@@ -650,35 +731,53 @@ export default function LoanFormPage() {
                 min: { value: 1, message: 'Must be > 0' },
               })}
             />
+
             <Input
-              label="Interest Rate (% per annum)"
+              label="Monthly Interest Rate (%)"
               type="number"
               step="0.01"
               {...register('interest_rate')}
             />
+
             <Input
               label="Term (months)"
               type="number"
               {...register('term_months')}
             />
+
             <Input
               label="Release Date"
               type="date"
               {...register('release_date')}
             />
+
             <Select
-              label="Repayment Frequency"
+              label="Payment Frequency"
               options={FREQUENCY_OPTS}
               {...register('repayment_frequency')}
             />
+
+            <Select
+              label="Loan Method"
+              options={LOAN_METHOD_OPTS}
+              {...register('loan_method')}
+            />
+
             <Select
               label="Status"
               options={STATUS_OPTS}
               {...register('status')}
             />
+
             <Input
               label="Purpose"
               {...register('purpose')}
+            />
+
+            <Input
+              label="Preview Payment / Period"
+              readOnly
+              value={preview ? formatCurrency(preview.summary.payment_per_period) : ''}
             />
           </div>
 
@@ -698,41 +797,104 @@ export default function LoanFormPage() {
         <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
             <FileSpreadsheet size={15} className="text-gray-400" />
-            <h3 className="text-sm font-semibold text-gray-700">Initial Financial Entries</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Loan Deductions & Onboarding</h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <Input
               label="Loan Proposal"
               type="number"
               step="0.01"
               {...register('loan_proposal')}
             />
+
             <Input
-              label="Service Fee (3.5%)"
+              label="Service Fee %"
+              type="number"
+              step="0.01"
+              {...register('service_fee_percent')}
+            />
+
+            <Input
+              label="Service Fee Amount"
               type="number"
               step="0.01"
               readOnly
               {...register('service_fee')}
             />
+
+            <Input
+              label="CBU Retention %"
+              type="number"
+              step="0.01"
+              {...register('cbu_retention_percent')}
+            />
+
+            <Input
+              label="Notarial Fee"
+              type="number"
+              step="0.01"
+              {...register('notarial_fee')}
+            />
+
+            <Select
+              label="Insurance Mode"
+              options={INSURANCE_MODE_OPTS}
+              {...register('insurance_mode')}
+            />
+
+            {watchedInsuranceMode === 'fixed' ? (
+              <Input
+                label="Insurance Fixed Rate %"
+                type="number"
+                step="0.01"
+                {...register('insurance_fixed_rate_percent')}
+              />
+            ) : (
+              <Input
+                label="Insurance Manual Amount"
+                type="number"
+                step="0.01"
+                {...register('insurance_manual_amount')}
+              />
+            )}
+
+            <Input
+              label="Insurance Amount"
+              type="number"
+              step="0.01"
+              readOnly
+              {...register('loan_insurance')}
+            />
+
             <Input
               label="Share Capital"
               type="number"
               step="0.01"
               {...register('share_capital')}
             />
-            <Input
-              label="Loan Insurance"
-              type="number"
-              step="0.01"
-              {...register('loan_insurance')}
-            />
+
             <Input
               label="Regular Savings"
               type="number"
               step="0.01"
               {...register('regular_savings')}
             />
+
+            <Input
+              label="CBU per Period"
+              type="number"
+              step="0.01"
+              {...register('cbu_per_period')}
+            />
+
+            <Input
+              label="Savings per Period"
+              type="number"
+              step="0.01"
+              {...register('savings_per_period')}
+            />
+
             <Input
               label="Total Loan Payable"
               type="number"
@@ -741,50 +903,6 @@ export default function LoanFormPage() {
               {...register('total_loan_payable')}
             />
           </div>
-        </section>
-
-        <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
-            <Calculator size={15} className="text-gray-400" />
-            <h3 className="text-sm font-semibold text-gray-700">Membership Fee Logic</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Membership Type"
-              value={membership?.membership_type || selectedMember?.membership_type || 'associate'}
-              readOnly
-            />
-            <Input
-              label="Membership Fee Required"
-              type="number"
-              step="0.01"
-              {...register('membership_fee_required')}
-            />
-            <Input
-              label="Membership Fee Paid"
-              type="number"
-              step="0.01"
-              {...register('membership_fee_paid')}
-            />
-          </div>
-
-          <div className="mt-4">
-            <div className={`px-3 py-2 rounded-lg border text-sm font-semibold ${
-              (membershipRemaining || 0) > 0
-                ? 'bg-amber-50 border-amber-200 text-amber-700'
-                : 'bg-green-50 border-green-200 text-green-700'
-            }`}>
-              Remaining Balance:{' '}
-              {formatCurrency(Math.max(0, membershipRemaining || 0))}
-            </div>
-          </div>
-
-          {membership && (
-            <p className="text-xs text-gray-400 mt-2">
-              Existing membership ledger detected. Any paid amount entered here will be recorded as an additional membership payment.
-            </p>
-          )}
         </section>
 
         <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
@@ -863,54 +981,156 @@ export default function LoanFormPage() {
           </div>
         </section>
 
-        {calcSummary && (
-          <section>
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <Calculator size={15} className="text-gray-400" />
-                Loan Computation
-              </h3>
+        <section className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between gap-3 mb-4 pb-2 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Calculator size={15} className="text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-700">Loan Preview</h3>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <CalcCard
-                label={
-                  watchedFrequency === 'monthly'
-                    ? 'Monthly Payment'
-                    : watchedFrequency === 'weekly'
-                    ? 'Weekly Payment'
-                    : watchedFrequency === 'quarterly'
-                    ? 'Quarterly Payment'
-                    : 'Monthly Payment'
-                }
-                value={formatCurrency(
-                  watchedFrequency === 'weekly'
-                    ? calcSummary.weeklyPayment
-                    : watchedFrequency === 'quarterly'
-                    ? calcSummary.quarterlyPayment
-                    : calcSummary.monthlyPayment
-                )}
-                highlight
-              />
-              <CalcCard
-                label="Term"
-                value={
-                  watchedFrequency === 'weekly'
-                    ? `~${calcSummary.termWeeks} weeks`
-                    : `${watchedTerm || 0} months`
-                }
-              />
-              <CalcCard label="Total Payable" value={formatCurrency(calcSummary.totalPayable)} />
-              <CalcCard label="Total Interest" value={formatCurrency(calcSummary.totalInterest)} />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePreview}
+              icon={<Eye size={14} />}
+            >
+              Preview Schedule
+            </Button>
+          </div>
+
+          {!preview ? (
+            <p className="text-sm text-gray-400">
+              Enter loan details first to generate a preview.
+            </p>
+          ) : (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <CalcCard
+                  label="Method"
+                  value={watchedMethod === 'straight' ? 'Straight' : 'Diminishing'}
+                />
+                <CalcCard
+                  label="Frequency"
+                  value={frequencyDisplayLabel(watchedFrequency)}
+                />
+                <CalcCard
+                  label="No. of Payments"
+                  value={String(preview.summary.number_of_payments)}
+                />
+                <CalcCard
+                  label="Rate / Period"
+                  value={`${preview.summary.rate_per_period_percent}%`}
+                />
+                <CalcCard
+                  label="Payment / Period"
+                  value={formatCurrency(preview.summary.payment_per_period)}
+                  highlight
+                />
+                <CalcCard
+                  label="Total Principal"
+                  value={formatCurrency(preview.summary.total_principal_collected)}
+                />
+                <CalcCard
+                  label="Total Interest"
+                  value={formatCurrency(preview.summary.total_interest_earned)}
+                />
+                <CalcCard
+                  label="Total Payments"
+                  value={formatCurrency(preview.summary.total_payments_collected)}
+                />
+                <CalcCard
+                  label="ROI"
+                  value={`${preview.summary.total_roi_percent}%`}
+                />
+                <CalcCard
+                  label="Service Fee"
+                  value={formatCurrency(preview.deductions.service_fee)}
+                />
+                <CalcCard
+                  label="CBU Retention"
+                  value={formatCurrency(preview.deductions.cbu_retention)}
+                />
+                <CalcCard
+                  label="Insurance"
+                  value={formatCurrency(preview.deductions.insurance)}
+                />
+                <CalcCard
+                  label="Notarial Fee"
+                  value={formatCurrency(preview.deductions.notarial_fee)}
+                />
+                <CalcCard
+                  label="Total Deductions"
+                  value={formatCurrency(preview.deductions.total_deductions)}
+                />
+                <CalcCard
+                  label="Net Proceeds"
+                  value={formatCurrency(preview.deductions.net_proceeds)}
+                  highlight
+                />
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Amortization Schedule Preview</h4>
+                <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100">
+                        {[
+                          'No.',
+                          'Due Date',
+                          'Beginning Balance',
+                          'Principal',
+                          'Interest',
+                          'CBU',
+                          'Savings',
+                          'Total Due',
+                          'Ending Balance',
+                        ].map(h => (
+                          <th
+                            key={h}
+                            className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {preview.schedule.map(row => (
+                        <tr key={row.payment_no} className="hover:bg-gray-50/60">
+                          <td className="px-3 py-2 whitespace-nowrap">{row.payment_no}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.due_date)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.beginning_balance)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.principal_amount)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.interest_amount)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.cbu_amount)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.savings_amount)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap font-semibold">{formatCurrency(row.total_due)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.ending_balance)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="text-xs text-gray-400 mt-3">
+                  Preview generated successfully. Review the schedule and deductions before saving the loan.
+                </p>
+              </div>
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => navigate('/loans')}>
             Cancel
           </Button>
-          <Button type="submit" loading={loading} icon={<Save size={15} />}>
+          <Button
+            type="submit"
+            loading={loading}
+            disabled={!previewReady}
+            icon={<Save size={15} />}
+          >
             {isEdit ? 'Save Changes' : 'Create Loan'}
           </Button>
         </div>

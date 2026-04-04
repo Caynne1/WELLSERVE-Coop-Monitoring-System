@@ -14,16 +14,33 @@ const LOAN_COLUMNS = [
   'purpose',
   'notes',
   'repayment_frequency',
+
+  'loan_method',
+
   'loan_proposal',
   'service_fee',
   'share_capital',
   'loan_insurance',
   'regular_savings',
   'total_loan_payable',
+
+  'service_fee_percent',
+  'cbu_retention_percent',
+  'notarial_fee',
+  'insurance_mode',
+  'insurance_fixed_rate_percent',
+  'insurance_manual_amount',
+  'cbu_per_period',
+  'savings_per_period',
+
   'team_leader_name',
   'team_leader_id_no',
   'team_leader_account_no',
   'team_leader_mobile',
+
+  'preview_summary_json',
+  'preview_deductions_json',
+  'preview_schedule_json',
 ];
 
 function sanitizeLoanPayload(payload) {
@@ -115,6 +132,8 @@ export async function createLoan(payload) {
     amount,
     balance: amount,
     status: payload.status || 'active',
+    repayment_frequency: payload.repayment_frequency || 'weekly',
+    loan_method: payload.loan_method || 'diminishing',
   };
 
   const clean = sanitizeLoanPayload(withDefaults);
