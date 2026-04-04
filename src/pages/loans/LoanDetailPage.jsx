@@ -7,6 +7,8 @@ import {
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
+  Printer,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -19,9 +21,10 @@ import { getLoanById } from '../../services/loanService';
 import {
   buildScheduleByFrequency,
   frequencyDisplayLabel,
-  frequencyPeriodLabel,
+  frequencyPeriodLabel, 
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import * as XLSX from  'xlsx';
 
 const statusVariant = {
   active: 'success',
@@ -120,7 +123,189 @@ export default function LoanDetailPage() {
   if (!loan) return null;
 
   const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim();
+  function handlePrint() {
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
+    if (!printWindow) {
+      toast.error('Unable to open print preview.');
+      return;
+    }
 
+    const summaryRows = [
+      ['Member', memberName || '—'],
+      ['Member No.', loan.members?.member_no || '—'],
+      ['Loan Amount', formatCurrency(loan.amount)],
+      ['Outstanding Balance', formatCurrency(loan.balance ?? loan.amount)],
+      ['Monthly Interest Rate', loan.interest_rate ? `${loan.interest_rate}%` : '—'],
+      ['Term', loan.term_months ? `${loan.term_months} months` : '—'],
+      ['Payment Frequency', frequencyDisplayLabel(loan.repayment_frequency || 'monthly')],
+      ['Loan Method', titleCase(loan.loan_method || 'diminishing')],
+      ['Payment / Period', formatCurrency(previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0)],
+      ['Release Date', formatDate(loan.release_date)],
+      ['Due Date', formatDate(loan.due_date)],
+      ['Status', loan.status || '—'],
+      ['Purpose', loan.purpose || '—'],
+      ['Notes', loan.notes || '—'],
+    ];
+
+    const deductionRows = [
+      ['Loan Proposal', formatCurrency(loan.loan_proposal || loan.amount || 0)],
+      ['Service Fee %', `${loan.service_fee_percent ?? 2}%`],
+      ['Service Fee', formatCurrency(previewDeductions?.service_fee ?? loan.service_fee ?? 0)],
+      ['CBU Retention %', `${loan.cbu_retention_percent ?? 2.5}%`],
+      ['CBU Retention', formatCurrency(previewDeductions?.cbu_retention ?? 0)],
+      ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
+      ['Insurance Mode', titleCase(loan.insurance_mode || 'fixed')],
+      ['Insurance', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
+      ['Share Capital', formatCurrency(loan.share_capital ?? 0)],
+      ['Regular Savings', formatCurrency(loan.regular_savings ?? 0)],
+      ['Total Deductions', formatCurrency(previewDeductions?.total_deductions ?? 0)],
+      ['Net Proceeds', formatCurrency(previewDeductions?.net_proceeds ?? (loan.amount || 0))],
+    ];
+
+    const scheduleHtml = scheduleRows.map((row, idx) => `
+      <tr>
+        <td>${row.payment_no ?? idx + 1}</td>
+        <td>${formatDate(row.due_date)}</td>
+        <td>${row.beginning_balance !== null && row.beginning_balance !== undefined ? formatCurrency(row.beginning_balance) : '—'}</td>
+        <td>${formatCurrency(row.principal_amount ?? row.principal ?? 0)}</td>
+        <td>${formatCurrency(row.interest_amount ?? row.interest ?? 0)}</td>
+        <td>${formatCurrency(row.cbu_amount ?? 0)}</td>
+        <td>${formatCurrency(row.savings_amount ?? 0)}</td>
+        <td>${formatCurrency(row.total_due ?? row.payment ?? 0)}</td>
+        <td>${formatCurrency(row.ending_balance ?? row.balance ?? 0)}</td>
+      </tr>
+    `).join('');
+
+    const keyValueTable = (title, rows) => `
+      <h2>${title}</h2>
+      <table class="kv">
+        <tbody>
+          ${rows.map(([label, value]) => `
+            <tr>
+              <td class="label">${label}</td>
+              <td>${value}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Loan ${loan.loan_no || ''}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #222; }
+            h1 { margin: 0 0 8px; font-size: 22px; }
+            h2 { margin: 24px 0 10px; font-size: 16px; }
+            p.meta { margin: 0 0 18px; color: #666; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+            th { background: #f5f5f5; }
+            .kv .label { width: 220px; font-weight: bold; background: #fafafa; }
+          </style>
+        </head>
+        <body>
+          <h1>Loan Details</h1>
+          <p class="meta">Loan No.: ${loan.loan_no || '—'} | Printed: ${new Date().toLocaleString()}</p>
+
+          ${keyValueTable('Loan Summary', summaryRows)}
+          ${keyValueTable('Deductions & Net Proceeds', deductionRows)}
+
+          <h2>Amortization Schedule</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Due Date</th>
+                <th>Beginning Balance</th>
+                <th>Principal</th>
+                <th>Interest</th>
+                <th>CBU</th>
+                <th>Savings</th>
+                <th>Total Due</th>
+                <th>Ending Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${scheduleHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
+  function handleExportExcel() {
+    try {
+      const workbook = XLSX.utils.book_new();
+
+      const summarySheet = XLSX.utils.aoa_to_sheet([
+        ['Loan Summary'],
+        [],
+        ['Member', memberName || '—'],
+        ['Member No.', loan.members?.member_no || '—'],
+        ['Loan No.', loan.loan_no || '—'],
+        ['Loan Amount', loan.amount || 0],
+        ['Outstanding Balance', loan.balance ?? loan.amount ?? 0],
+        ['Monthly Interest Rate', loan.interest_rate ? `${loan.interest_rate}%` : '—'],
+        ['Term', loan.term_months ? `${loan.term_months} months` : '—'],
+        ['Payment Frequency', frequencyDisplayLabel(loan.repayment_frequency || 'monthly')],
+        ['Loan Method', titleCase(loan.loan_method || 'diminishing')],
+        ['Payment / Period', previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0],
+        ['Release Date', formatDate(loan.release_date)],
+        ['Due Date', formatDate(loan.due_date)],
+        ['Status', loan.status || '—'],
+        ['Purpose', loan.purpose || '—'],
+        ['Notes', loan.notes || '—'],
+      ]);
+
+      const deductionsSheet = XLSX.utils.aoa_to_sheet([
+        ['Deductions & Net Proceeds'],
+        [],
+        ['Loan Proposal', loan.loan_proposal || loan.amount || 0],
+        ['Service Fee %', `${loan.service_fee_percent ?? 2}%`],
+        ['Service Fee', previewDeductions?.service_fee ?? loan.service_fee ?? 0],
+        ['CBU Retention %', `${loan.cbu_retention_percent ?? 2.5}%`],
+        ['CBU Retention', previewDeductions?.cbu_retention ?? 0],
+        ['Notarial Fee', previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0],
+        ['Insurance Mode', titleCase(loan.insurance_mode || 'fixed')],
+        ['Insurance', previewDeductions?.insurance ?? loan.loan_insurance ?? 0],
+        ['Share Capital', loan.share_capital ?? 0],
+        ['Regular Savings', loan.regular_savings ?? 0],
+        ['Total Deductions', previewDeductions?.total_deductions ?? 0],
+        ['Net Proceeds', previewDeductions?.net_proceeds ?? (loan.amount || 0)],
+      ]);
+
+      const scheduleSheet = XLSX.utils.json_to_sheet(
+        scheduleRows.map((row, idx) => ({
+          No: row.payment_no ?? idx + 1,
+          'Due Date': formatDate(row.due_date),
+          'Beginning Balance': row.beginning_balance ?? '',
+          Principal: row.principal_amount ?? row.principal ?? 0,
+          Interest: row.interest_amount ?? row.interest ?? 0,
+          CBU: row.cbu_amount ?? 0,
+          Savings: row.savings_amount ?? 0,
+          'Total Due': row.total_due ?? row.payment ?? 0,
+          'Ending Balance': row.ending_balance ?? row.balance ?? 0,
+        }))
+      );
+
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Loan Summary');
+      XLSX.utils.book_append_sheet(workbook, deductionsSheet, 'Deductions');
+      XLSX.utils.book_append_sheet(workbook, scheduleSheet, 'Schedule');
+
+      XLSX.writeFile(workbook, `loan_${loan.loan_no || loan.id}.xlsx`);
+      toast.success('Loan Excel exported.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to export Excel.');
+    }
+  }
+  
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <button
@@ -134,12 +319,28 @@ export default function LoanDetailPage() {
         title={`Loan ${loan.loan_no || ''}`}
         subtitle={memberName || 'Loan Details'}
         action={
-          <Button
-            icon={<Edit2 size={14} />}
-            onClick={() => navigate(`/loans/${id}/edit`)}
-          >
-            Edit
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              icon={<Printer size={14} />}
+              onClick={handlePrint}
+            >
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              icon={<Download size={14} />}
+              onClick={handleExportExcel}
+            >
+              Excel
+            </Button>
+            <Button
+              icon={<Edit2 size={14} />}
+              onClick={() => navigate(`/loans/${id}/edit`)}
+            >
+              Edit
+            </Button>
+          </div>
         }
       />
 

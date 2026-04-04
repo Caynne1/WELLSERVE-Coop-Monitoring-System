@@ -96,6 +96,12 @@ export default function LoanFormPage() {
   const [initialLoading, setInitialLoading] = useState(isEdit);
   const [selectedMember, setSelectedMember] = useState(null);
   const [memberProfile, setMemberProfile] = useState(emptyMemberProfile);
+  const [memberAccounts, setMemberAccounts] = useState({
+    cbuAccountNo: '',
+    savingsAccountNo: '',
+    cbuAccountId: '',
+    savingsAccountId: '',
+  });
   const [signatureFiles, setSignatureFiles] = useState([]);
   const [leaderSignatureFile, setLeaderSignatureFile] = useState(null);
   const [existingDocuments, setExistingDocuments] = useState([]);
@@ -155,9 +161,6 @@ export default function LoanFormPage() {
   const watchedReleaseDate = useWatch({ control, name: 'release_date' });
 
   const watchedProposal = useWatch({ control, name: 'loan_proposal' });
-  const watchedShareCapital = useWatch({ control, name: 'share_capital' });
-  const watchedRegularSavings = useWatch({ control, name: 'regular_savings' });
-
   const watchedServiceFeePercent = useWatch({ control, name: 'service_fee_percent' });
   const watchedCbuRetentionPercent = useWatch({ control, name: 'cbu_retention_percent' });
   const watchedNotarialFee = useWatch({ control, name: 'notarial_fee' });
@@ -225,8 +228,6 @@ export default function LoanFormPage() {
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
-    watchedShareCapital,
-    watchedRegularSavings,
     watchedInsuranceMode,
     watchedInsuranceFixedRatePercent,
     watchedInsuranceManualAmount,
@@ -257,7 +258,7 @@ export default function LoanFormPage() {
 
       try {
         const member = await getMemberById(memberId);
-        applySelectedMember(member);
+        await applySelectedMember(member);
       } catch {
         // silent
       }
@@ -303,10 +304,10 @@ export default function LoanFormPage() {
         });
 
         if (data.members) {
-          applySelectedMember(data.members);
+          await applySelectedMember(data.members);
         } else if (data.member_id) {
           const member = await getMemberById(data.member_id);
-          applySelectedMember(member);
+          await applySelectedMember(member);
         }
 
         try {
@@ -351,6 +352,26 @@ export default function LoanFormPage() {
       beneficiary_address: member.beneficiary_address || '',
       beneficiary_tel: member.beneficiary_tel || '',
     });
+
+    try {
+      const accounts = await getAccountsByMemberId(member.id);
+      const cbuAccount = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
+      const savingsAccount = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+
+      setMemberAccounts({
+        cbuAccountNo: cbuAccount?.account_no || '',
+        savingsAccountNo: savingsAccount?.account_no || '',
+        cbuAccountId: cbuAccount?.id || '',
+        savingsAccountId: savingsAccount?.id || '',
+      });
+    } catch {
+      setMemberAccounts({
+        cbuAccountNo: '',
+        savingsAccountNo: '',
+        cbuAccountId: '',
+        savingsAccountId: '',
+      });
+    }
   }
 
   function handleMemberProfileChange(field, value) {
@@ -471,14 +492,13 @@ export default function LoanFormPage() {
         });
 
         if (shareCapital > 0 || regularSavings > 0) {
-          const accounts = await getAccountsByMemberId(loan.member_id);
-          const cbuAccount = accounts.find(a => a.account_type === 'cbu');
-          const savingsAccount = accounts.find(a => a.account_type === 'savings');
+          const cbuAccountId = memberAccounts.cbuAccountId;
+          const savingsAccountId = memberAccounts.savingsAccountId;
 
-          if (shareCapital > 0 && cbuAccount) {
+          if (shareCapital > 0 && cbuAccountId) {
             await createTransaction({
               member_id: loan.member_id,
-              account_id: cbuAccount.id,
+              account_id: cbuAccountId,
               category: 'cbu',
               type: 'deposit',
               amount: shareCapital,
@@ -492,8 +512,8 @@ export default function LoanFormPage() {
                 member_name: memberDisplayName,
                 amount: shareCapital,
                 purpose: 'CBU Share Capital',
-                ref_id: cbuAccount.id,
-                account_id: cbuAccount.id,
+                ref_id: cbuAccountId,
+                account_id: cbuAccountId,
                 created_by: user?.id ?? null,
               });
             } catch (e) {
@@ -501,10 +521,10 @@ export default function LoanFormPage() {
             }
           }
 
-          if (regularSavings > 0 && savingsAccount) {
+          if (regularSavings > 0 && savingsAccountId) {
             await createTransaction({
               member_id: loan.member_id,
-              account_id: savingsAccount.id,
+              account_id: savingsAccountId,
               category: 'savings',
               type: 'deposit',
               amount: regularSavings,
@@ -518,8 +538,8 @@ export default function LoanFormPage() {
                 member_name: memberDisplayName,
                 amount: regularSavings,
                 purpose: 'Regular Savings Deposit',
-                ref_id: savingsAccount.id,
-                account_id: savingsAccount.id,
+                ref_id: savingsAccountId,
+                account_id: savingsAccountId,
                 created_by: user?.id ?? null,
               });
             } catch (e) {
@@ -681,6 +701,25 @@ export default function LoanFormPage() {
                 <Input
                   label="Member No."
                   value={memberProfile.member_no}
+                  readOnly
+                />
+              </div>
+            </section>
+
+            <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
+                Linked Member Accounts
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="CBU Account No."
+                  value={memberAccounts.cbuAccountNo || '—'}
+                  readOnly
+                />
+                <Input
+                  label="Savings Account No."
+                  value={memberAccounts.savingsAccountNo || '—'}
                   readOnly
                 />
               </div>
