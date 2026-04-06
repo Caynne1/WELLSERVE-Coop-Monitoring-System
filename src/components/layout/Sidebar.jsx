@@ -25,6 +25,7 @@ const navGroups = [
     items: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/members', icon: Users, label: 'Members' },
+      { to: '/passbook', icon: BookOpen, label: 'Passbook' },
     ],
   },
   {

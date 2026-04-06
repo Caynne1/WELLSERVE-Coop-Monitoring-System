@@ -10,6 +10,7 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import MembersPage from './pages/members/MembersPage';
 import MemberFormPage from './pages/members/MemberFormPage';
 import MemberDetailPage from './pages/members/MemberDetailPage';
+import PassbookPage from './pages/passbook/PassbookPage'; // ✅ NEW
 
 // Financial categories
 import LoansPage from './pages/loans/LoansPage';
@@ -115,6 +116,7 @@ export default function App() {
               <Route path="members/new" element={<MemberFormPage />} />
               <Route path="members/:id/edit" element={<MemberFormPage />} />
               <Route path="members/:id" element={<MemberDetailPage />} />
+              <Route path="passbook" element={<PassbookPage />} /> {/* ✅ NEW */}
 
               {/* Financial categories */}
               <Route path="loans" element={<LoansPage />} />
@@ -131,7 +133,7 @@ export default function App() {
               <Route path="vouchers" element={<VouchersPage />} />
               <Route path="expenses" element={<ExpensesPage />} />
 
-              {/* ── NEW: Cooperative Fund / Account Monitoring ────────────── */}
+              {/* Cooperative Monitoring */}
               <Route path="coop-monitoring" element={<CoopMonitoringPage />} />
 
               {/* Analytics */}
@@ -142,7 +144,7 @@ export default function App() {
               <Route path="settings" element={<SettingsPage />} />
               <Route path="staff" element={<StaffPage />} />
 
-              {/* Account Management — admin only */}
+              {/* Admin only */}
               <Route
                 path="account-management"
                 element={
@@ -152,7 +154,7 @@ export default function App() {
                 }
               />
 
-              {/* Accounts — hidden from nav but preserved for compatibility */}
+              {/* Compatibility */}
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="accounts/new" element={<AccountFormPage />} />
               <Route path="accounts/:id/edit" element={<AccountFormPage />} />
