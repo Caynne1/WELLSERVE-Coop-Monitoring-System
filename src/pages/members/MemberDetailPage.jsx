@@ -4,6 +4,7 @@ import {
   ArrowLeft, User, CreditCard, PiggyBank, Wallet, ArrowLeftRight,
   Edit, Phone, Mail, MapPin, Calendar, Hash, Plus, TrendingUp,
   TrendingDown, Clock, AlertCircle, DollarSign, Shield, Download, BadgeAlert,
+  Printer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,7 +16,10 @@ import { useAuth } from '../../context/AuthContext';
 
 import { getMemberById, initializeMemberAccounts } from '../../services/memberService';
 import { getAccountsByMemberId } from '../../services/accountService';
-import { getLoansByMemberId } from '../../services/loanService';
+import {
+  getLoansByMemberId,
+  applyLoanPaymentToSchedule,
+} from '../../services/loanService';
 import { getTransactionsByMemberId, createTransaction } from '../../services/transactionService';
 import {
   getMembershipByMemberId,
@@ -45,6 +49,28 @@ const TABS = [
   { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
   { id: 'penalty', label: 'Penalty', icon: BadgeAlert },
 ];
+
+function parseJSONSafe(val, fallback = {}) {
+  try {
+    return typeof val === 'string' ? JSON.parse(val) : (val ?? fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function frequencyLabel(value) {
+  if (!value) return 'period';
+
+  const map = {
+    weekly: 'week',
+    semi_monthly: 'semi-month',
+    monthly: 'month',
+    quarterly: 'quarter',
+    yearly: 'year',
+  };
+
+  return map[value] || value;
+}
 
 export default function MemberDetailPage() {
   const { id } = useParams();
@@ -165,6 +191,63 @@ export default function MemberDetailPage() {
     [transactions]
   );
 
+  const paymentHistoryRows = useMemo(() => {
+    const relevant = transactions
+      .filter(t =>
+        t.type === 'loan_payment' ||
+        (t.category === 'cbu' && t.type === 'deposit') ||
+        (t.category === 'savings' && t.type === 'deposit')
+      )
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    const grouped = [];
+
+    for (const tx of relevant) {
+      const txDate = new Date(tx.created_at);
+      const txDay = txDate.toISOString().slice(0, 10);
+
+      const last = grouped[grouped.length - 1];
+
+      const canMerge =
+        last &&
+        last.created_by === (tx.created_by || 'System') &&
+        last.tx_day === txDay &&
+        Math.abs(new Date(last.latest_created_at).getTime() - txDate.getTime()) <= 2 * 60 * 1000;
+
+      if (canMerge) {
+        if (tx.type === 'loan_payment') {
+          last.loan_amount += Number(tx.amount || 0);
+        }
+        if (tx.category === 'cbu' && tx.type === 'deposit') {
+          last.cbu_amount += Number(tx.amount || 0);
+        }
+        if (tx.category === 'savings' && tx.type === 'deposit') {
+          last.savings_amount += Number(tx.amount || 0);
+        }
+
+        if (txDate > new Date(last.latest_created_at)) {
+          last.latest_created_at = tx.created_at;
+        }
+
+        last.ids.push(tx.id);
+      } else {
+        grouped.push({
+          id: tx.id,
+          ids: [tx.id],
+          created_at: tx.created_at,
+          latest_created_at: tx.created_at,
+          tx_day: txDay,
+          created_by: tx.created_by || 'System',
+          loan_amount: tx.type === 'loan_payment' ? Number(tx.amount || 0) : 0,
+          cbu_amount: tx.category === 'cbu' && tx.type === 'deposit' ? Number(tx.amount || 0) : 0,
+          savings_amount: tx.category === 'savings' && tx.type === 'deposit' ? Number(tx.amount || 0) : 0,
+        });
+      }
+    }
+
+    return grouped;
+  }, [transactions]);
+
   const loanPaymentCount = loanTransactions.filter(t => t.type === 'loan_payment').length;
   const cbuPaymentCount = cbuTransactions.filter(t => t.type === 'deposit').length;
   const savingsPaymentCount = savingsTransactions.filter(t => t.type === 'deposit').length;
@@ -182,6 +265,10 @@ export default function MemberDetailPage() {
     } catch (err) {
       toast.error(err.message || 'Failed to generate Excel report.');
     }
+  }
+
+  function handlePrint() {
+    window.print();
   }
 
   async function refreshEverything() {
@@ -229,6 +316,7 @@ export default function MemberDetailPage() {
               <h1 className="text-xl font-bold text-gray-900">
                 {member.first_name} {member.last_name}
               </h1>
+
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {member.member_no && (
                   <span className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
@@ -244,16 +332,38 @@ export default function MemberDetailPage() {
                   </Badge>
                 )}
               </div>
+
+              <div className="mt-3 space-y-1 text-xs text-gray-500">
+                <p>
+                  Inviter / Recruiter:{' '}
+                  <span className="font-medium text-gray-800">{member.recruiter_name || 'Self'}</span>
+                </p>
+                <p>
+                  CBU Account No.:{' '}
+                  <span className="font-mono text-gray-800">{cbuAccount?.account_no || '—'}</span>
+                </p>
+                <p>
+                  Savings Account No.:{' '}
+                  <span className="font-mono text-gray-800">{savingsAccount?.account_no || '—'}</span>
+                </p>
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
+              onClick={handlePrint}
+              icon={<Printer size={14} />}
+            >
+              Print
+            </Button>
+            <Button
+              variant="outline"
               onClick={handleExportExcel}
               icon={<Download size={14} />}
             >
-              Generate / Export Excel
+              Export
             </Button>
             <Button
               variant="blue"
@@ -313,7 +423,12 @@ export default function MemberDetailPage() {
 
         <div className="p-6">
           {activeTab === 'overview' && (
-            <OverviewTab member={member} displayMembershipType={displayMembershipType} />
+            <OverviewTab
+              member={member}
+              displayMembershipType={displayMembershipType}
+              cbuAccount={cbuAccount}
+              savingsAccount={savingsAccount}
+            />
           )}
 
           {activeTab === 'loan' && (
@@ -324,6 +439,7 @@ export default function MemberDetailPage() {
               memberId={id}
               navigate={navigate}
               onPayLoan={loan => setPayModal({ open: true, loan })}
+              paymentHistoryRows={paymentHistoryRows}
             />
           )}
 
@@ -431,12 +547,30 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 
   useEffect(() => {
     if (open) {
-      setLoanAmt('');
       setCbuAmt('');
       setSavingsAmt('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
+
+      if (loan) {
+        const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+        const summary = parseJSONSafe(loan.preview_summary_json, {});
+        const nextDue = Array.isArray(schedule)
+          ? schedule.find(row => !row.paid)
+          : null;
+
+        const suggestedAmount =
+          nextDue?.remaining_due ||
+          nextDue?.total_due ||
+          nextDue?.payment ||
+          summary?.payment_per_period ||
+          '';
+
+        setLoanAmt(String(suggestedAmount || ''));
+      } else {
+        setLoanAmt('');
+      }
     }
-  }, [open]);
+  }, [open, loan]);
 
   async function handleSubmit() {
     const loanPay = parseFloat(loanAmt) || 0;
@@ -488,6 +622,8 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           },
           'Loan payment'
         );
+
+        await applyLoanPaymentToSchedule(loan.id, loanPay);
       }
 
       if (cbuPay > 0) {
@@ -1306,7 +1442,7 @@ function InfoRow({ icon: Icon, label, value }) {
   );
 }
 
-function OverviewTab({ member, displayMembershipType }) {
+function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
       <div>
@@ -1330,6 +1466,9 @@ function OverviewTab({ member, displayMembershipType }) {
           <InfoRow icon={User} label="Sex" value={member.sex} />
           <InfoRow icon={User} label="Occupation" value={member.occupation} />
           <InfoRow icon={Shield} label="Membership Type" value={displayMembershipType ? displayMembershipType.charAt(0).toUpperCase() + displayMembershipType.slice(1) : '—'} />
+          <InfoRow icon={User} label="Inviter / Recruiter" value={member.recruiter_name || 'Self'} />
+          <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
+          <InfoRow icon={Wallet} label="Savings Account No." value={savingsAccount?.account_no || '—'} />
           <InfoRow icon={User} label="Status" value={member.status || 'active'} />
           {member.notes && <InfoRow icon={User} label="Notes" value={member.notes} />}
         </div>
@@ -1338,7 +1477,7 @@ function OverviewTab({ member, displayMembershipType }) {
   );
 }
 
-function LoanTab({ loans, loanTransactions, paymentCount, memberId, navigate, onPayLoan }) {
+function LoanTab({ loans, loanTransactions, paymentCount, memberId, navigate, onPayLoan, paymentHistoryRows }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -1367,10 +1506,10 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, navigate, on
         </div>
       )}
 
-      {loanTransactions.length > 0 && (
+      {paymentHistoryRows.length > 0 && (
         <div className="mt-6">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Payment History</h4>
-          <HistoryTable rows={loanTransactions} />
+          <LoanPaymentHistoryTable rows={paymentHistoryRows} />
         </div>
       )}
     </div>
@@ -1385,6 +1524,17 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
     pending: 'text-yellow-700 bg-yellow-50 border-yellow-200',
   };
 
+  const summary = parseJSONSafe(loan.preview_summary_json, {});
+  const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+  const nextDue = Array.isArray(schedule) ? schedule.find(row => !row.paid) : null;
+
+  const scheduledPayment =
+    nextDue?.remaining_due ||
+    nextDue?.total_due ||
+    nextDue?.payment ||
+    summary?.payment_per_period ||
+    0;
+
   return (
     <div
       className="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:border-gray-200 bg-gray-50/50 cursor-pointer transition-colors"
@@ -1393,9 +1543,19 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
       <div>
         <p className="text-sm font-medium text-gray-800">{formatCurrency(loan.amount || 0)}</p>
         <p className="text-xs text-gray-400 mt-0.5">
-          Released: {loan.release_date ? formatDate(loan.release_date) : '—'} · Due: {loan.due_date ? formatDate(loan.due_date) : '—'}
+          Released: {loan.release_date ? formatDate(loan.release_date) : '—'}
         </p>
         <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
+
+        <p className="text-xs text-blue-600 mt-1 font-medium">
+          Scheduled: {formatCurrency(scheduledPayment)} / {frequencyLabel(loan.repayment_frequency)}
+        </p>
+
+        {nextDue && (
+          <p className="text-xs text-orange-600 mt-0.5">
+            Next Due: {formatDate(nextDue.due_date)} · {formatCurrency(nextDue.remaining_due || nextDue.total_due || nextDue.payment || 0)}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -1420,6 +1580,48 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+function LoanPaymentHistoryTable({ rows }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-100">
+            {['Date', 'Loan', 'CBU', 'Savings', 'Assisted by'].map(h => (
+              <th
+                key={h}
+                className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {rows.map(row => (
+            <tr key={row.id}>
+              <td className="px-4 py-3 whitespace-nowrap">
+                {formatDate(row.created_at)}
+              </td>
+              <td className="px-4 py-3 font-medium">
+                {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : '—'}
+              </td>
+              <td className="px-4 py-3 font-medium">
+                {row.cbu_amount > 0 ? formatCurrency(row.cbu_amount) : '—'}
+              </td>
+              <td className="px-4 py-3 font-medium">
+                {row.savings_amount > 0 ? formatCurrency(row.savings_amount) : '—'}
+              </td>
+              <td className="px-4 py-3 text-gray-500">
+                {row.created_by || 'System'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

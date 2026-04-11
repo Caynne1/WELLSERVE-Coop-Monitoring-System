@@ -42,6 +42,10 @@ export function computeFeeBalance(membership) {
   return Math.max(0, required - paid);
 }
 
+export function hasUnpaidMembership(membership) {
+  return computeFeeBalance(membership) > 0;
+}
+
 function assertCreatedBy(createdBy) {
   if (!createdBy) {
     throw new Error('Authenticated user is required.');

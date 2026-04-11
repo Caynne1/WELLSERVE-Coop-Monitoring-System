@@ -4,12 +4,13 @@ export async function getTransactions(filters = {}) {
   let query = supabase
     .from('transactions')
     .select('*')
+    .order('transaction_date', { ascending: false })
     .order('created_at', { ascending: false });
 
   if (filters.type) query = query.eq('type', filters.type);
   if (filters.category) query = query.eq('category', filters.category);
-  if (filters.from) query = query.gte('created_at', filters.from);
-  if (filters.to) query = query.lte('created_at', filters.to);
+  if (filters.from) query = query.gte('transaction_date', filters.from);
+  if (filters.to) query = query.lte('transaction_date', filters.to);
 
   const { data: transactions, error } = await query;
   if (error) throw error;
@@ -31,6 +32,7 @@ export async function getTransactionsByMemberId(memberId) {
     .from('transactions')
     .select('*')
     .eq('member_id', memberId)
+    .order('transaction_date', { ascending: false })
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -38,11 +40,18 @@ export async function getTransactionsByMemberId(memberId) {
 }
 
 export async function createTransaction(payload) {
-  console.log('[createTransaction] inserting:', JSON.stringify(payload, null, 2));
+  const finalPayload = {
+    ...payload,
+    transaction_date:
+      payload.transaction_date ||
+      new Date().toISOString().split('T')[0],
+  };
+
+  console.log('[createTransaction] inserting:', JSON.stringify(finalPayload, null, 2));
 
   const { data, error } = await supabase
     .from('transactions')
-    .insert(payload)
+    .insert(finalPayload)
     .select()
     .single();
 
@@ -52,7 +61,7 @@ export async function createTransaction(payload) {
     console.error('  code    :', error.code);
     console.error('  details :', error.details);
     console.error('  hint    :', error.hint);
-    console.error('  payload :', JSON.stringify(payload, null, 2));
+    console.error('  payload :', JSON.stringify(finalPayload, null, 2));
     throw error;
   }
 

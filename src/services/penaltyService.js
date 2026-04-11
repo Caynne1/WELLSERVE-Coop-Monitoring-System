@@ -28,6 +28,11 @@ export async function getPenaltiesByMemberId(memberId) {
   return data || [];
 }
 
+export async function getPenaltyTotalByMemberId(memberId) {
+  const penalties = await getPenaltiesByMemberId(memberId);
+  return penalties.reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0);
+}
+
 export async function createPenalty(payload) {
   const clean = sanitizePenaltyPayload(payload);
 

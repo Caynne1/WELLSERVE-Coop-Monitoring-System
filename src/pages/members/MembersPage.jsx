@@ -92,7 +92,9 @@ export default function MembersPage() {
         m.first_name?.toLowerCase().includes(q) ||
         m.last_name?.toLowerCase().includes(q) ||
         m.member_no?.toLowerCase().includes(q) ||
-        m.email?.toLowerCase().includes(q);
+        m.email?.toLowerCase().includes(q) ||
+        m.phone?.toLowerCase().includes(q) ||
+        (m.recruiter_name || '').toLowerCase().includes(q);
 
       const memberType = (m.membership_type || '').toLowerCase();
       const matchesType = typeFilter === 'all' ? true : memberType === typeFilter;
@@ -115,6 +117,7 @@ export default function MembersPage() {
         membership_type: member.membership_type || '',
         email: member.email || '',
         mobile_no: member.phone || '',
+        recruiter_name: member.recruiter_name || 'Self',
         status: member.status || '',
         joined: member.created_at ? formatDate(member.created_at) : '',
       }));
@@ -218,7 +221,7 @@ export default function MembersPage() {
             />
             <input
               type="text"
-              placeholder="Search by name, ID, email…"
+              placeholder="Search by name, ID, email, recruiter…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl
@@ -248,7 +251,7 @@ export default function MembersPage() {
           </Button>
 
           <Button variant="outline" icon={<Download size={15} />} onClick={handleExportCSV}>
-            Export CSV
+            Export
           </Button>
         </div>
 
@@ -300,11 +303,20 @@ export default function MembersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-100">
-                    {['Member', 'Member No.', 'Contact', 'Joined', 'Status', 'Quick Access', 'Actions'].map((h, i) => (
+                    {[
+                      'Member',
+                      'Member No.',
+                      'Contact',
+                      'Inviter / Recruiter',
+                      'Joined',
+                      'Status',
+                      'Quick Access',
+                      'Actions',
+                    ].map((h, i) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          i === 6 ? 'text-right print:hidden' : 'text-left'
+                          i === 7 ? 'text-right print:hidden' : 'text-left'
                         } ${h === 'Quick Access' ? 'print:hidden' : ''}`}
                       >
                         {h}
@@ -316,7 +328,7 @@ export default function MembersPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-16 text-center">
+                      <td colSpan={8} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-400">
                           <Users size={32} className="text-gray-200" />
                           <p className="text-sm">
@@ -388,6 +400,10 @@ export default function MembersPage() {
 
                         <td className="px-4 py-3 text-gray-600 text-sm">
                           {member.phone || '—'}
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-600 text-sm">
+                          {member.recruiter_name || 'Self'}
                         </td>
 
                         <td className="px-4 py-3 text-gray-500 text-xs">

@@ -56,6 +56,24 @@ export async function getAccountsByMemberId(memberId) {
   return data || [];
 }
 
+export async function getMemberAccountsMap(memberId) {
+  const accounts = await getAccountsByMemberId(memberId);
+
+  const cbu = (accounts || []).find(
+    a => String(a.account_type).toLowerCase() === 'cbu'
+  ) || null;
+
+  const savings = (accounts || []).find(
+    a => String(a.account_type).toLowerCase() === 'savings'
+  ) || null;
+
+  return {
+    all: accounts || [],
+    cbu,
+    savings,
+  };
+}
+
 export async function getAllCBUAccounts() {
   const { data, error } = await supabase
     .from('accounts')

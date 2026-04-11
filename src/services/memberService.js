@@ -15,6 +15,7 @@ const MEMBER_COLUMNS = [
   'occupation',
   'tin_no',
   'sss_id_no',
+  'recruiter_name',
   'status',
   'notes',
   'date_joined',
@@ -216,9 +217,9 @@ export async function initializeMemberAccounts(memberId) {
 export async function searchMembers(query) {
   const { data, error } = await supabase
     .from('members')
-    .select('id, first_name, last_name, middle_initial, member_no, email, phone, membership_type, status')
+    .select('id, first_name, last_name, middle_initial, member_no, email, phone, membership_type, status, recruiter_name')
     .or(
-      `first_name.ilike.%${query}%,last_name.ilike.%${query}%,member_no.ilike.%${query}%`
+      `first_name.ilike.%${query}%,last_name.ilike.%${query}%,member_no.ilike.%${query}%,recruiter_name.ilike.%${query}%`
     )
     .order('first_name')
     .limit(20);

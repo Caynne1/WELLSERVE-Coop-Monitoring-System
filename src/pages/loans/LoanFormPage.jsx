@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   Save,
   Calculator,
-  UploadCloud,
   FileSpreadsheet,
   Eye,
 } from 'lucide-react';
@@ -26,10 +25,6 @@ import {
   getMemberById,
   updateMember,
 } from '../../services/memberService';
-import {
-  uploadLoanDocument,
-  getLoanDocumentsByLoanId,
-} from '../../services/loanDocumentService';
 import { useAuth } from '../../context/AuthContext';
 import {
   generateLoanPreview,
@@ -57,11 +52,6 @@ const LOAN_METHOD_OPTS = [
   { value: 'straight', label: 'Straight' },
 ];
 
-const INSURANCE_MODE_OPTS = [
-  { value: 'fixed', label: 'Fixed' },
-  { value: 'manual', label: 'Manual' },
-];
-
 const emptyMemberProfile = {
   first_name: '',
   last_name: '',
@@ -76,9 +66,7 @@ const emptyMemberProfile = {
   tin_no: '',
   sss_id_no: '',
   phone: '',
-  beneficiary_name: '',
-  beneficiary_address: '',
-  beneficiary_tel: '',
+  recruiter_name: 'Self',
 };
 
 function round2(value) {
@@ -102,9 +90,6 @@ export default function LoanFormPage() {
     cbuAccountId: '',
     savingsAccountId: '',
   });
-  const [signatureFiles, setSignatureFiles] = useState([]);
-  const [leaderSignatureFile, setLeaderSignatureFile] = useState(null);
-  const [existingDocuments, setExistingDocuments] = useState([]);
   const [previewReady, setPreviewReady] = useState(false);
 
   const {
@@ -131,7 +116,6 @@ export default function LoanFormPage() {
 
       loan_proposal: '',
       service_fee: '',
-      share_capital: '',
       loan_insurance: '',
       regular_savings: '',
       total_loan_payable: '',
@@ -139,17 +123,10 @@ export default function LoanFormPage() {
       service_fee_percent: '2',
       cbu_retention_percent: '2.5',
       notarial_fee: '200',
-      insurance_mode: 'fixed',
-      insurance_fixed_rate_percent: '0',
       insurance_manual_amount: '',
 
       cbu_per_period: '25',
       savings_per_period: '25',
-
-      team_leader_name: '',
-      team_leader_id_no: '',
-      team_leader_account_no: '',
-      team_leader_mobile: '',
     },
   });
 
@@ -164,8 +141,6 @@ export default function LoanFormPage() {
   const watchedServiceFeePercent = useWatch({ control, name: 'service_fee_percent' });
   const watchedCbuRetentionPercent = useWatch({ control, name: 'cbu_retention_percent' });
   const watchedNotarialFee = useWatch({ control, name: 'notarial_fee' });
-  const watchedInsuranceMode = useWatch({ control, name: 'insurance_mode' });
-  const watchedInsuranceFixedRatePercent = useWatch({ control, name: 'insurance_fixed_rate_percent' });
   const watchedInsuranceManualAmount = useWatch({ control, name: 'insurance_manual_amount' });
 
   const watchedCbuPerPeriod = useWatch({ control, name: 'cbu_per_period' });
@@ -192,9 +167,9 @@ export default function LoanFormPage() {
       serviceFeePercent: parseFloat(watchedServiceFeePercent || 2) || 0,
       cbuRetentionPercent: parseFloat(watchedCbuRetentionPercent || 2.5) || 0,
       notarialFee: parseFloat(watchedNotarialFee || 200) || 0,
-      insuranceMode: watchedInsuranceMode || 'fixed',
+      insuranceMode: 'manual',
       insuranceAmount: parseFloat(watchedInsuranceManualAmount || 0) || 0,
-      insuranceFixedRatePercent: parseFloat(watchedInsuranceFixedRatePercent || 0) || 0,
+      insuranceFixedRatePercent: 0,
     });
   }, [
     watchedAmount,
@@ -208,8 +183,6 @@ export default function LoanFormPage() {
     watchedServiceFeePercent,
     watchedCbuRetentionPercent,
     watchedNotarialFee,
-    watchedInsuranceMode,
-    watchedInsuranceFixedRatePercent,
     watchedInsuranceManualAmount,
   ]);
 
@@ -228,8 +201,6 @@ export default function LoanFormPage() {
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
-    watchedInsuranceMode,
-    watchedInsuranceFixedRatePercent,
     watchedInsuranceManualAmount,
     watchedCbuPerPeriod,
     watchedSavingsPerPeriod,
@@ -283,7 +254,6 @@ export default function LoanFormPage() {
 
           loan_proposal: data.loan_proposal || data.amount || '',
           service_fee: data.service_fee || '',
-          share_capital: data.share_capital || '',
           loan_insurance: data.loan_insurance || '',
           regular_savings: data.regular_savings || '',
           total_loan_payable: data.total_loan_payable || '',
@@ -291,16 +261,9 @@ export default function LoanFormPage() {
           service_fee_percent: data.service_fee_percent || '2',
           cbu_retention_percent: data.cbu_retention_percent || '2.5',
           notarial_fee: data.notarial_fee || '200',
-          insurance_mode: data.insurance_mode || 'fixed',
-          insurance_fixed_rate_percent: data.insurance_fixed_rate_percent || '0',
-          insurance_manual_amount: data.insurance_manual_amount || '',
+          insurance_manual_amount: data.insurance_manual_amount || data.loan_insurance || '',
           cbu_per_period: data.cbu_per_period || '25',
           savings_per_period: data.savings_per_period || '25',
-
-          team_leader_name: data.team_leader_name || '',
-          team_leader_id_no: data.team_leader_id_no || '',
-          team_leader_account_no: data.team_leader_account_no || '',
-          team_leader_mobile: data.team_leader_mobile || '',
         });
 
         if (data.members) {
@@ -308,13 +271,6 @@ export default function LoanFormPage() {
         } else if (data.member_id) {
           const member = await getMemberById(data.member_id);
           await applySelectedMember(member);
-        }
-
-        try {
-          const docs = await getLoanDocumentsByLoanId(id);
-          setExistingDocuments(docs || []);
-        } catch {
-          setExistingDocuments([]);
         }
       } catch {
         navigate('/loans');
@@ -348,9 +304,7 @@ export default function LoanFormPage() {
       tin_no: member.tin_no || '',
       sss_id_no: member.sss_id_no || '',
       phone: member.phone || '',
-      beneficiary_name: member.beneficiary_name || '',
-      beneficiary_address: member.beneficiary_address || '',
-      beneficiary_tel: member.beneficiary_tel || '',
+      recruiter_name: member.recruiter_name || 'Self',
     });
 
     try {
@@ -438,13 +392,9 @@ export default function LoanFormPage() {
         tin_no: memberProfile.tin_no,
         sss_id_no: memberProfile.sss_id_no,
         phone: memberProfile.phone,
-        beneficiary_name: memberProfile.beneficiary_name,
-        beneficiary_address: memberProfile.beneficiary_address,
-        beneficiary_tel: memberProfile.beneficiary_tel,
       });
 
       const principalAmount = parseFloat(values.amount || 0);
-      const shareCapital = parseFloat(values.share_capital || 0) || 0;
       const regularSavings = parseFloat(values.regular_savings || 0) || 0;
 
       const payload = {
@@ -461,8 +411,8 @@ export default function LoanFormPage() {
         service_fee_percent: parseFloat(values.service_fee_percent || 2) || 0,
         cbu_retention_percent: parseFloat(values.cbu_retention_percent || 2.5) || 0,
         notarial_fee: parseFloat(values.notarial_fee || 200) || 0,
-        insurance_mode: values.insurance_mode,
-        insurance_fixed_rate_percent: parseFloat(values.insurance_fixed_rate_percent || 0) || 0,
+        insurance_mode: 'manual',
+        insurance_fixed_rate_percent: 0,
         insurance_manual_amount: parseFloat(values.insurance_manual_amount || 0) || 0,
         cbu_per_period: parseFloat(values.cbu_per_period || 25) || 0,
         savings_per_period: parseFloat(values.savings_per_period || 25) || 0,
@@ -491,37 +441,10 @@ export default function LoanFormPage() {
           created_by: user?.id ?? null,
         });
 
-        if (shareCapital > 0 || regularSavings > 0) {
-          const cbuAccountId = memberAccounts.cbuAccountId;
+        if (regularSavings > 0) {
           const savingsAccountId = memberAccounts.savingsAccountId;
 
-          if (shareCapital > 0 && cbuAccountId) {
-            await createTransaction({
-              member_id: loan.member_id,
-              account_id: cbuAccountId,
-              category: 'cbu',
-              type: 'deposit',
-              amount: shareCapital,
-              created_by: user?.id ?? null,
-            });
-
-            try {
-              await createInvoiceForPayment({
-                payment_type: 'cbu',
-                member_id: loan.member_id,
-                member_name: memberDisplayName,
-                amount: shareCapital,
-                purpose: 'CBU Share Capital',
-                ref_id: cbuAccountId,
-                account_id: cbuAccountId,
-                created_by: user?.id ?? null,
-              });
-            } catch (e) {
-              console.error('[LoanFormPage] cbu invoice failed:', e);
-            }
-          }
-
-          if (regularSavings > 0 && savingsAccountId) {
+          if (savingsAccountId) {
             await createTransaction({
               member_id: loan.member_id,
               account_id: savingsAccountId,
@@ -546,31 +469,6 @@ export default function LoanFormPage() {
               console.error('[LoanFormPage] savings invoice failed:', e);
             }
           }
-        }
-      }
-
-      if (loan?.id) {
-        for (let i = 0; i < signatureFiles.length; i += 1) {
-          const file = signatureFiles[i];
-          if (!file) continue;
-
-          await uploadLoanDocument({
-            loanId: loan.id,
-            file,
-            documentType: 'member_signature',
-            label: `Signature ${i + 1}`,
-            createdBy: user?.id,
-          });
-        }
-
-        if (leaderSignatureFile) {
-          await uploadLoanDocument({
-            loanId: loan.id,
-            file: leaderSignatureFile,
-            documentType: 'team_leader_signature',
-            label: 'Team Leader Signature',
-            createdBy: user?.id,
-          });
         }
       }
 
@@ -724,32 +622,6 @@ export default function LoanFormPage() {
                 />
               </div>
             </section>
-
-            <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
-                Beneficiary
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="Name"
-                  value={memberProfile.beneficiary_name}
-                  onChange={e => handleMemberProfileChange('beneficiary_name', e.target.value)}
-                />
-                <Input
-                  label="Res. Tel. No."
-                  value={memberProfile.beneficiary_tel}
-                  onChange={e => handleMemberProfileChange('beneficiary_tel', e.target.value)}
-                />
-                <div className="sm:col-span-2">
-                  <Input
-                    label="Address"
-                    value={memberProfile.beneficiary_address}
-                    onChange={e => handleMemberProfileChange('beneficiary_address', e.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
           </>
         )}
 
@@ -876,41 +748,11 @@ export default function LoanFormPage() {
               {...register('notarial_fee')}
             />
 
-            <Select
-              label="Insurance Mode"
-              options={INSURANCE_MODE_OPTS}
-              {...register('insurance_mode')}
-            />
-
-            {watchedInsuranceMode === 'fixed' ? (
-              <Input
-                label="Insurance Fixed Rate %"
-                type="number"
-                step="0.01"
-                {...register('insurance_fixed_rate_percent')}
-              />
-            ) : (
-              <Input
-                label="Insurance Manual Amount"
-                type="number"
-                step="0.01"
-                {...register('insurance_manual_amount')}
-              />
-            )}
-
             <Input
               label="Insurance Amount"
               type="number"
               step="0.01"
-              readOnly
-              {...register('loan_insurance')}
-            />
-
-            <Input
-              label="Share Capital"
-              type="number"
-              step="0.01"
-              {...register('share_capital')}
+              {...register('insurance_manual_amount')}
             />
 
             <Input
@@ -941,82 +783,6 @@ export default function LoanFormPage() {
               readOnly
               {...register('total_loan_payable')}
             />
-          </div>
-        </section>
-
-        <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
-            Team Leader (Optional)
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input label="Name" {...register('team_leader_name')} />
-            <Input label="ID No." {...register('team_leader_id_no')} />
-            <Input label="Account No." {...register('team_leader_account_no')} />
-            <Input label="Mobile No." {...register('team_leader_mobile')} />
-          </div>
-
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Team Leader Signature
-            </label>
-            <div className="border border-dashed border-gray-300 rounded-lg p-4 bg-white">
-              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <UploadCloud size={16} />
-                <span>Upload signature</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => setLeaderSignatureFile(e.target.files?.[0] || null)}
-                />
-              </label>
-              {leaderSignatureFile && (
-                <p className="text-xs text-gray-400 mt-2">{leaderSignatureFile.name}</p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
-            Member Signatures
-          </h3>
-
-          <div className="border border-dashed border-gray-300 rounded-lg p-4 bg-white">
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-              <UploadCloud size={16} />
-              <span>Upload up to 3 signature images</span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={e => {
-                  const files = Array.from(e.target.files || []).slice(0, 3);
-                  setSignatureFiles(files);
-                }}
-              />
-            </label>
-
-            {signatureFiles.length > 0 && (
-              <ul className="mt-3 space-y-1 text-xs text-gray-400">
-                {signatureFiles.map((file, index) => (
-                  <li key={`${file.name}-${index}`}>{file.name}</li>
-                ))}
-              </ul>
-            )}
-
-            {existingDocuments.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-gray-100">
-                <p className="text-xs font-medium text-gray-500 mb-2">Existing uploaded documents</p>
-                <ul className="space-y-1 text-xs text-gray-400">
-                  {existingDocuments.map(doc => (
-                    <li key={doc.id}>{doc.label || doc.document_type}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         </section>
 

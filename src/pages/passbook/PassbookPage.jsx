@@ -137,7 +137,7 @@ export default function PassbookPage() {
       const normalizedMembers = (membersRes.data || []).map((member, index) => ({
         ...member,
         registry_no: index + 1,
-        recruiter_name: member.recruiter_name || 'Self',
+        recruiter_name: member.recruiter_name?.trim() || 'Self',
         passbook_status: member.passbook_status || 'unclaimed',
         passbook_print_status: member.passbook_print_status || 'not_yet',
       }));
@@ -188,7 +188,7 @@ export default function PassbookPage() {
           (row.member_no || '').toLowerCase().includes(q) ||
           (row.cbu_account_no || '').toLowerCase().includes(q) ||
           (row.savings_account_no || '').toLowerCase().includes(q) ||
-          (row.recruiter_name || '').toLowerCase().includes(q);
+          (row.recruiter_name || 'self').toLowerCase().includes(q);
 
         const matchesStatus =
           !registryStatusFilter || row.passbook_status === registryStatusFilter;
@@ -210,6 +210,7 @@ export default function PassbookPage() {
         fullName(member).toLowerCase().includes(q) ||
         plainFullName(member).toLowerCase().includes(q) ||
         (member.member_no || '').toLowerCase().includes(q) ||
+        (member.recruiter_name || 'self').toLowerCase().includes(q) ||
         (linked.cbu?.account_no || '').toLowerCase().includes(q) ||
         (linked.savings?.account_no || '').toLowerCase().includes(q)
       );
@@ -226,7 +227,7 @@ export default function PassbookPage() {
     [accountMap, selectedMemberId]
   );
 
-  const savingsTransactions = useMemo(() => {
+  const passbookTransactions = useMemo(() => {
     if (!selectedMemberId) return [];
 
     return transactions.filter(tx => {
@@ -252,7 +253,7 @@ export default function PassbookPage() {
         ? selectedAccounts.savings?.account_no || '—'
         : selectedAccounts.cbu?.account_no || '—';
 
-    const rows = savingsTransactions.map((tx, index) => {
+    const rows = passbookTransactions.map((tx, index) => {
       const date = formatDate(tx.created_at);
       const particulars =
         tx.category === 'loan'
@@ -302,6 +303,7 @@ export default function PassbookPage() {
           <div class="box">
             <p><strong>Name:</strong> ${plainFullName(selectedMember)}</p>
             <p><strong>Member No.:</strong> ${selectedMember.member_no || '—'}</p>
+            <p><strong>Inviter / Recruiter:</strong> ${selectedMember.recruiter_name || 'Self'}</p>
             <p><strong>Account No.:</strong> ${accountNo}</p>
             <p><strong>Date Joined:</strong> ${formatDate(selectedMember.date_joined || selectedMember.created_at)}</p>
           </div>
@@ -503,6 +505,9 @@ export default function PassbookPage() {
                         <p className="text-xs text-gray-400 mt-1">
                           {member.member_no || 'No Member No.'}
                         </p>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Recruiter: <span className="font-medium">{member.recruiter_name || 'Self'}</span>
+                        </p>
                         <div className="mt-2 space-y-1">
                           <p className="text-[11px] text-gray-500">
                             CBU: <span className="font-mono">{linked.cbu?.account_no || '—'}</span>
@@ -533,6 +538,7 @@ export default function PassbookPage() {
                           </h3>
                           <div className="mt-2 space-y-1 text-sm text-gray-500">
                             <p>Member No.: <span className="font-medium text-gray-800">{selectedMember.member_no || '—'}</span></p>
+                            <p>Inviter / Recruiter: <span className="font-medium text-gray-800">{selectedMember.recruiter_name || 'Self'}</span></p>
                             <p>Date Joined: <span className="font-medium text-gray-800">{formatDate(selectedMember.date_joined || selectedMember.created_at)}</span></p>
                             <p>CBU Account No.: <span className="font-mono text-gray-800">{selectedAccounts.cbu?.account_no || '—'}</span></p>
                             <p>Savings Account No.: <span className="font-mono text-gray-800">{selectedAccounts.savings?.account_no || '—'}</span></p>
@@ -594,14 +600,14 @@ export default function PassbookPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {savingsTransactions.length === 0 ? (
+                            {passbookTransactions.length === 0 ? (
                               <tr>
                                 <td colSpan={5} className="text-center py-16 text-gray-400">
                                   No passbook entries found.
                                 </td>
                               </tr>
                             ) : (
-                              savingsTransactions.map((tx, index) => (
+                              passbookTransactions.map((tx, index) => (
                                 <tr key={tx.id} className="hover:bg-gray-50/60">
                                   <td className="px-4 py-3">{index + 1}</td>
                                   <td className="px-4 py-3 whitespace-nowrap">{formatDate(tx.created_at)}</td>

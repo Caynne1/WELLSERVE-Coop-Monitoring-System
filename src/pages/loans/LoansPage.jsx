@@ -9,6 +9,8 @@ import {
   Calendar,
   Wallet,
   Layers3,
+  DollarSign,
+  AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -17,9 +19,25 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
+import Modal from '../../components/ui/Modal';
 
-import { getLoans, deleteLoan } from '../../services/loanService';
+import {
+  getLoans,
+  deleteLoan,
+  applyLoanPaymentToSchedule,
+  updateLoan,
+} from '../../services/loanService';
+import { getAccountsByMemberId } from '../../services/accountService';
+import {
+  getMembershipByMemberId,
+  recordMembershipPayment,
+  computeFeeBalance,
+} from '../../services/membershipService';
+import { createPenalty } from '../../services/penaltyService';
+import { createInvoiceForPayment } from '../../services/invoiceService';
+import { createTransaction } from '../../services/transactionService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthContext';
 
 const statusVariant = {
   active: 'success',
@@ -28,6 +46,35 @@ const statusVariant = {
   defaulted: 'danger',
   pending: 'warning',
 };
+
+const FREQUENCY_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Frequency' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'semi_monthly', label: 'Semi-Monthly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'yearly', label: 'Yearly' },
+];
+
+const METHOD_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Method' },
+  { value: 'straight', label: 'Straight' },
+  { value: 'diminishing', label: 'Diminishing' },
+];
+
+const DUE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Due Status' },
+  { value: 'due_7', label: 'Due in 7 Days' },
+  { value: 'due_2', label: 'Due in 2 Days' },
+  { value: 'overdue', label: 'Overdue' },
+];
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'defaulted', label: 'Defaulted' },
+];
 
 function titleCase(value) {
   if (!value) return '—';
@@ -50,14 +97,93 @@ function frequencyLabel(value) {
   return map[value] || titleCase(value);
 }
 
+function parseJSONSafe(val, fallback = {}) {
+  try {
+    return typeof val === 'string' ? JSON.parse(val) : (val ?? fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function getNextDueInfo(loan) {
+  const schedule = parseJSONSafe(loan?.preview_schedule_json, []);
+  const nextDue = Array.isArray(schedule) ? schedule.find(row => !row.paid) : null;
+
+  const dueDate = nextDue?.due_date || loan?.due_date || null;
+  if (!dueDate) {
+    return {
+      dueDate: null,
+      badge: null,
+      diffDays: null,
+    };
+  }
+
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const due = new Date(dueDate);
+  const dueOnly = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+
+  const diffMs = dueOnly.getTime() - todayOnly.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return {
+      dueDate,
+      diffDays,
+      badge: {
+        label: 'Overdue',
+        className: 'bg-red-50 text-red-700 border border-red-200',
+      },
+    };
+  }
+
+  if (diffDays <= 2) {
+    return {
+      dueDate,
+      diffDays,
+      badge: {
+        label: 'Due in 2 Days',
+        className: 'bg-amber-50 text-amber-700 border border-amber-200',
+      },
+    };
+  }
+
+  if (diffDays <= 7) {
+    return {
+      dueDate,
+      diffDays,
+      badge: {
+        label: 'Due in 7 Days',
+        className: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
+      },
+    };
+  }
+
+  return {
+    dueDate,
+    diffDays,
+    badge: null,
+  };
+}
+
 export default function LoansPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [frequencyFilter, setFrequencyFilter] = useState('all');
+  const [methodFilter, setMethodFilter] = useState('all');
+  const [dueFilter, setDueFilter] = useState('all');
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [statusSavingId, setStatusSavingId] = useState(null);
+
+  const [payModal, setPayModal] = useState({
+    open: false,
+    loan: null,
+  });
 
   useEffect(() => {
     fetchLoans();
@@ -90,24 +216,54 @@ export default function LoansPage() {
     }
   }
 
+  async function handleStatusChange(loan, newStatus) {
+    if (!loan?.id || !newStatus || newStatus === loan.status) return;
+
+    try {
+      setStatusSavingId(loan.id);
+      await updateLoan(loan.id, { status: newStatus });
+      toast.success('Loan status updated');
+      await fetchLoans();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update loan status');
+    } finally {
+      setStatusSavingId(null);
+    }
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return loans;
-
     return loans.filter(loan => {
       const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.toLowerCase();
-
-      return (
+      const matchesSearch =
+        !q ||
         memberName.includes(q) ||
         (loan.members?.member_no || '').toLowerCase().includes(q) ||
-        (loan.loan_no || '').toLowerCase().includes(q) ||
         (loan.purpose || '').toLowerCase().includes(q) ||
         titleCase(loan.loan_method).toLowerCase().includes(q) ||
-        frequencyLabel(loan.repayment_frequency).toLowerCase().includes(q)
-      );
+        frequencyLabel(loan.repayment_frequency).toLowerCase().includes(q);
+
+      const matchesFrequency =
+        frequencyFilter === 'all' || (loan.repayment_frequency || '') === frequencyFilter;
+
+      const matchesMethod =
+        methodFilter === 'all' || (loan.loan_method || '') === methodFilter;
+
+      const dueInfo = getNextDueInfo(loan);
+      let matchesDue = true;
+
+      if (dueFilter === 'due_7') {
+        matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays >= 0 && dueInfo.diffDays <= 7;
+      } else if (dueFilter === 'due_2') {
+        matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays >= 0 && dueInfo.diffDays <= 2;
+      } else if (dueFilter === 'overdue') {
+        matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays < 0;
+      }
+
+      return matchesSearch && matchesFrequency && matchesMethod && matchesDue;
     });
-  }, [loans, search]);
+  }, [loans, search, frequencyFilter, methodFilter, dueFilter]);
 
   const stats = useMemo(() => {
     const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'ongoing');
@@ -156,20 +312,52 @@ export default function LoansPage() {
       </div>
 
       <div className="mt-5 mb-4 flex items-center justify-between gap-4 flex-wrap">
-        <div className="relative">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            type="text"
-            placeholder="Search by member, member no., loan no., purpose, method..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl
-              focus:outline-none focus:ring-2 focus:ring-[#07A04E] focus:border-transparent
-              w-80 bg-white shadow-sm"
-          />
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              type="text"
+              placeholder="Search by member, member no., purpose, method..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl
+                focus:outline-none focus:ring-2 focus:ring-[#07A04E] focus:border-transparent
+                w-80 bg-white shadow-sm"
+            />
+          </div>
+
+          <select
+            value={frequencyFilter}
+            onChange={e => setFrequencyFilter(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+          >
+            {FREQUENCY_FILTER_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+
+          <select
+            value={methodFilter}
+            onChange={e => setMethodFilter(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+          >
+            {METHOD_FILTER_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+
+          <select
+            value={dueFilter}
+            onChange={e => setDueFilter(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+          >
+            {DUE_FILTER_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         {!loading && (
@@ -191,20 +379,20 @@ export default function LoansPage() {
                 <tr className="bg-gray-50/80 border-b border-gray-100">
                   {[
                     'Member',
-                    'Loan No.',
                     'Amount',
                     'Balance',
                     'Method',
                     'Frequency',
                     'Term',
                     'Released',
+                    'Due Date',
                     'Status',
-                    '',
+                    'Actions',
                   ].map((h, i) => (
                     <th
                       key={h}
                       className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                        i === 2 || i === 3 ? 'text-right' : i === 9 ? 'text-right' : 'text-left'
+                        i === 1 || i === 2 ? 'text-right' : i === 9 ? 'text-right' : 'text-left'
                       }`}
                     >
                       {h}
@@ -220,99 +408,132 @@ export default function LoansPage() {
                       <div className="flex flex-col items-center gap-2 text-gray-400">
                         <CreditCard size={32} className="text-gray-200" />
                         <p className="text-sm">
-                          {search ? 'No loans match your search.' : 'No loans yet.'}
+                          {search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all'
+                            ? 'No loans match your search/filter.'
+                            : 'No loans yet.'}
                         </p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  filtered.map(loan => (
-                    <tr
-                      key={loan.id}
-                      className="hover:bg-[#D6FADC]/25 transition-colors group"
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-gray-900">
-                          {loan.members?.first_name} {loan.members?.last_name}
-                        </p>
-                        {loan.members?.member_no && (
-                          <p className="text-xs text-gray-400 font-mono mt-0.5">
-                            {loan.members.member_no}
+                  filtered.map(loan => {
+                    const dueInfo = getNextDueInfo(loan);
+
+                    return (
+                      <tr
+                        key={loan.id}
+                        className="hover:bg-[#D6FADC]/25 transition-colors group"
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-gray-900">
+                            {loan.members?.first_name} {loan.members?.last_name}
                           </p>
-                        )}
-                      </td>
+                          {loan.members?.member_no && (
+                            <p className="text-xs text-gray-400 font-mono mt-0.5">
+                              {loan.members.member_no}
+                            </p>
+                          )}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded-lg text-gray-600 ring-1 ring-gray-200">
-                          {loan.loan_no || '—'}
-                        </span>
-                      </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="font-semibold text-gray-900">
+                            {formatCurrency(loan.amount)}
+                          </span>
+                        </td>
 
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-semibold text-gray-900">
-                          {formatCurrency(loan.amount)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        <span
-                          className={`font-semibold ${
-                            (loan.balance ?? loan.amount) > 0 ? 'text-orange-600' : 'text-green-600'
-                          }`}
-                        >
-                          {formatCurrency(loan.balance ?? loan.amount)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        <span className="inline-flex items-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700">
-                          {titleCase(loan.loan_method || 'diminishing')}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
-                          {frequencyLabel(loan.repayment_frequency)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-gray-500 text-xs">
-                        {loan.term_months ? `${loan.term_months} mo.` : '—'}
-                      </td>
-
-                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          <Calendar size={12} className="text-gray-300" />
-                          <span>{formatDate(loan.release_date || loan.created_at)}</span>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <Badge variant={statusVariant[loan.status] || 'default'} dot>
-                          {loan.status || '—'}
-                        </Badge>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => navigate(`/loans/${loan.id}`)}
-                            title="View loan"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        <td className="px-4 py-3 text-right">
+                          <span
+                            className={`font-semibold ${
+                              (loan.balance ?? loan.amount) > 0 ? 'text-orange-600' : 'text-green-600'
+                            }`}
                           >
-                            <Eye size={15} />
-                          </button>
-                          <button
-                            onClick={() => setToDelete(loan)}
-                            title="Delete loan"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            {formatCurrency(loan.balance ?? loan.amount)}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-600 text-xs">
+                          <span className="inline-flex items-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700">
+                            {titleCase(loan.loan_method || 'diminishing')}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-600 text-xs">
+                          <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
+                            {frequencyLabel(loan.repayment_frequency)}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {loan.term_months ? `${loan.term_months} mo.` : '—'}
+                        </td>
+
+                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <Calendar size={12} className="text-gray-300" />
+                            <span>{formatDate(loan.release_date || loan.created_at)}</span>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                          <div className="space-y-1">
+                            <div className="text-gray-600">
+                              {dueInfo.dueDate ? formatDate(dueInfo.dueDate) : '—'}
+                            </div>
+                            {dueInfo.badge && (
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium ${dueInfo.badge.className}`}>
+                                <AlertCircle size={11} />
+                                {dueInfo.badge.label}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <select
+                            value={loan.status || 'pending'}
+                            onChange={e => handleStatusChange(loan, e.target.value)}
+                            disabled={statusSavingId === loan.id}
+                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
                           >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            {STATUS_OPTIONS.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            {(loan.status === 'active' || loan.status === 'ongoing') && (
+                              <button
+                                onClick={() => setPayModal({ open: true, loan })}
+                                title="Pay loan"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-green-700 bg-green-50 hover:bg-green-100 transition-colors text-xs font-medium"
+                              >
+                                <DollarSign size={13} />
+                                Pay
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => navigate(`/loans/${loan.id}`)}
+                              title="View loan"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            >
+                              <Eye size={15} />
+                            </button>
+
+                            <button
+                              onClick={() => setToDelete(loan)}
+                              title="Delete loan"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -344,6 +565,460 @@ export default function LoansPage() {
         loading={deleting}
         title="Delete Loan"
         message="Delete this loan record? This cannot be undone."
+      />
+
+      <LoansPaymentModal
+        open={payModal.open}
+        onClose={() => setPayModal({ open: false, loan: null })}
+        loan={payModal.loan}
+        userId={user?.id}
+        onSuccess={fetchLoans}
+      />
+    </div>
+  );
+}
+
+function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
+  const [loadingData, setLoadingData] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [memberAccounts, setMemberAccounts] = useState({
+    cbu: null,
+    savings: null,
+  });
+  const [membership, setMembership] = useState(null);
+
+  const [loanAmt, setLoanAmt] = useState('');
+  const [cbuAmt, setCbuAmt] = useState('');
+  const [savingsAmt, setSavingsAmt] = useState('');
+  const [membershipAmt, setMembershipAmt] = useState('');
+  const [penaltyAmt, setPenaltyAmt] = useState('');
+  const [penaltyDescription, setPenaltyDescription] = useState('');
+  const [withOthers, setWithOthers] = useState(false);
+  const [othersPurpose, setOthersPurpose] = useState('');
+  const [othersAmt, setOthersAmt] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const memberName = `${loan?.members?.first_name || ''} ${loan?.members?.last_name || ''}`.trim() || 'Member';
+
+  useEffect(() => {
+    async function bootstrap() {
+      if (!open || !loan?.member_id) return;
+
+      setLoadingData(true);
+      try {
+        const [accounts, memberMembership] = await Promise.all([
+          getAccountsByMemberId(loan.member_id),
+          getMembershipByMemberId(loan.member_id),
+        ]);
+
+        const cbu = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu') || null;
+        const savings = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings') || null;
+
+        setMemberAccounts({ cbu, savings });
+        setMembership(memberMembership || null);
+
+        const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+        const summary = parseJSONSafe(loan.preview_summary_json, {});
+        const nextDue = Array.isArray(schedule) ? schedule.find(row => !row.paid) : null;
+
+        const suggestedLoanAmount =
+          nextDue?.remaining_due ||
+          nextDue?.total_due ||
+          nextDue?.payment ||
+          summary?.payment_per_period ||
+          '';
+
+        setLoanAmt(String(suggestedLoanAmount || ''));
+        setCbuAmt('');
+        setSavingsAmt('');
+        setMembershipAmt('');
+        setPenaltyAmt('');
+        setPenaltyDescription('');
+        setWithOthers(false);
+        setOthersPurpose('');
+        setOthersAmt('');
+        setPaymentDate(new Date().toISOString().split('T')[0]);
+      } catch (err) {
+        toast.error(err.message || 'Failed to load payment data.');
+      } finally {
+        setLoadingData(false);
+      }
+    }
+
+    bootstrap();
+  }, [open, loan]);
+
+  const membershipBalance = computeFeeBalance(membership);
+
+  async function handleSubmit() {
+    if (!loan || !userId) {
+      toast.error('Payment context is missing.');
+      return;
+    }
+
+    const loanPay = parseFloat(loanAmt) || 0;
+    const cbuPay = parseFloat(cbuAmt) || 0;
+    const savingsPay = parseFloat(savingsAmt) || 0;
+    const membershipPay = parseFloat(membershipAmt) || 0;
+    const penaltyPay = parseFloat(penaltyAmt) || 0;
+    const otherPay = parseFloat(othersAmt) || 0;
+
+    if (loanPay + cbuPay + savingsPay + membershipPay + penaltyPay + otherPay === 0) {
+      toast.error('Enter at least one amount greater than zero.');
+      return;
+    }
+
+    if (loanPay > 0 && loanPay > (loan.balance ?? 0)) {
+      toast.error(`Loan payment exceeds remaining balance of ${formatCurrency(loan.balance)}.`);
+      return;
+    }
+
+    if (membershipPay > 0 && !membership) {
+      toast.error('This member has no membership record.');
+      return;
+    }
+
+    if (membershipPay > membershipBalance) {
+      toast.error(`Membership payment exceeds remaining balance of ${formatCurrency(membershipBalance)}.`);
+      return;
+    }
+
+    if (withOthers && !othersPurpose.trim()) {
+      toast.error('Others purpose is required.');
+      return;
+    }
+
+    if (!paymentDate) {
+      toast.error('Payment date is required.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (loanPay > 0) {
+        await createTransaction({
+          member_id: loan.member_id,
+          loan_id: loan.id,
+          category: 'loan',
+          type: 'loan_payment',
+          amount: loanPay,
+          reference: loan.loan_no || null,
+          created_by: userId,
+          transaction_date: paymentDate,
+        });
+
+        await createInvoiceForPayment({
+          payment_type: 'loan_payment',
+          member_id: loan.member_id,
+          member_name: memberName,
+          amount: loanPay,
+          purpose: 'Loan Payment',
+          ref_id: loan.id,
+          created_by: userId,
+          date: paymentDate,
+        });
+
+        await applyLoanPaymentToSchedule(loan.id, loanPay);
+      }
+
+      if (cbuPay > 0) {
+        if (!memberAccounts.cbu) {
+          throw new Error('No CBU account found for this member.');
+        }
+
+        await createTransaction({
+          member_id: loan.member_id,
+          account_id: memberAccounts.cbu.id,
+          category: 'cbu',
+          type: 'deposit',
+          amount: cbuPay,
+          reference: memberAccounts.cbu.account_no || null,
+          created_by: userId,
+          transaction_date: paymentDate,
+        });
+
+        await createInvoiceForPayment({
+          payment_type: 'cbu',
+          member_id: loan.member_id,
+          member_name: memberName,
+          amount: cbuPay,
+          purpose: 'CBU Deposit',
+          ref_id: memberAccounts.cbu.id,
+          account_id: memberAccounts.cbu.id,
+          created_by: userId,
+          date: paymentDate,
+        });
+      }
+
+      if (savingsPay > 0) {
+        if (!memberAccounts.savings) {
+          throw new Error('No Savings account found for this member.');
+        }
+
+        await createTransaction({
+          member_id: loan.member_id,
+          account_id: memberAccounts.savings.id,
+          category: 'savings',
+          type: 'deposit',
+          amount: savingsPay,
+          reference: memberAccounts.savings.account_no || null,
+          created_by: userId,
+          transaction_date: paymentDate,
+        });
+
+        await createInvoiceForPayment({
+          payment_type: 'savings',
+          member_id: loan.member_id,
+          member_name: memberName,
+          amount: savingsPay,
+          purpose: 'Savings Deposit',
+          ref_id: memberAccounts.savings.id,
+          account_id: memberAccounts.savings.id,
+          created_by: userId,
+          date: paymentDate,
+        });
+      }
+
+      if (membershipPay > 0) {
+        const updatedMembership = await recordMembershipPayment(
+          membership.id,
+          loan.member_id,
+          membershipPay,
+          paymentDate,
+          'Membership payment from Loans page',
+          userId
+        );
+
+        setMembership(updatedMembership);
+
+        await createTransaction({
+          member_id: loan.member_id,
+          category: 'membership',
+          type: 'membership_payment',
+          amount: membershipPay,
+          created_by: userId,
+          transaction_date: paymentDate,
+        });
+
+        await createInvoiceForPayment({
+          payment_type: 'membership',
+          member_id: loan.member_id,
+          member_name: memberName,
+          amount: membershipPay,
+          purpose: 'Membership Fee Payment',
+          ref_id: membership.id,
+          created_by: userId,
+          date: paymentDate,
+        });
+      }
+
+      if (penaltyPay > 0) {
+        await createPenalty({
+          member_id: loan.member_id,
+          amount: penaltyPay,
+          description: penaltyDescription || 'Penalty recorded from Loans page payment',
+          penalty_date: paymentDate,
+          created_by: userId,
+        });
+
+        await createTransaction({
+          member_id: loan.member_id,
+          category: 'penalty',
+          type: 'penalty_payment',
+          amount: penaltyPay,
+          created_by: userId,
+          transaction_date: paymentDate,
+        });
+
+        await createInvoiceForPayment({
+          payment_type: 'penalty',
+          member_id: loan.member_id,
+          member_name: memberName,
+          amount: penaltyPay,
+          purpose: penaltyDescription || 'Penalty Payment',
+          created_by: userId,
+          date: paymentDate,
+        });
+      }
+
+      if (withOthers && otherPay > 0) {
+        await createTransaction({
+          member_id: loan.member_id,
+          category: 'others',
+          type: 'other_payment',
+          amount: otherPay,
+          reference: othersPurpose.trim(),
+          created_by: userId,
+          transaction_date: paymentDate,
+        });
+
+        await createInvoiceForPayment({
+          payment_type: 'others',
+          member_id: loan.member_id,
+          member_name: memberName,
+          amount: otherPay,
+          purpose: othersPurpose.trim(),
+          created_by: userId,
+          date: paymentDate,
+        });
+      }
+
+      toast.success('Payment posted successfully.');
+      await onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(err.message || 'Failed to post payment.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Post Payment" size="lg">
+      {!loan ? null : loadingData ? (
+        <div className="flex justify-center py-10">
+          <Spinner />
+        </div>
+      ) : (
+        <>
+          <div className="mb-5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+            <p className="text-sm font-semibold text-orange-900">
+              {memberName}
+            </p>
+            <p className="text-sm text-orange-700 mt-1">
+              Loan balance: <span className="font-semibold">{formatCurrency(loan.balance ?? 0)}</span>
+            </p>
+            {membership && membershipBalance > 0 && (
+              <p className="text-sm text-orange-700 mt-1">
+                Membership balance: <span className="font-semibold">{formatCurrency(membershipBalance)}</span>
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <PaymentField
+              label={`Loan ${loan.balance != null ? `(max ${formatCurrency(loan.balance)})` : ''}`}
+              value={loanAmt}
+              onChange={setLoanAmt}
+            />
+            <PaymentField
+              label={`CBU ${memberAccounts.cbu ? `(Acct: ${memberAccounts.cbu.account_no || '—'})` : ''}`}
+              value={cbuAmt}
+              onChange={setCbuAmt}
+            />
+            <PaymentField
+              label={`Savings ${memberAccounts.savings ? `(Acct: ${memberAccounts.savings.account_no || '—'})` : ''}`}
+              value={savingsAmt}
+              onChange={setSavingsAmt}
+            />
+
+            {membership && membershipBalance > 0 ? (
+              <PaymentField
+                label={`Membership (Optional, max ${formatCurrency(membershipBalance)})`}
+                value={membershipAmt}
+                onChange={setMembershipAmt}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-200 p-3 text-xs text-gray-400">
+                Membership (Optional)
+                <div className="mt-1">
+                  {membership ? 'Fully paid' : 'No membership record'}
+                </div>
+              </div>
+            )}
+
+            <PaymentField
+              label="Penalty (Optional)"
+              value={penaltyAmt}
+              onChange={setPenaltyAmt}
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={e => setPaymentDate(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Penalty Description</label>
+            <input
+              type="text"
+              value={penaltyDescription}
+              onChange={e => setPenaltyDescription(e.target.value)}
+              placeholder="Optional penalty description"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+            />
+          </div>
+
+          <div className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={withOthers}
+                onChange={e => setWithOthers(e.target.checked)}
+              />
+              Others
+            </label>
+
+            {withOthers && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
+                  <input
+                    type="text"
+                    value={othersPurpose}
+                    onChange={e => setOthersPurpose(e.target.value)}
+                    placeholder="Enter purpose"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+                  />
+                </div>
+
+                <PaymentField
+                  label="Amount"
+                  value={othersAmt}
+                  onChange={setOthersAmt}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              loading={saving}
+              variant="finance"
+              onClick={handleSubmit}
+              icon={<DollarSign size={15} />}
+            >
+              Post Payment
+            </Button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function PaymentField({ label, value, onChange }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="0.00"
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
       />
     </div>
   );

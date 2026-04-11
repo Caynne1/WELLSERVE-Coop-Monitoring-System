@@ -105,6 +105,7 @@ export function MemberFormContent({
       occupation: '',
       tin_no: '',
       sss_id_no: '',
+      recruiter_name: '',
       status: 'active',
       membership_type: 'associate',
       notes: '',
@@ -178,6 +179,7 @@ export function MemberFormContent({
         occupation: data.occupation || '',
         tin_no: data.tin_no || '',
         sss_id_no: data.sss_id_no || '',
+        recruiter_name: data.recruiter_name || '',
         status: data.status || 'active',
         membership_type: data.membership_type || 'associate',
         notes: data.notes || '',
@@ -222,6 +224,7 @@ export function MemberFormContent({
         occupation: values.occupation,
         tin_no: values.tin_no,
         sss_id_no: values.sss_id_no,
+        recruiter_name: values.recruiter_name?.trim() || 'Self',
         status: values.status,
         membership_type: values.membership_type,
         notes: values.notes,
@@ -516,6 +519,12 @@ export function MemberFormContent({
           />
           <Input label="Mobile No." placeholder="+63 9XX XXX XXXX" {...register('phone')} />
           <Input label="Res. Tel. No." {...register('res_tel_no')} />
+
+          <Input
+            label="Inviter / Recruiter"
+            placeholder="Leave blank for Self"
+            {...register('recruiter_name')}
+          />
 
           <Select label="Status" options={STATUS_OPTIONS} {...register('status')} />
 

@@ -51,6 +51,19 @@ function sanitizeLoanPayload(payload) {
   );
 }
 
+function parseJSONSafe(value, fallback) {
+  try {
+    if (value == null) return fallback;
+    return typeof value === 'string' ? JSON.parse(value) : value;
+  } catch {
+    return fallback;
+  }
+}
+
+function round2(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
 export async function getLoans() {
   const { data: loans, error } = await supabase
     .from('loans')
@@ -186,4 +199,89 @@ export async function getLoanStats() {
     totalReleased: (data || []).reduce((s, l) => s + (l.amount || 0), 0),
     totalOutstanding: active.reduce((s, l) => s + (l.balance || 0), 0),
   };
+}
+
+/**
+ * Marks the next unpaid amortization row(s) as paid based on the posted amount.
+ * This fixes the "Next Due stays the same after payment" issue.
+ */
+export async function applyLoanPaymentToSchedule(loanId, paymentAmount) {
+  const amountToApply = round2(paymentAmount);
+  if (!loanId || amountToApply <= 0) {
+    throw new Error('Valid loan id and payment amount are required.');
+  }
+
+  const loan = await getLoanById(loanId);
+
+  const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+  const summary = parseJSONSafe(loan.preview_summary_json, {});
+
+  if (!Array.isArray(schedule) || schedule.length === 0) {
+    return loan;
+  }
+
+  let remaining = amountToApply;
+
+  const updatedSchedule = schedule.map((row) => ({ ...row }));
+
+  for (let i = 0; i < updatedSchedule.length; i += 1) {
+    const row = updatedSchedule[i];
+    if (row.paid) continue;
+
+    const rowDue = round2(
+      row.total_due ??
+      row.payment ??
+      row.amount_due ??
+      0
+    );
+
+    if (rowDue <= 0) continue;
+
+    // full payment of this row
+    if (remaining >= rowDue) {
+      row.paid = true;
+      row.paid_amount = rowDue;
+      row.paid_at = new Date().toISOString();
+      remaining = round2(remaining - rowDue);
+      continue;
+    }
+
+    // partial payment
+    row.paid = false;
+    row.partial_paid = true;
+    row.partial_paid_amount = round2((row.partial_paid_amount || 0) + remaining);
+    row.remaining_due = round2(rowDue - row.partial_paid_amount);
+    row.last_partial_paid_at = new Date().toISOString();
+    remaining = 0;
+    break;
+  }
+
+  const unpaidRows = updatedSchedule.filter(r => !r.paid);
+  const nextUnpaid = unpaidRows[0] || null;
+  const newDueDate = nextUnpaid?.due_date || loan.due_date || null;
+
+  const updatedSummary = {
+    ...summary,
+    next_due_date: nextUnpaid?.due_date || null,
+    next_due_amount: round2(
+      nextUnpaid?.remaining_due ??
+      nextUnpaid?.total_due ??
+      nextUnpaid?.payment ??
+      0
+    ),
+  };
+
+  const { data, error } = await supabase
+    .from('loans')
+    .update({
+      due_date: newDueDate,
+      preview_schedule_json: JSON.stringify(updatedSchedule),
+      preview_summary_json: JSON.stringify(updatedSummary),
+    })
+    .eq('id', loanId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
