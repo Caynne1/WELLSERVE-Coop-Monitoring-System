@@ -35,6 +35,7 @@ import {
   createPenalty,
   deletePenalty,
 } from '../../services/penaltyService';
+import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 import { exportMemberReport } from '../../utils/excelExport.js';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 
@@ -95,8 +96,10 @@ export default function MemberDetailPage() {
   const [loading, setLoading] = useState(true);
 
   const [payModal, setPayModal] = useState({ open: false, loan: null });
-  const [cbuModal, setCbuModal] = useState(false);
-  const [savingsModal, setSavingsModal] = useState(false);
+  const [cbuDepositModal, setCbuDepositModal] = useState(false);
+  const [savingsDepositModal, setSavingsDepositModal] = useState(false);
+  const [cbuWithdrawModal, setCbuWithdrawModal] = useState(false);
+  const [savingsWithdrawModal, setSavingsWithdrawModal] = useState(false);
 
   const [membership, setMembership] = useState(null);
   const [membershipPayments, setMembershipPayments] = useState([]);
@@ -204,8 +207,8 @@ export default function MemberDetailPage() {
     const relevant = transactions
       .filter(t =>
         t.type === 'loan_payment' ||
-        (t.category === 'cbu' && t.type === 'deposit') ||
-        (t.category === 'savings' && t.type === 'deposit')
+        (t.category === 'cbu' && (t.type === 'deposit' || t.type === 'withdrawal')) ||
+        (t.category === 'savings' && (t.type === 'deposit' || t.type === 'withdrawal'))
       )
       .sort((a, b) => {
         const aDate = a.transaction_date || a.created_at;
@@ -230,15 +233,9 @@ export default function MemberDetailPage() {
         last.payment_mode_note === (tx.payment_mode_note || '');
 
       if (canMerge) {
-        if (tx.type === 'loan_payment') {
-          last.loan_amount += Number(tx.amount || 0);
-        }
-        if (tx.category === 'cbu' && tx.type === 'deposit') {
-          last.cbu_amount += Number(tx.amount || 0);
-        }
-        if (tx.category === 'savings' && tx.type === 'deposit') {
-          last.savings_amount += Number(tx.amount || 0);
-        }
+        if (tx.type === 'loan_payment') last.loan_amount += Number(tx.amount || 0);
+        if (tx.category === 'cbu' && tx.type === 'deposit') last.cbu_amount += Number(tx.amount || 0);
+        if (tx.category === 'savings' && tx.type === 'deposit') last.savings_amount += Number(tx.amount || 0);
 
         if (txDate > new Date(last.latest_created_at)) {
           last.latest_created_at = tx.created_at;
@@ -466,7 +463,8 @@ export default function MemberDetailPage() {
               account={cbuAccount}
               transactions={cbuTransactions}
               paymentCount={cbuPaymentCount}
-              onDeposit={() => setCbuModal(true)}
+              onDeposit={() => setCbuDepositModal(true)}
+              onWithdraw={() => setCbuWithdrawModal(true)}
             />
           )}
 
@@ -475,7 +473,8 @@ export default function MemberDetailPage() {
               account={savingsAccount}
               transactions={savingsTransactions}
               paymentCount={savingsPaymentCount}
-              onDeposit={() => setSavingsModal(true)}
+              onDeposit={() => setSavingsDepositModal(true)}
+              onWithdraw={() => setSavingsWithdrawModal(true)}
             />
           )}
 
@@ -521,8 +520,8 @@ export default function MemberDetailPage() {
       />
 
       <DepositModal
-        open={cbuModal}
-        onClose={() => setCbuModal(false)}
+        open={cbuDepositModal}
+        onClose={() => setCbuDepositModal(false)}
         accountType="cbu"
         label="CBU"
         account={cbuAccount}
@@ -533,13 +532,35 @@ export default function MemberDetailPage() {
       />
 
       <DepositModal
-        open={savingsModal}
-        onClose={() => setSavingsModal(false)}
+        open={savingsDepositModal}
+        onClose={() => setSavingsDepositModal(false)}
         accountType="savings"
         label="Savings"
         account={savingsAccount}
         memberId={id}
         memberName={memberFullName}
+        userId={user?.id}
+        onSuccess={refreshEverything}
+      />
+
+      <WithdrawalVoucherModal
+        open={cbuWithdrawModal}
+        onClose={() => setCbuWithdrawModal(false)}
+        accountType="cbu"
+        label="CBU"
+        account={cbuAccount}
+        memberId={id}
+        userId={user?.id}
+        onSuccess={refreshEverything}
+      />
+
+      <WithdrawalVoucherModal
+        open={savingsWithdrawModal}
+        onClose={() => setSavingsWithdrawModal(false)}
+        accountType="savings"
+        label="Savings"
+        account={savingsAccount}
+        memberId={id}
         userId={user?.id}
         onSuccess={refreshEverything}
       />
@@ -1039,6 +1060,202 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
         <Button variant="outline" onClick={onClose}>Cancel</Button>
         <Button loading={loading} onClick={handleSubmit} icon={<TrendingUp size={15} />}>
           Post Deposit
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function WithdrawalVoucherModal({ open, onClose, accountType, label, account, memberId, userId, onSuccess }) {
+  const [withdrawVouchers, setWithdrawVouchers] = useState([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState('');
+  const [loadingVouchers, setLoadingVouchers] = useState(false);
+  const [posting, setPosting] = useState(false);
+
+  const [amount, setAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+
+  useEffect(() => {
+    async function loadVouchers() {
+      if (!open || !account) return;
+
+      setSelectedVoucherId('');
+      setAmount('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentMode('');
+      setPaymentReference('');
+      setPaymentNotes('');
+
+      try {
+        setLoadingVouchers(true);
+        const vouchers = await getApprovedWithdrawalVouchers({
+          member_id: memberId,
+          account_id: account.id,
+          account_type: accountType,
+        });
+        setWithdrawVouchers(vouchers || []);
+      } catch (err) {
+        toast.error(err.message || 'Failed to load approved withdrawal vouchers.');
+        setWithdrawVouchers([]);
+      } finally {
+        setLoadingVouchers(false);
+      }
+    }
+
+    loadVouchers();
+  }, [open, account, memberId, accountType]);
+
+  function handleVoucherSelect(voucherId) {
+    setSelectedVoucherId(voucherId);
+    const voucher = withdrawVouchers.find(v => v.id === voucherId);
+
+    if (!voucher) {
+      setAmount('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentMode('');
+      setPaymentReference('');
+      setPaymentNotes('');
+      return;
+    }
+
+    setAmount(String(voucher.amount || ''));
+    setPaymentDate(voucher.date || new Date().toISOString().split('T')[0]);
+    setPaymentMode(voucher.payment_mode || '');
+    setPaymentReference(voucher.reference || '');
+    setPaymentNotes(voucher.notes || '');
+  }
+
+  async function handleSubmit() {
+    const voucher = withdrawVouchers.find(v => v.id === selectedVoucherId);
+    const value = parseFloat(amount) || 0;
+
+    if (!account) return toast.error(`No ${label} account found for this member.`);
+    if (!voucher) return toast.error('Select an approved withdrawal voucher first.');
+    if (value <= 0) return toast.error('Voucher amount must be greater than zero.');
+    if (!paymentDate) return toast.error('Withdrawal date is required.');
+    if (value > (parseFloat(account.balance) || 0)) {
+      return toast.error(`Withdrawal exceeds current balance of ${formatCurrency(account.balance || 0)}.`);
+    }
+
+    setPosting(true);
+    try {
+      const paymentModeNote =
+        [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
+
+      await createTransaction({
+        member_id: memberId,
+        account_id: account.id,
+        category: accountType,
+        type: 'withdrawal',
+        amount: value,
+        reference: voucher.voucher_no || paymentReference.trim() || account.account_no || null,
+        notes: [
+          `Voucher: ${voucher.voucher_no}`,
+          voucher.purpose ? `Purpose: ${voucher.purpose}` : null,
+          paymentNotes.trim() || voucher.notes || null,
+        ].filter(Boolean).join(' | '),
+        created_by: userId ?? null,
+        transaction_date: paymentDate,
+        payment_mode: paymentMode || voucher.payment_mode || null,
+        payment_mode_note: paymentModeNote || voucher.reference || null,
+      });
+
+      toast.success(`${label} withdrawal posted from approved voucher.`);
+      await onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(err.message || `Failed to post ${label} withdrawal.`);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`${label} Withdrawal from Approved Voucher`} size="sm">
+      {account && (
+        <p className="text-sm text-gray-500 mb-4">
+          Current balance: <span className="font-semibold text-gray-800">{formatCurrency(account.balance)}</span>
+        </p>
+      )}
+
+      {loadingVouchers ? (
+        <div className="flex justify-center py-8">
+          <Spinner />
+        </div>
+      ) : withdrawVouchers.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          No approved member withdrawal vouchers found for this {label} account.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Approved Voucher</label>
+            <select
+              value={selectedVoucherId}
+              onChange={e => handleVoucherSelect(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              <option value="">Select approved voucher</option>
+              {withdrawVouchers.map(voucher => (
+                <option key={voucher.id} value={voucher.id}>
+                  {voucher.voucher_no} · {formatCurrency(voucher.amount)} · {voucher.purpose}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+              <p className="text-xs text-gray-400 mb-1">Amount</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {amount ? formatCurrency(parseFloat(amount) || 0) : '—'}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+              <p className="text-xs text-gray-400 mb-1">Date</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {paymentDate ? formatDate(paymentDate) : '—'}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+            <p className="text-xs text-gray-400 mb-1">Mode of Payment</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {paymentMode || '—'}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+            <p className="text-xs text-gray-400 mb-1">Reference</p>
+            <p className="text-sm font-semibold text-gray-900 break-all">
+              {paymentReference || '—'}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+            <p className="text-xs text-gray-400 mb-1">Notes</p>
+            <p className="text-sm text-gray-900 whitespace-pre-wrap">
+              {paymentNotes || '—'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3 mt-5">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button
+          loading={posting}
+          variant="danger"
+          onClick={handleSubmit}
+          icon={<TrendingDown size={15} />}
+          disabled={!selectedVoucherId || loadingVouchers || withdrawVouchers.length === 0}
+        >
+          Post Withdrawal
         </Button>
       </div>
     </Modal>
@@ -1801,7 +2018,7 @@ function LoanPaymentHistoryTable({ rows }) {
   );
 }
 
-function CBUTab({ account, transactions, paymentCount, onDeposit }) {
+function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) {
   if (!account) return <EmptyState icon={PiggyBank} message="No CBU account initialized for this member." />;
 
   return (
@@ -1817,9 +2034,14 @@ function CBUTab({ account, transactions, paymentCount, onDeposit }) {
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
-        <Button onClick={onDeposit} variant="finance" icon={<Plus size={14} />} size="sm">
-          Deposit CBU
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={onDeposit} variant="finance" icon={<Plus size={14} />} size="sm">
+            Deposit CBU
+          </Button>
+          <Button onClick={onWithdraw} variant="danger" icon={<TrendingDown size={14} />} size="sm">
+            Withdraw
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1839,7 +2061,7 @@ function CBUTab({ account, transactions, paymentCount, onDeposit }) {
   );
 }
 
-function SavingsTab({ account, transactions, paymentCount, onDeposit }) {
+function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) {
   if (!account) return <EmptyState icon={Wallet} message="No Savings account initialized for this member." />;
 
   return (
@@ -1855,9 +2077,14 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit }) {
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
-        <Button onClick={onDeposit} variant="finance" icon={<Plus size={14} />} size="sm">
-          Deposit Savings
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={onDeposit} variant="finance" icon={<Plus size={14} />} size="sm">
+            Deposit Savings
+          </Button>
+          <Button onClick={onWithdraw} variant="danger" icon={<TrendingDown size={14} />} size="sm">
+            Withdraw
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1942,7 +2169,9 @@ function HistoryTable({ rows }) {
             <tr key={row.id}>
               <td className="px-4 py-3">{formatDate(row.transaction_date || row.created_at || row.payment_date)}</td>
               <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || '—'}</td>
-              <td className="px-4 py-3 font-medium">{formatCurrency(row.amount || 0)}</td>
+              <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
+                {formatCurrency(row.amount || 0)}
+              </td>
               <td className="px-4 py-3 text-gray-500">{row.reference || '—'}</td>
             </tr>
           ))}

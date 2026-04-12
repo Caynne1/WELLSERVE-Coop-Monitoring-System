@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getAllSavingsAccounts } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
+import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 const PAYMENT_MODE_OPTIONS = [
@@ -50,6 +51,10 @@ export default function SavingsPage() {
   const [paymentNotes, setPaymentNotes] = useState('');
   const [posting, setPosting] = useState(false);
 
+  const [withdrawVouchers, setWithdrawVouchers] = useState([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState('');
+  const [loadingWithdrawVouchers, setLoadingWithdrawVouchers] = useState(false);
+
   useEffect(() => {
     fetchAccounts();
   }, []);
@@ -65,7 +70,7 @@ export default function SavingsPage() {
     }
   }
 
-  function resetFormFields() {
+  function resetDepositFields() {
     setAmount('');
     setPaymentDate(new Date().toISOString().split('T')[0]);
     setSiNo('');
@@ -74,16 +79,61 @@ export default function SavingsPage() {
     setPaymentNotes('');
   }
 
+  function resetWithdrawFields() {
+    setSelectedVoucherId('');
+    setWithdrawVouchers([]);
+    setAmount('');
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentMode('');
+    setPaymentReference('');
+    setPaymentNotes('');
+  }
+
   function openDepositModal(account) {
     setDepositTarget({ account });
     setWithdrawTarget(null);
-    resetFormFields();
+    resetDepositFields();
   }
 
-  function openWithdrawModal(account) {
+  async function openWithdrawModal(account) {
     setWithdrawTarget({ account });
     setDepositTarget(null);
-    resetFormFields();
+    resetWithdrawFields();
+
+    try {
+      setLoadingWithdrawVouchers(true);
+      const vouchers = await getApprovedWithdrawalVouchers({
+        member_id: account.member_id,
+        account_id: account.id,
+        account_type: 'savings',
+      });
+      setWithdrawVouchers(vouchers || []);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load approved withdrawal vouchers.');
+      setWithdrawVouchers([]);
+    } finally {
+      setLoadingWithdrawVouchers(false);
+    }
+  }
+
+  function handleVoucherSelect(voucherId) {
+    setSelectedVoucherId(voucherId);
+
+    const voucher = withdrawVouchers.find(v => v.id === voucherId);
+    if (!voucher) {
+      setAmount('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentMode('');
+      setPaymentReference('');
+      setPaymentNotes('');
+      return;
+    }
+
+    setAmount(String(voucher.amount || ''));
+    setPaymentDate(voucher.date || new Date().toISOString().split('T')[0]);
+    setPaymentMode(voucher.payment_mode || '');
+    setPaymentReference(voucher.reference || '');
+    setPaymentNotes(voucher.notes || '');
   }
 
   async function handleDeposit() {
@@ -153,7 +203,7 @@ export default function SavingsPage() {
 
       toast.success('Savings deposit posted.');
       setDepositTarget(null);
-      resetFormFields();
+      resetDepositFields();
       fetchAccounts();
     } catch (err) {
       toast.error(err.message || 'Failed to post deposit.');
@@ -163,41 +213,32 @@ export default function SavingsPage() {
   }
 
   async function handleWithdraw() {
+    const account = withdrawTarget?.account;
+    const voucher = withdrawVouchers.find(v => v.id === selectedVoucherId);
     const value = parseFloat(amount) || 0;
-    const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
+
+    if (!account) {
+      return toast.error('Savings account is missing.');
+    }
+
+    if (!voucher) {
+      return toast.error('Select an approved withdrawal voucher first.');
+    }
 
     if (value <= 0) {
-      return toast.error('Enter a valid amount greater than zero.');
+      return toast.error('Voucher amount must be greater than zero.');
     }
 
     if (!paymentDate) {
       return toast.error('Withdrawal date is required.');
     }
 
-    if (!siNo.trim()) {
-      return toast.error('SI# is required.');
-    }
-
-    if (!paymentMode) {
-      return toast.error('Mode of payment is required.');
-    }
-
-    if (referenceRequired && !paymentReference.trim()) {
-      return toast.error('Reference / Account / Check No. is required for the selected payment mode.');
-    }
-
-    const account = withdrawTarget.account;
     if (value > (parseFloat(account.balance) || 0)) {
       return toast.error(`Withdrawal exceeds current balance of ${formatCurrency(account.balance || 0)}.`);
     }
 
     setPosting(true);
     try {
-      const memberName = [
-        account.members?.first_name,
-        account.members?.last_name,
-      ].filter(Boolean).join(' ') || 'Unknown Member';
-
       const paymentModeNote =
         [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
@@ -207,33 +248,21 @@ export default function SavingsPage() {
         category: 'savings',
         type: 'withdrawal',
         amount: value,
-        reference: paymentReference.trim() || account.account_no || null,
-        notes: paymentNotes.trim() || null,
+        reference: voucher.voucher_no || paymentReference.trim() || account.account_no || null,
+        notes: [
+          `Voucher: ${voucher.voucher_no}`,
+          voucher.purpose ? `Purpose: ${voucher.purpose}` : null,
+          paymentNotes.trim() || voucher.notes || null,
+        ].filter(Boolean).join(' | '),
         created_by: user?.id ?? null,
         transaction_date: paymentDate,
-        payment_mode: paymentMode,
-        payment_mode_note: paymentModeNote,
+        payment_mode: paymentMode || voucher.payment_mode || null,
+        payment_mode_note: paymentModeNote || voucher.reference || null,
       });
 
-      await createInvoiceForPayment({
-        invoice_no: siNo.trim(),
-        payment_type: 'savings',
-        member_id: account.member_id,
-        member_name: memberName,
-        amount: value,
-        purpose: `Savings Withdrawal — ${account.account_no || account.id}`,
-        ref_id: account.id,
-        account_id: account.id,
-        created_by: user?.id ?? null,
-        date: paymentDate,
-        notes: paymentNotes.trim() || null,
-        payment_mode: paymentMode,
-        payment_mode_note: paymentModeNote,
-      });
-
-      toast.success('Savings withdrawal posted.');
+      toast.success('Savings withdrawal posted from approved voucher.');
       setWithdrawTarget(null);
-      resetFormFields();
+      resetWithdrawFields();
       fetchAccounts();
     } catch (err) {
       toast.error(err.message || 'Failed to post withdrawal.');
@@ -512,7 +541,7 @@ export default function SavingsPage() {
       <Modal
         open={!!withdrawTarget}
         onClose={() => setWithdrawTarget(null)}
-        title="Post Savings Withdrawal"
+        title="Post Savings Withdrawal from Approved Voucher"
         size="sm"
       >
         {withdrawTarget && (
@@ -530,88 +559,82 @@ export default function SavingsPage() {
               </span>
             </p>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={withdrawTarget.account.balance || 0}
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  autoFocus
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
+            {loadingWithdrawVouchers ? (
+              <div className="flex justify-center py-8">
+                <Spinner />
               </div>
+            ) : withdrawVouchers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                No approved member withdrawal vouchers found for this Savings account.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Approved Voucher</label>
+                  <select
+                    value={selectedVoucherId}
+                    onChange={e => handleVoucherSelect(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">Select approved voucher</option>
+                    {withdrawVouchers.map(voucher => (
+                      <option key={voucher.id} value={voucher.id}>
+                        {voucher.voucher_no} · {formatCurrency(voucher.amount)} · {voucher.purpose}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Withdrawal Date</label>
-                <input
-                  type="date"
-                  value={paymentDate}
-                  onChange={e => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                    <p className="text-xs text-gray-400 mb-1">Amount</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {amount ? formatCurrency(parseFloat(amount) || 0) : '—'}
+                    </p>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">SI#</label>
-                <input
-                  type="text"
-                  value={siNo}
-                  onChange={e => setSiNo(e.target.value)}
-                  placeholder="Enter SI# manually"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-              </div>
+                  <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                    <p className="text-xs text-gray-400 mb-1">Date</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {paymentDate ? formatDate(paymentDate) : '—'}
+                    </p>
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
-                <select
-                  value={paymentMode}
-                  onChange={e => setPaymentMode(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                >
-                  {PAYMENT_MODE_OPTIONS.map(opt => (
-                    <option key={opt.value || 'empty'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-1">Mode of Payment</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {paymentMode || '—'}
+                  </p>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reference / Account / Check No.
-                </label>
-                <input
-                  type="text"
-                  value={paymentReference}
-                  onChange={e => setPaymentReference(e.target.value)}
-                  placeholder="Optional for Cash, required for GCash/Bank/Check"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-              </div>
+                <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-1">Reference</p>
+                  <p className="text-sm font-semibold text-gray-900 break-all">
+                    {paymentReference || '—'}
+                  </p>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
-                <textarea
-                  rows={2}
-                  value={paymentNotes}
-                  onChange={e => setPaymentNotes(e.target.value)}
-                  placeholder="Optional notes"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
+                <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                  <p className="text-xs text-gray-400 mb-1">Notes</p>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">
+                    {paymentNotes || '—'}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex justify-end gap-3 mt-5">
               <Button variant="outline" onClick={() => setWithdrawTarget(null)}>
                 Cancel
               </Button>
-              <Button loading={posting} variant="danger" onClick={handleWithdraw} icon={<TrendingDown size={15} />}>
+              <Button
+                loading={posting}
+                variant="danger"
+                onClick={handleWithdraw}
+                icon={<TrendingDown size={15} />}
+                disabled={!selectedVoucherId || loadingWithdrawVouchers || withdrawVouchers.length === 0}
+              >
                 Post Withdrawal
               </Button>
             </div>

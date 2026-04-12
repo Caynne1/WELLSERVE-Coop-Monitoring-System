@@ -5,9 +5,23 @@ import { supabase } from './supabase';
 // Prevents accidental injection of joined/computed fields.
 
 const VOUCHER_COLUMNS = [
-  'voucher_no', 'date', 'payee', 'purpose',
-  'amount', 'notes', 'status', 'created_by',
-  'expense_id',   // optional link to expenses table (documentation only)
+  'voucher_no',
+  'date',
+  'payee',
+  'purpose',
+  'amount',
+  'notes',
+  'status',
+  'created_by',
+  'expense_id',
+
+  // added for member withdrawal flow
+  'voucher_kind',   // 'expense' | 'member_withdrawal'
+  'member_id',
+  'account_id',
+  'account_type',   // 'cbu' | 'savings'
+  'payment_mode',
+  'reference',
 ];
 
 function sanitizeVoucherPayload(payload) {
@@ -49,24 +63,40 @@ export async function getVouchers(filters = {}) {
     .order('created_at', { ascending: false });
 
   if (filters.status) query = query.eq('status', filters.status);
+  if (filters.voucher_kind) query = query.eq('voucher_kind', filters.voucher_kind);
+  if (filters.member_id) query = query.eq('member_id', filters.member_id);
+  if (filters.account_id) query = query.eq('account_id', filters.account_id);
+  if (filters.account_type) query = query.eq('account_type', filters.account_type);
 
   const { data: vouchers, error } = await query;
   if (error) throw error;
   if (!vouchers || vouchers.length === 0) return [];
 
-  // ── Optional join: attach linked expense for display in detail modal ──────
   const expenseIds = [...new Set(vouchers.map(v => v.expense_id).filter(Boolean))];
-  if (expenseIds.length === 0) return vouchers;
+  const memberIds = [...new Set(vouchers.map(v => v.member_id).filter(Boolean))];
+  const accountIds = [...new Set(vouchers.map(v => v.account_id).filter(Boolean))];
 
-  const { data: expenses } = await supabase
-    .from('expenses')
-    .select('id, description, date, amount')
-    .in('id', expenseIds);
+  const [expensesRes, membersRes, accountsRes] = await Promise.all([
+    expenseIds.length
+      ? supabase.from('expenses').select('id, description, date, amount').in('id', expenseIds)
+      : Promise.resolve({ data: [] }),
+    memberIds.length
+      ? supabase.from('members').select('id, member_no, first_name, last_name').in('id', memberIds)
+      : Promise.resolve({ data: [] }),
+    accountIds.length
+      ? supabase.from('accounts').select('id, account_no, account_type, balance').in('id', accountIds)
+      : Promise.resolve({ data: [] }),
+  ]);
 
-  const expenseMap = Object.fromEntries((expenses || []).map(e => [e.id, e]));
+  const expenseMap = Object.fromEntries((expensesRes.data || []).map(e => [e.id, e]));
+  const memberMap = Object.fromEntries((membersRes.data || []).map(m => [m.id, m]));
+  const accountMap = Object.fromEntries((accountsRes.data || []).map(a => [a.id, a]));
+
   return vouchers.map(v => ({
     ...v,
     expenses: v.expense_id ? (expenseMap[v.expense_id] || null) : null,
+    members: v.member_id ? (memberMap[v.member_id] || null) : null,
+    accounts: v.account_id ? (accountMap[v.account_id] || null) : null,
   }));
 }
 
@@ -80,17 +110,66 @@ export async function getVoucherById(id) {
   return data;
 }
 
+// approved vouchers ready to be consumed by a withdrawal flow
+export async function getApprovedWithdrawalVouchers({ member_id, account_id, account_type } = {}) {
+  let query = supabase
+    .from('vouchers')
+    .select('*')
+    .eq('status', 'approved')
+    .eq('voucher_kind', 'member_withdrawal')
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (member_id) query = query.eq('member_id', member_id);
+  if (account_id) query = query.eq('account_id', account_id);
+  if (account_type) query = query.eq('account_type', account_type);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 // ── Create ────────────────────────────────────────────────────────────────────
-// voucher_no is always auto-generated — callers must not pass it in.
+// voucher_no is always auto-generated unless caller explicitly supplies one.
+// This preserves your old flow while allowing future manual override if needed.
 
 export async function createVoucher(payload) {
-  const voucher_no = await generateVoucherNo();
-  const clean = sanitizeVoucherPayload({ ...payload, voucher_no });
+  const voucher_no = payload?.voucher_no?.trim() || await generateVoucherNo();
+
+  const clean = sanitizeVoucherPayload({
+    status: 'draft',
+    voucher_kind: 'expense',
+    ...payload,
+    voucher_no,
+  });
+
   const { data, error } = await supabase
     .from('vouchers')
     .insert(clean)
     .select()
     .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// helper specifically for member-account withdrawals
+export async function createMemberWithdrawalVoucher(payload) {
+  const voucher_no = payload?.voucher_no?.trim() || await generateVoucherNo();
+
+  const clean = sanitizeVoucherPayload({
+    status: 'draft',
+    voucher_kind: 'member_withdrawal',
+    ...payload,
+    voucher_no,
+  });
+
+  const { data, error } = await supabase
+    .from('vouchers')
+    .insert(clean)
+    .select()
+    .single();
+
   if (error) throw error;
   return data;
 }
@@ -101,7 +180,7 @@ export async function createVoucher(payload) {
 
 export async function updateVoucher(id, payload) {
   const clean = sanitizeVoucherPayload(payload);
-  // Extra guard: never allow voucher_no or status to be changed via update
+
   delete clean.voucher_no;
   delete clean.status;
 
@@ -111,13 +190,30 @@ export async function updateVoucher(id, payload) {
     .eq('id', id)
     .select()
     .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// mark voucher as consumed by posting withdrawal if your table supports it later
+export async function markVoucherUsed(id, extra = {}) {
+  const clean = sanitizeVoucherPayload(extra);
+
+  const { data, error } = await supabase
+    .from('vouchers')
+    .update({
+      ...clean,
+      notes: clean.notes ?? undefined,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
   if (error) throw error;
   return data;
 }
 
 // ── Status transitions ────────────────────────────────────────────────────────
-// Each function handles exactly one transition.
-// The DB check constraint is the final guard.
 
 export async function approveVoucher(id) {
   const { data, error } = await supabase
@@ -126,6 +222,7 @@ export async function approveVoucher(id) {
     .eq('id', id)
     .select()
     .single();
+
   if (error) throw error;
   return data;
 }
@@ -138,6 +235,7 @@ export async function voidVoucher(id) {
     .eq('id', id)
     .select()
     .single();
+
   if (error) throw error;
   return data;
 }
