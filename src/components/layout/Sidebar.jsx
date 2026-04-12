@@ -16,6 +16,7 @@ import {
   X,
   Wallet,
   ShieldCheck,
+  UserCog,
 } from 'lucide-react';
 import WellserveLogo from '../shared/WellserveLogo';
 
@@ -62,13 +63,17 @@ const navGroups = [
 
 const ADMIN_ONLY_ITEMS = [
   { to: '/account-management', icon: ShieldCheck, label: 'Accounts' },
+  { to: '/user-management',    icon: UserCog,    label: 'User Management' },
 ];
 
 export default function Sidebar({ onClose }) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, profile } = useAuth();
+
+  // Use both isAdmin and raw profile.role so items appear immediately after profile loads
+  const showAdminItems = isAdmin || profile?.role === 'admin';
 
   const renderedGroups = navGroups.map((group) => {
-    if (group.label === 'Admin' && isAdmin) {
+    if (group.label === 'Admin' && showAdminItems) {
       return { ...group, items: [...group.items, ...ADMIN_ONLY_ITEMS] };
     }
     return group;

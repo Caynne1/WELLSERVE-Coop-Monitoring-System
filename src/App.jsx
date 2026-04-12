@@ -35,6 +35,7 @@ import ActivityLogsPage from './pages/logs/ActivityLogsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import StaffPage from './pages/settings/StaffPage';
 import AccountManagementPage from './pages/account-management/AccountManagementPage';
+import UserManagementPage from './pages/user-management/UserManagementPage';
 
 // ── NEW: Cooperative Fund Monitoring ──────────────────────────────────────────
 import CoopMonitoringPage from './pages/coop-monitoring/CoopMonitoringPage';
@@ -152,6 +153,14 @@ export default function App() {
                 element={
                   <AdminRoute>
                     <AccountManagementPage />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="user-management"
+                element={
+                  <AdminRoute>
+                    <UserManagementPage />
                   </AdminRoute>
                 }
               />
