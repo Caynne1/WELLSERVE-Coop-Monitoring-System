@@ -19,6 +19,15 @@ import {
 } from '../../services/coopFundService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
+const PAYMENT_MODE_OPTIONS = [
+  { value: '', label: 'Select mode of payment' },
+  { value: 'Cash', label: 'Cash' },
+  { value: 'GCash', label: 'GCash' },
+  { value: 'Bank Transfer', label: 'Bank Transfer' },
+  { value: 'Check', label: 'Check' },
+  { value: 'Others', label: 'Others' },
+];
+
 // ── Category label + colour helpers ──────────────────────────────────────────
 
 function CategoryBadge({ category }) {
@@ -103,6 +112,10 @@ export default function CoopMonitoringPage() {
   const [fundAmount, setFundAmount] = useState('');
   const [fundDate, setFundDate] = useState(new Date().toISOString().split('T')[0]);
   const [fundDescription, setFundDescription] = useState('');
+  const [siNo, setSiNo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   const [savingFund, setSavingFund] = useState(false);
 
   const fetchData = useCallback(async (silent = false) => {
@@ -126,6 +139,19 @@ export default function CoopMonitoringPage() {
 
   async function handleAddFund() {
     const value = parseFloat(fundAmount) || 0;
+    const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
+
+    if (!siNo.trim()) {
+      return toast.error('SI# is required.');
+    }
+
+    if (!paymentMode) {
+      return toast.error('Mode of payment is required.');
+    }
+
+    if (referenceRequired && !paymentReference.trim()) {
+      return toast.error('Reference is required for selected payment mode.');
+    }
 
     if (value <= 0) {
       return toast.error('Enter a valid amount.');
@@ -138,10 +164,16 @@ export default function CoopMonitoringPage() {
     setSavingFund(true);
     try {
       await recordManualFundDeposit({
+        invoice_no: siNo.trim(),
         amount: value,
         date: fundDate,
         description: fundDescription,
         created_by: user?.id ?? null,
+        payment_mode: paymentMode,
+        payment_mode_note:
+          [paymentReference.trim(), paymentNotes.trim()]
+            .filter(Boolean)
+            .join(' | ') || null,
       });
 
       toast.success('Fund added successfully.');
@@ -150,6 +182,10 @@ export default function CoopMonitoringPage() {
       setFundAmount('');
       setFundDescription('');
       setFundDate(new Date().toISOString().split('T')[0]);
+      setSiNo('');
+      setPaymentMode('');
+      setPaymentReference('');
+      setPaymentNotes('');
 
       await fetchData(true);
     } catch (err) {
@@ -352,6 +388,17 @@ export default function CoopMonitoringPage() {
       >
         <div className="space-y-4">
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SI#</label>
+            <input
+              type="text"
+              value={siNo}
+              onChange={e => setSiNo(e.target.value)}
+              placeholder="Enter SI#"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            />
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
             <input
               type="number"
@@ -371,6 +418,45 @@ export default function CoopMonitoringPage() {
               value={fundDate}
               onChange={e => setFundDate(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
+            <select
+              value={paymentMode}
+              onChange={e => setPaymentMode(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E] bg-white"
+            >
+              {PAYMENT_MODE_OPTIONS.map(opt => (
+                <option key={opt.value || 'empty'} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reference / Account / Check No.
+            </label>
+            <input
+              type="text"
+              value={paymentReference}
+              onChange={e => setPaymentReference(e.target.value)}
+              placeholder="Optional for Cash, required for GCash/Bank/Check"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
+            <textarea
+              value={paymentNotes}
+              onChange={e => setPaymentNotes(e.target.value)}
+              rows={2}
+              placeholder="Optional notes"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
             />
           </div>
 

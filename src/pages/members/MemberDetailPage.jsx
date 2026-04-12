@@ -50,6 +50,15 @@ const TABS = [
   { id: 'penalty', label: 'Penalty', icon: BadgeAlert },
 ];
 
+const PAYMENT_MODE_OPTIONS = [
+  { value: '', label: 'Select mode of payment' },
+  { value: 'Cash', label: 'Cash' },
+  { value: 'GCash', label: 'GCash' },
+  { value: 'Bank Transfer', label: 'Bank Transfer' },
+  { value: 'Check', label: 'Check' },
+  { value: 'Others', label: 'Others' },
+];
+
 function parseJSONSafe(val, fallback = {}) {
   try {
     return typeof val === 'string' ? JSON.parse(val) : (val ?? fallback);
@@ -198,13 +207,18 @@ export default function MemberDetailPage() {
         (t.category === 'cbu' && t.type === 'deposit') ||
         (t.category === 'savings' && t.type === 'deposit')
       )
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      .sort((a, b) => {
+        const aDate = a.transaction_date || a.created_at;
+        const bDate = b.transaction_date || b.created_at;
+        return new Date(bDate) - new Date(aDate);
+      });
 
     const grouped = [];
 
     for (const tx of relevant) {
-      const txDate = new Date(tx.created_at);
-      const txDay = txDate.toISOString().slice(0, 10);
+      const txDateValue = tx.transaction_date || tx.created_at;
+      const txDate = new Date(txDateValue);
+      const txDay = String(tx.transaction_date || txDate.toISOString().slice(0, 10));
 
       const last = grouped[grouped.length - 1];
 
@@ -212,7 +226,8 @@ export default function MemberDetailPage() {
         last &&
         last.created_by === (tx.created_by || 'System') &&
         last.tx_day === txDay &&
-        Math.abs(new Date(last.latest_created_at).getTime() - txDate.getTime()) <= 2 * 60 * 1000;
+        last.payment_mode === (tx.payment_mode || '') &&
+        last.payment_mode_note === (tx.payment_mode_note || '');
 
       if (canMerge) {
         if (tx.type === 'loan_payment') {
@@ -236,8 +251,11 @@ export default function MemberDetailPage() {
           ids: [tx.id],
           created_at: tx.created_at,
           latest_created_at: tx.created_at,
+          transaction_date: tx.transaction_date || txDay,
           tx_day: txDay,
           created_by: tx.created_by || 'System',
+          payment_mode: tx.payment_mode || '',
+          payment_mode_note: tx.payment_mode_note || '',
           loan_amount: tx.type === 'loan_payment' ? Number(tx.amount || 0) : 0,
           cbu_amount: tx.category === 'cbu' && tx.type === 'deposit' ? Number(tx.amount || 0) : 0,
           savings_amount: tx.category === 'savings' && tx.type === 'deposit' ? Number(tx.amount || 0) : 0,
@@ -543,13 +561,23 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
   const [cbuAmt, setCbuAmt] = useState('');
   const [savingsAmt, setSavingsAmt] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [siNo, setSiNo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
   useEffect(() => {
     if (open) {
       setCbuAmt('');
       setSavingsAmt('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
+      setSiNo('');
+      setPaymentMode('');
+      setPaymentReference('');
+      setPaymentNotes('');
 
       if (loan) {
         const schedule = parseJSONSafe(loan.preview_schedule_json, []);
@@ -572,6 +600,10 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
     }
   }, [open, loan]);
 
+  const totalPayment = useMemo(() => {
+    return (parseFloat(loanAmt) || 0) + (parseFloat(cbuAmt) || 0) + (parseFloat(savingsAmt) || 0);
+  }, [loanAmt, cbuAmt, savingsAmt]);
+
   async function handleSubmit() {
     const loanPay = parseFloat(loanAmt) || 0;
     const cbuPay = parseFloat(cbuAmt) || 0;
@@ -579,6 +611,15 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 
     if (loanPay + cbuPay + savingsPay === 0) {
       return toast.error('Enter at least one amount greater than zero.');
+    }
+    if (!siNo.trim()) {
+      return toast.error('SI# is required.');
+    }
+    if (!paymentMode) {
+      return toast.error('Mode of payment is required.');
+    }
+    if (referenceRequired && !paymentReference.trim()) {
+      return toast.error('Reference / Account / Check No. is required for the selected payment mode.');
     }
     if (loanPay > 0 && !loan) {
       return toast.error('Loan record not found.');
@@ -598,6 +639,8 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 
     setLoading(true);
     try {
+      const paymentModeNote = [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
+
       if (loanPay > 0) {
         await createTransaction({
           member_id: memberId,
@@ -605,23 +648,13 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           category: 'loan',
           type: 'loan_payment',
           amount: loanPay,
-          reference: loan.loan_no || null,
+          reference: paymentReference.trim() || loan.loan_no || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId ?? null,
+          transaction_date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
-
-        await createInvoiceStrict(
-          {
-            payment_type: 'loan_payment',
-            member_id: memberId,
-            member_name: memberName || 'Member',
-            amount: loanPay,
-            purpose: 'Loan Payment',
-            ref_id: loan.id,
-            created_by: userId ?? null,
-            date: paymentDate,
-          },
-          'Loan payment'
-        );
 
         await applyLoanPaymentToSchedule(loan.id, loanPay);
       }
@@ -633,24 +666,13 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           category: 'cbu',
           type: 'deposit',
           amount: cbuPay,
-          reference: cbuAccount.account_no || null,
+          reference: paymentReference.trim() || cbuAccount.account_no || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId ?? null,
+          transaction_date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
-
-        await createInvoiceStrict(
-          {
-            payment_type: 'cbu',
-            member_id: memberId,
-            member_name: memberName || 'Member',
-            amount: cbuPay,
-            purpose: 'CBU Deposit',
-            ref_id: cbuAccount.id,
-            account_id: cbuAccount.id,
-            created_by: userId ?? null,
-            date: paymentDate,
-          },
-          'CBU deposit'
-        );
       }
 
       if (savingsPay > 0) {
@@ -660,25 +682,37 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           category: 'savings',
           type: 'deposit',
           amount: savingsPay,
-          reference: savingsAccount.account_no || null,
+          reference: paymentReference.trim() || savingsAccount.account_no || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId ?? null,
+          transaction_date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
-
-        await createInvoiceStrict(
-          {
-            payment_type: 'savings',
-            member_id: memberId,
-            member_name: memberName || 'Member',
-            amount: savingsPay,
-            purpose: 'Savings Deposit',
-            ref_id: savingsAccount.id,
-            account_id: savingsAccount.id,
-            created_by: userId ?? null,
-            date: paymentDate,
-          },
-          'Savings deposit'
-        );
       }
+
+      const invoiceBreakdown = [];
+      if (loanPay > 0) invoiceBreakdown.push(`Loan: ${formatCurrency(loanPay)}`);
+      if (cbuPay > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(cbuPay)}`);
+      if (savingsPay > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(savingsPay)}`);
+
+      await createInvoiceStrict(
+        {
+          invoice_no: siNo.trim(),
+          payment_type: 'loan_payment',
+          member_id: memberId,
+          member_name: memberName || 'Member',
+          amount: totalPayment,
+          purpose: invoiceBreakdown.length > 1 ? 'Combined Payment' : (invoiceBreakdown[0] || 'Payment'),
+          ref_id: loan?.id || null,
+          created_by: userId ?? null,
+          date: paymentDate,
+          notes: invoiceBreakdown.join(' | '),
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
+        },
+        'Combined payment'
+      );
 
       toast.success('Payment posted successfully.');
       await onSuccess();
@@ -766,6 +800,66 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             className={fieldClass}
           />
         </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">SI#</label>
+          <input
+            type="text"
+            value={siNo}
+            onChange={e => setSiNo(e.target.value)}
+            placeholder="Enter SI# manually"
+            className={fieldClass}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
+          <select
+            value={paymentMode}
+            onChange={e => setPaymentMode(e.target.value)}
+            className={fieldClass}
+          >
+            {PAYMENT_MODE_OPTIONS.map(opt => (
+              <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Reference / Account / Check No.
+          </label>
+          <input
+            type="text"
+            value={paymentReference}
+            onChange={e => setPaymentReference(e.target.value)}
+            placeholder="Optional for Cash, required for GCash/Bank/Check"
+            className={fieldClass}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
+          <textarea
+            rows={2}
+            value={paymentNotes}
+            onChange={e => setPaymentNotes(e.target.value)}
+            placeholder="Optional notes"
+            className={`${fieldClass} resize-none`}
+          />
+        </div>
+
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+          <p className="text-sm font-semibold text-blue-900 mb-2">Payment Summary</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-blue-800">
+            <div>Loan: <span className="font-semibold">{formatCurrency(parseFloat(loanAmt) || 0)}</span></div>
+            <div>CBU: <span className="font-semibold">{formatCurrency(parseFloat(cbuAmt) || 0)}</span></div>
+            <div>Savings: <span className="font-semibold">{formatCurrency(parseFloat(savingsAmt) || 0)}</span></div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-blue-200 text-sm text-blue-900">
+            Total Payment: <span className="font-bold">{formatCurrency(totalPayment)}</span>
+          </div>
+        </div>
       </div>
 
       <div className="flex justify-end gap-3 mt-6">
@@ -781,12 +875,22 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 function DepositModal({ open, onClose, accountType, label, account, memberId, memberName, userId, onSuccess }) {
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [siNo, setSiNo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
   useEffect(() => {
     if (open) {
       setAmount('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
+      setSiNo('');
+      setPaymentMode('');
+      setPaymentReference('');
+      setPaymentNotes('');
     }
   }, [open]);
 
@@ -795,21 +899,33 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
     if (value <= 0) return toast.error('Enter a valid amount greater than zero.');
     if (!account) return toast.error(`No ${label} account found for this member.`);
     if (!paymentDate) return toast.error('Payment date is required.');
+    if (!siNo.trim()) return toast.error('SI# is required.');
+    if (!paymentMode) return toast.error('Mode of payment is required.');
+    if (referenceRequired && !paymentReference.trim()) {
+      return toast.error('Reference / Account / Check No. is required for the selected payment mode.');
+    }
 
     setLoading(true);
     try {
+      const paymentModeNote = [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
+
       await createTransaction({
         member_id: memberId,
         account_id: account.id,
         category: accountType,
         type: 'deposit',
         amount: value,
-        reference: account.account_no || null,
+        reference: paymentReference.trim() || account.account_no || null,
+        notes: paymentNotes.trim() || null,
         created_by: userId ?? null,
+        transaction_date: paymentDate,
+        payment_mode: paymentMode,
+        payment_mode_note: paymentModeNote,
       });
 
       await createInvoiceStrict(
         {
+          invoice_no: siNo.trim(),
           payment_type: accountType,
           member_id: memberId,
           member_name: memberName || 'Member',
@@ -819,6 +935,9 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
           account_id: account.id,
           created_by: userId ?? null,
           date: paymentDate,
+          notes: paymentNotes.trim() || null,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         },
         `${label} deposit`
       );
@@ -832,6 +951,9 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
       setLoading(false);
     }
   }
+
+  const fieldClass =
+    'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
 
   return (
     <Modal open={open} onClose={onClose} title={`${label} Deposit`} size="sm">
@@ -851,7 +973,7 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
             onChange={e => setAmount(e.target.value)}
             placeholder="0.00"
             autoFocus
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={fieldClass}
           />
         </div>
 
@@ -861,7 +983,55 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
             type="date"
             value={paymentDate}
             onChange={e => setPaymentDate(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={fieldClass}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">SI#</label>
+          <input
+            type="text"
+            value={siNo}
+            onChange={e => setSiNo(e.target.value)}
+            placeholder="Enter SI# manually"
+            className={fieldClass}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
+          <select
+            value={paymentMode}
+            onChange={e => setPaymentMode(e.target.value)}
+            className={fieldClass}
+          >
+            {PAYMENT_MODE_OPTIONS.map(opt => (
+              <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Reference / Account / Check No.
+          </label>
+          <input
+            type="text"
+            value={paymentReference}
+            onChange={e => setPaymentReference(e.target.value)}
+            placeholder="Optional for Cash, required for GCash/Bank/Check"
+            className={fieldClass}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
+          <textarea
+            rows={2}
+            value={paymentNotes}
+            onChange={e => setPaymentNotes(e.target.value)}
+            placeholder="Optional notes"
+            className={`${fieldClass} resize-none`}
           />
         </div>
       </div>
@@ -922,6 +1092,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
       if (paid > 0) {
         await createInvoiceStrict(
           {
+            invoice_no: `TEMP-${Date.now()}`,
             payment_type: 'membership',
             member_id: memberId,
             member_name: memberName || 'Member',
@@ -966,6 +1137,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
       await createInvoiceStrict(
         {
+          invoice_no: `TEMP-${Date.now()}`,
           payment_type: 'membership',
           member_id: memberId,
           member_name: memberName || 'Member',
@@ -1590,7 +1762,7 @@ function LoanPaymentHistoryTable({ rows }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Date', 'Loan', 'CBU', 'Savings', 'Assisted by'].map(h => (
+            {['Date', 'Loan', 'CBU', 'Savings', 'Mode', 'Assisted by'].map(h => (
               <th
                 key={h}
                 className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -1604,7 +1776,7 @@ function LoanPaymentHistoryTable({ rows }) {
           {rows.map(row => (
             <tr key={row.id}>
               <td className="px-4 py-3 whitespace-nowrap">
-                {formatDate(row.created_at)}
+                {formatDate(row.transaction_date || row.created_at)}
               </td>
               <td className="px-4 py-3 font-medium">
                 {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : '—'}
@@ -1614,6 +1786,9 @@ function LoanPaymentHistoryTable({ rows }) {
               </td>
               <td className="px-4 py-3 font-medium">
                 {row.savings_amount > 0 ? formatCurrency(row.savings_amount) : '—'}
+              </td>
+              <td className="px-4 py-3 text-gray-500">
+                {row.payment_mode || '—'}
               </td>
               <td className="px-4 py-3 text-gray-500">
                 {row.created_by || 'System'}
@@ -1731,8 +1906,9 @@ function TransactionsTab({ transactions }) {
                     </p>
                     <p className="text-xs text-gray-400">
                       {tx.category && <span className="capitalize mr-1">{tx.category} ·</span>}
+                      {tx.payment_mode && <span>{tx.payment_mode} · </span>}
                       {tx.reference && `Ref: ${tx.reference} · `}
-                      {tx.created_at ? formatDate(tx.created_at) : '—'}
+                      {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : '—'}
                     </p>
                   </div>
                 </div>
@@ -1764,7 +1940,7 @@ function HistoryTable({ rows }) {
         <tbody className="divide-y divide-gray-50">
           {rows.map(row => (
             <tr key={row.id}>
-              <td className="px-4 py-3">{formatDate(row.created_at || row.transaction_date || row.payment_date)}</td>
+              <td className="px-4 py-3">{formatDate(row.transaction_date || row.created_at || row.payment_date)}</td>
               <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || '—'}</td>
               <td className="px-4 py-3 font-medium">{formatCurrency(row.amount || 0)}</td>
               <td className="px-4 py-3 text-gray-500">{row.reference || '—'}</td>

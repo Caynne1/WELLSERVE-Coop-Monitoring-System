@@ -9,6 +9,7 @@ export async function getTransactions(filters = {}) {
 
   if (filters.type) query = query.eq('type', filters.type);
   if (filters.category) query = query.eq('category', filters.category);
+  if (filters.payment_mode) query = query.eq('payment_mode', filters.payment_mode);
   if (filters.from) query = query.gte('transaction_date', filters.from);
   if (filters.to) query = query.lte('transaction_date', filters.to);
 
@@ -45,6 +46,10 @@ export async function createTransaction(payload) {
     transaction_date:
       payload.transaction_date ||
       new Date().toISOString().split('T')[0],
+    payment_mode: payload.payment_mode || null,
+    payment_mode_note: payload.payment_mode_note || null,
+    reference: payload.reference || null,
+    notes: payload.notes || null,
   };
 
   console.log('[createTransaction] inserting:', JSON.stringify(finalPayload, null, 2));

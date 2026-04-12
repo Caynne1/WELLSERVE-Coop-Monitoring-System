@@ -1,13 +1,22 @@
 import { supabase } from './supabase';
 
 const INVOICE_COLUMNS = [
-  'invoice_no', 'date', 'due_date', 'payee', 'purpose',
-  'amount', 'notes', 'status', 'created_by',
+  'invoice_no',
+  'date',
+  'due_date',
+  'payee',
+  'purpose',
+  'amount',
+  'notes',
+  'status',
+  'created_by',
   'member_id',
   'payment_type',
   'ref_id',
   'account_id',
   'fund_added',
+  'payment_mode',
+  'payment_mode_note',
 ];
 
 function sanitizeInvoicePayload(payload) {
@@ -16,19 +25,6 @@ function sanitizeInvoicePayload(payload) {
       ([k, v]) => INVOICE_COLUMNS.includes(k) && v !== '' && v !== undefined && v !== null
     )
   );
-}
-
-async function generateInvoiceNo() {
-  const year = new Date().getFullYear();
-
-  const { data, error } = await supabase.rpc('next_invoice_no', {
-    p_year: year,
-  });
-
-  if (error) throw error;
-  if (!data) throw new Error('Failed to generate invoice number.');
-
-  return data;
 }
 
 export async function getInvoices(filters = {}) {
@@ -91,8 +87,14 @@ export async function getInvoiceById(id) {
 }
 
 export async function createInvoice(payload) {
-  const invoice_no = await generateInvoiceNo();
-  const clean = sanitizeInvoicePayload({ ...payload, invoice_no });
+  if (!payload.invoice_no || !String(payload.invoice_no).trim()) {
+    throw new Error('SI# is required.');
+  }
+
+  const clean = sanitizeInvoicePayload({
+    ...payload,
+    invoice_no: String(payload.invoice_no).trim(),
+  });
 
   const { data, error } = await supabase
     .from('invoices')
@@ -105,6 +107,7 @@ export async function createInvoice(payload) {
 }
 
 export async function createInvoiceForPayment({
+  invoice_no,
   payment_type,
   member_id,
   member_name,
@@ -115,7 +118,12 @@ export async function createInvoiceForPayment({
   notes = null,
   created_by = null,
   date = null,
+  payment_mode = null,
+  payment_mode_note = null,
 }) {
+  if (!invoice_no || !String(invoice_no).trim()) {
+    throw new Error('SI# is required for invoice creation.');
+  }
   if (!payment_type) throw new Error('payment_type is required for invoice creation.');
   if (!member_id && payment_type !== 'capital') {
     throw new Error('member_id is required for invoice creation.');
@@ -124,6 +132,7 @@ export async function createInvoiceForPayment({
   if (!amount || Number(amount) <= 0) throw new Error('amount must be greater than zero.');
 
   return createInvoice({
+    invoice_no: String(invoice_no).trim(),
     date: date || new Date().toISOString().split('T')[0],
     payee: member_name,
     purpose: purpose || payment_type,
@@ -135,13 +144,18 @@ export async function createInvoiceForPayment({
     account_id,
     notes,
     created_by,
+    payment_mode,
+    payment_mode_note,
   });
 }
 
 export async function updateInvoice(id, payload) {
   const clean = sanitizeInvoicePayload(payload);
-  delete clean.invoice_no;
   delete clean.status;
+
+  if (Object.prototype.hasOwnProperty.call(clean, 'invoice_no')) {
+    clean.invoice_no = clean.invoice_no ? String(clean.invoice_no).trim() : clean.invoice_no;
+  }
 
   const { data, error } = await supabase
     .from('invoices')

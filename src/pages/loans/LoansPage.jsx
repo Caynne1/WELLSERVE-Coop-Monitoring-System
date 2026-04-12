@@ -76,6 +76,15 @@ const STATUS_OPTIONS = [
   { value: 'defaulted', label: 'Defaulted' },
 ];
 
+const PAYMENT_MODE_OPTIONS = [
+  { value: '', label: 'Select mode of payment' },
+  { value: 'Cash', label: 'Cash' },
+  { value: 'GCash', label: 'GCash' },
+  { value: 'Bank Transfer', label: 'Bank Transfer' },
+  { value: 'Check', label: 'Check' },
+  { value: 'Others', label: 'Others' },
+];
+
 function titleCase(value) {
   if (!value) return '—';
   return String(value)
@@ -598,6 +607,10 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
   const [othersPurpose, setOthersPurpose] = useState('');
   const [othersAmt, setOthersAmt] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [siNo, setSiNo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
 
   const memberName = `${loan?.members?.first_name || ''} ${loan?.members?.last_name || ''}`.trim() || 'Member';
 
@@ -639,6 +652,10 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
         setOthersPurpose('');
         setOthersAmt('');
         setPaymentDate(new Date().toISOString().split('T')[0]);
+        setSiNo('');
+        setPaymentMode('');
+        setPaymentReference('');
+        setPaymentNotes('');
       } catch (err) {
         toast.error(err.message || 'Failed to load payment data.');
       } finally {
@@ -650,6 +667,16 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
   }, [open, loan]);
 
   const membershipBalance = computeFeeBalance(membership);
+
+  const totalPayment =
+    (parseFloat(loanAmt) || 0) +
+    (parseFloat(cbuAmt) || 0) +
+    (parseFloat(savingsAmt) || 0) +
+    (parseFloat(membershipAmt) || 0) +
+    (parseFloat(penaltyAmt) || 0) +
+    (parseFloat(othersAmt) || 0);
+
+  const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
   async function handleSubmit() {
     if (!loan || !userId) {
@@ -666,6 +693,21 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
 
     if (loanPay + cbuPay + savingsPay + membershipPay + penaltyPay + otherPay === 0) {
       toast.error('Enter at least one amount greater than zero.');
+      return;
+    }
+
+    if (!siNo.trim()) {
+      toast.error('SI# is required.');
+      return;
+    }
+
+    if (!paymentMode) {
+      toast.error('Mode of payment is required.');
+      return;
+    }
+
+    if (referenceRequired && !paymentReference.trim()) {
+      toast.error('Reference / Account / Check No. is required for the selected payment mode.');
       return;
     }
 
@@ -696,6 +738,9 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
 
     setSaving(true);
     try {
+      const paymentModeNote =
+        [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
+
       if (loanPay > 0) {
         await createTransaction({
           member_id: loan.member_id,
@@ -703,20 +748,12 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           category: 'loan',
           type: 'loan_payment',
           amount: loanPay,
-          reference: loan.loan_no || null,
+          reference: paymentReference.trim() || loan.loan_no || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId,
           transaction_date: paymentDate,
-        });
-
-        await createInvoiceForPayment({
-          payment_type: 'loan_payment',
-          member_id: loan.member_id,
-          member_name: memberName,
-          amount: loanPay,
-          purpose: 'Loan Payment',
-          ref_id: loan.id,
-          created_by: userId,
-          date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
 
         await applyLoanPaymentToSchedule(loan.id, loanPay);
@@ -733,21 +770,12 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           category: 'cbu',
           type: 'deposit',
           amount: cbuPay,
-          reference: memberAccounts.cbu.account_no || null,
+          reference: paymentReference.trim() || memberAccounts.cbu.account_no || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId,
           transaction_date: paymentDate,
-        });
-
-        await createInvoiceForPayment({
-          payment_type: 'cbu',
-          member_id: loan.member_id,
-          member_name: memberName,
-          amount: cbuPay,
-          purpose: 'CBU Deposit',
-          ref_id: memberAccounts.cbu.id,
-          account_id: memberAccounts.cbu.id,
-          created_by: userId,
-          date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
       }
 
@@ -762,21 +790,12 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           category: 'savings',
           type: 'deposit',
           amount: savingsPay,
-          reference: memberAccounts.savings.account_no || null,
+          reference: paymentReference.trim() || memberAccounts.savings.account_no || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId,
           transaction_date: paymentDate,
-        });
-
-        await createInvoiceForPayment({
-          payment_type: 'savings',
-          member_id: loan.member_id,
-          member_name: memberName,
-          amount: savingsPay,
-          purpose: 'Savings Deposit',
-          ref_id: memberAccounts.savings.id,
-          account_id: memberAccounts.savings.id,
-          created_by: userId,
-          date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
       }
 
@@ -786,7 +805,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           loan.member_id,
           membershipPay,
           paymentDate,
-          'Membership payment from Loans page',
+          paymentNotes.trim() || 'Membership payment from Loans page',
           userId
         );
 
@@ -797,19 +816,12 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           category: 'membership',
           type: 'membership_payment',
           amount: membershipPay,
+          reference: paymentReference.trim() || null,
+          notes: paymentNotes.trim() || null,
           created_by: userId,
           transaction_date: paymentDate,
-        });
-
-        await createInvoiceForPayment({
-          payment_type: 'membership',
-          member_id: loan.member_id,
-          member_name: memberName,
-          amount: membershipPay,
-          purpose: 'Membership Fee Payment',
-          ref_id: membership.id,
-          created_by: userId,
-          date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
       }
 
@@ -827,18 +839,12 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           category: 'penalty',
           type: 'penalty_payment',
           amount: penaltyPay,
+          reference: paymentReference.trim() || null,
+          notes: paymentNotes.trim() || penaltyDescription || null,
           created_by: userId,
           transaction_date: paymentDate,
-        });
-
-        await createInvoiceForPayment({
-          payment_type: 'penalty',
-          member_id: loan.member_id,
-          member_name: memberName,
-          amount: penaltyPay,
-          purpose: penaltyDescription || 'Penalty Payment',
-          created_by: userId,
-          date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
       }
 
@@ -848,21 +854,37 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           category: 'others',
           type: 'other_payment',
           amount: otherPay,
-          reference: othersPurpose.trim(),
+          reference: paymentReference.trim() || othersPurpose.trim(),
+          notes: paymentNotes.trim() || null,
           created_by: userId,
           transaction_date: paymentDate,
-        });
-
-        await createInvoiceForPayment({
-          payment_type: 'others',
-          member_id: loan.member_id,
-          member_name: memberName,
-          amount: otherPay,
-          purpose: othersPurpose.trim(),
-          created_by: userId,
-          date: paymentDate,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
         });
       }
+
+      const invoiceBreakdown = [];
+      if (loanPay > 0) invoiceBreakdown.push(`Loan: ${formatCurrency(loanPay)}`);
+      if (cbuPay > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(cbuPay)}`);
+      if (savingsPay > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(savingsPay)}`);
+      if (membershipPay > 0) invoiceBreakdown.push(`Membership: ${formatCurrency(membershipPay)}`);
+      if (penaltyPay > 0) invoiceBreakdown.push(`Penalty: ${formatCurrency(penaltyPay)}`);
+      if (otherPay > 0) invoiceBreakdown.push(`Others (${othersPurpose.trim()}): ${formatCurrency(otherPay)}`);
+
+      await createInvoiceForPayment({
+        invoice_no: siNo.trim(),
+        payment_type: 'loan_payment',
+        member_id: loan.member_id,
+        member_name: memberName,
+        amount: totalPayment,
+        purpose: invoiceBreakdown.length > 1 ? 'Combined Payment' : (invoiceBreakdown[0] || 'Payment'),
+        ref_id: loan.id,
+        created_by: userId,
+        date: paymentDate,
+        payment_mode: paymentMode,
+        payment_mode_note: paymentModeNote,
+        notes: invoiceBreakdown.join(' | '),
+      });
 
       toast.success('Payment posted successfully.');
       await onSuccess();
@@ -943,6 +965,43 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">SI#</label>
+              <input
+                type="text"
+                value={siNo}
+                onChange={e => setSiNo(e.target.value)}
+                placeholder="Enter SI# manually"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
+              <select
+                value={paymentMode}
+                onChange={e => setPaymentMode(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+              >
+                {PAYMENT_MODE_OPTIONS.map(opt => (
+                  <option key={opt.value || 'empty'} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reference / Account / Check No.
+              </label>
+              <input
+                type="text"
+                value={paymentReference}
+                onChange={e => setPaymentReference(e.target.value)}
+                placeholder="Optional for Cash, required for GCash/Bank/Check"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+              />
+            </div>
           </div>
 
           <div className="mt-4">
@@ -953,6 +1012,17 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
               onChange={e => setPenaltyDescription(e.target.value)}
               placeholder="Optional penalty description"
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+            />
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
+            <textarea
+              rows={2}
+              value={paymentNotes}
+              onChange={e => setPaymentNotes(e.target.value)}
+              placeholder="Optional notes"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
             />
           </div>
 
@@ -986,6 +1056,21 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
                 />
               </div>
             )}
+          </div>
+
+          <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+            <p className="text-sm font-semibold text-blue-900 mb-2">Payment Summary</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-blue-800">
+              <div>Loan: <span className="font-semibold">{formatCurrency(parseFloat(loanAmt) || 0)}</span></div>
+              <div>CBU: <span className="font-semibold">{formatCurrency(parseFloat(cbuAmt) || 0)}</span></div>
+              <div>Savings: <span className="font-semibold">{formatCurrency(parseFloat(savingsAmt) || 0)}</span></div>
+              <div>Membership: <span className="font-semibold">{formatCurrency(parseFloat(membershipAmt) || 0)}</span></div>
+              <div>Penalty: <span className="font-semibold">{formatCurrency(parseFloat(penaltyAmt) || 0)}</span></div>
+              <div>Others: <span className="font-semibold">{formatCurrency(parseFloat(othersAmt) || 0)}</span></div>
+            </div>
+            <div className="mt-3 pt-2 border-t border-blue-200 text-sm text-blue-900">
+              Total Payment: <span className="font-bold">{formatCurrency(totalPayment)}</span>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
