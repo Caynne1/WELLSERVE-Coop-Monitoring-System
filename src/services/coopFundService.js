@@ -28,6 +28,26 @@ export async function getFundTransactions(filters = {}) {
   return data || [];
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isWithdrawalInvoice(inv) {
+  const purpose = String(inv?.purpose || '').toLowerCase();
+  return purpose.includes('withdrawal');
+}
+
+function getInvoiceFlow(inv) {
+  if (isWithdrawalInvoice(inv)) {
+    return 'cash_out';
+  }
+  return 'cash_in';
+}
+
+function getInvoiceCategory(inv) {
+  if (inv.payment_type === 'cbu' && isWithdrawalInvoice(inv)) return 'cbu_withdrawal';
+  if (inv.payment_type === 'savings' && isWithdrawalInvoice(inv)) return 'savings_withdrawal';
+  return inv.payment_type || 'invoice';
+}
+
 // ── Fallback: compute directly from invoices + vouchers ──────────────────────
 
 export async function computeCoopSummaryFromInvoices() {
@@ -47,13 +67,23 @@ export async function computeCoopSummaryFromInvoices() {
 
   if (vchErr) throw vchErr;
 
-  const cashIn = (paidInvoices || []).reduce((s, r) => s + (r.amount || 0), 0);
-  const cashOut = (approvedVouchers || []).reduce((s, r) => s + (r.amount || 0), 0);
+  const invoiceCashIn = (paidInvoices || [])
+    .filter(inv => getInvoiceFlow(inv) === 'cash_in')
+    .reduce((s, r) => s + (r.amount || 0), 0);
 
-  const cashInRows = (paidInvoices || []).map(inv => ({
+  const invoiceCashOut = (paidInvoices || [])
+    .filter(inv => getInvoiceFlow(inv) === 'cash_out')
+    .reduce((s, r) => s + (r.amount || 0), 0);
+
+  const voucherCashOut = (approvedVouchers || []).reduce((s, r) => s + (r.amount || 0), 0);
+
+  const cashIn = invoiceCashIn;
+  const cashOut = invoiceCashOut + voucherCashOut;
+
+  const invoiceRows = (paidInvoices || []).map(inv => ({
     id: inv.id,
-    type: 'cash_in',
-    category: inv.payment_type || 'invoice',
+    type: getInvoiceFlow(inv),
+    category: getInvoiceCategory(inv),
     amount: inv.amount,
     description: inv.purpose || inv.payee,
     ref_no: inv.invoice_no,
@@ -70,7 +100,7 @@ export async function computeCoopSummaryFromInvoices() {
     created_at: vch.created_at,
   }));
 
-  const allRows = [...cashInRows, ...cashOutRows].sort(
+  const allRows = [...invoiceRows, ...cashOutRows].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
 
@@ -128,8 +158,12 @@ export async function recordManualFundDeposit({
 export const CATEGORY_LABEL = {
   loan_payment: 'Loan Payment',
   cbu: 'CBU Deposit',
+  cbu_withdrawal: 'CBU Withdrawal',
   savings: 'Savings Deposit',
+  savings_withdrawal: 'Savings Withdrawal',
   membership: 'Membership Fee',
+  penalty: 'Penalty Payment',
+  others: 'Other Payment',
   loan_release: 'Loan Release',
   expense: 'Expense',
   voucher: 'Voucher',
@@ -141,8 +175,12 @@ export const CATEGORY_LABEL = {
 export const CATEGORY_COLOR = {
   loan_payment: 'text-orange-700 bg-orange-50',
   cbu: 'text-green-700 bg-green-50',
+  cbu_withdrawal: 'text-red-700 bg-red-50',
   savings: 'text-blue-700 bg-blue-50',
+  savings_withdrawal: 'text-red-700 bg-red-50',
   membership: 'text-purple-700 bg-purple-50',
+  penalty: 'text-red-700 bg-red-50',
+  others: 'text-gray-700 bg-gray-100',
   loan_release: 'text-red-700 bg-red-50',
   expense: 'text-red-700 bg-red-50',
   voucher: 'text-red-700 bg-red-50',
