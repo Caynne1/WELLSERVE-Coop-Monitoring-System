@@ -1,3 +1,4 @@
+import { notifyCashIn, notifyCashOut } from './notificationService';
 import { supabase } from './supabase';
 import { createInvoice } from './invoiceService';
 
@@ -135,7 +136,7 @@ export async function recordManualFundDeposit({
     throw new Error('Date is required.');
   }
 
-  return await createInvoice({
+  const result = await createInvoice({
     invoice_no: String(invoice_no).trim(),
     date,
     payee: 'Cooperative Fund',
@@ -151,6 +152,18 @@ export async function recordManualFundDeposit({
     payment_mode,
     payment_mode_note,
   });
+
+  // Fire cash-in notification (non-blocking)
+  try {
+    const amt = value.toLocaleString('en-PH', { minimumFractionDigits: 2 });
+    const purpose = description?.trim() || 'Manual Fund Deposit';
+    notifyCashIn({
+      message: `Cash In: ₱${amt} — ${purpose}`,
+      reference_id: result?.id || null,
+    }).catch(() => {});
+  } catch (_) {}
+
+  return result;
 }
 
 // ── Category display helpers ─────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { notifyPayment } from './notificationService';
 import { supabase } from './supabase';
 
 export async function getTransactions(filters = {}) {
@@ -71,6 +72,17 @@ export async function createTransaction(payload) {
   }
 
   console.log('[createTransaction] success → id:', data.id);
+
+  // Fire payment notification (non-blocking)
+  try {
+    const amt = Number(data.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+    const category = data.category || data.type || 'transaction';
+    notifyPayment({
+      message: `${category.charAt(0).toUpperCase() + category.slice(1)} of ₱${amt} recorded successfully.`,
+      reference_id: data.id,
+    }).catch(() => {});
+  } catch (_) {}
+
   return data;
 }
 
