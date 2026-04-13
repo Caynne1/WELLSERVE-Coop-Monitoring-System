@@ -85,6 +85,14 @@ function AdminRoute({ children }) {
   return children;
 }
 
+function PermissionRoute({ children, module }) {
+  const { user, loading, hasPermission } = useAuth();
+  if (loading) return <FullScreenLoader />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!hasPermission(module, 'view')) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -115,36 +123,36 @@ export default function App() {
               <Route path="dashboard" element={<DashboardPage />} />
 
               {/* Members */}
-              <Route path="members" element={<MembersPage />} />
-              <Route path="members/new" element={<MemberFormPage />} />
-              <Route path="members/:id/edit" element={<MemberFormPage />} />
-              <Route path="members/:id" element={<MemberDetailPage />} />
-              <Route path="passbook" element={<PassbookPage />} /> {/* ✅ NEW */}
+              <Route path="members" element={<PermissionRoute module="members"><MembersPage /></PermissionRoute>} />
+              <Route path="members/new" element={<PermissionRoute module="members"><MemberFormPage /></PermissionRoute>} />
+              <Route path="members/:id/edit" element={<PermissionRoute module="members"><MemberFormPage /></PermissionRoute>} />
+              <Route path="members/:id" element={<PermissionRoute module="members"><MemberDetailPage /></PermissionRoute>} />
+              <Route path="passbook" element={<PermissionRoute module="members"><PassbookPage /></PermissionRoute>} />
 
               {/* Financial categories */}
-              <Route path="loans" element={<LoansPage />} />
-              <Route path="loans/new" element={<LoanFormPage />} />
-              <Route path="loans/:id/edit" element={<LoanFormPage />} />
-              <Route path="loans/:id" element={<LoanDetailPage />} />
-              <Route path="cbu" element={<CBUPage />} />
-              <Route path="savings" element={<SavingsPage />} />
+              <Route path="loans" element={<PermissionRoute module="loans"><LoansPage /></PermissionRoute>} />
+              <Route path="loans/new" element={<PermissionRoute module="loans"><LoanFormPage /></PermissionRoute>} />
+              <Route path="loans/:id/edit" element={<PermissionRoute module="loans"><LoanFormPage /></PermissionRoute>} />
+              <Route path="loans/:id" element={<PermissionRoute module="loans"><LoanDetailPage /></PermissionRoute>} />
+              <Route path="cbu" element={<PermissionRoute module="cbu"><CBUPage /></PermissionRoute>} />
+              <Route path="savings" element={<PermissionRoute module="savings"><SavingsPage /></PermissionRoute>} />
 
               {/* Operations */}
-              <Route path="transactions" element={<TransactionsPage />} />
-              <Route path="checkbook" element={<CheckbookPage />} />
-              <Route path="invoices" element={<InvoicesPage />} />
-              <Route path="vouchers" element={<VouchersPage />} />
-              <Route path="expenses" element={<ExpensesPage />} />
+              <Route path="transactions" element={<PermissionRoute module="transactions"><TransactionsPage /></PermissionRoute>} />
+              <Route path="checkbook" element={<PermissionRoute module="checkbook"><CheckbookPage /></PermissionRoute>} />
+              <Route path="invoices" element={<PermissionRoute module="invoices"><InvoicesPage /></PermissionRoute>} />
+              <Route path="vouchers" element={<PermissionRoute module="vouchers"><VouchersPage /></PermissionRoute>} />
+              <Route path="expenses" element={<PermissionRoute module="expenses"><ExpensesPage /></PermissionRoute>} />
 
               {/* Cooperative Monitoring */}
               <Route path="coop-monitoring" element={<CoopMonitoringPage />} />
 
               {/* Analytics */}
-              <Route path="reports" element={<ReportsPage />} />
-              <Route path="logs" element={<ActivityLogsPage />} />
+              <Route path="reports" element={<PermissionRoute module="reports"><ReportsPage /></PermissionRoute>} />
+              <Route path="logs" element={<PermissionRoute module="logs"><ActivityLogsPage /></PermissionRoute>} />
 
               {/* Administration */}
-              <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings" element={<PermissionRoute module="settings"><SettingsPage /></PermissionRoute>} />
               <Route path="staff" element={<StaffPage />} />
 
               {/* Admin only */}

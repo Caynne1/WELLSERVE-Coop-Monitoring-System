@@ -25,59 +25,62 @@ const navGroups = [
     label: 'Main',
     items: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/members', icon: Users, label: 'Members' },
-      { to: '/passbook', icon: BookOpen, label: 'Passbook' },
+      { to: '/members', icon: Users, label: 'Members', permKey: 'members' },
+      { to: '/passbook', icon: BookOpen, label: 'Passbook', permKey: 'members' },
     ],
   },
   {
     label: 'Financial',
     items: [
-      { to: '/loans', icon: CreditCard, label: 'Loans' },
-      { to: '/cbu', icon: PiggyBank, label: 'CBU' },
-      { to: '/savings', icon: Wallet, label: 'Savings' },
+      { to: '/loans', icon: CreditCard, label: 'Loans', permKey: 'loans' },
+      { to: '/cbu', icon: PiggyBank, label: 'CBU', permKey: 'cbu' },
+      { to: '/savings', icon: Wallet, label: 'Savings', permKey: 'savings' },
     ],
   },
   {
     label: 'Operations',
     items: [
-      { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
-      { to: '/checkbook', icon: BookOpen, label: 'Checkbook' },
-      { to: '/invoices', icon: Receipt, label: 'Invoices' },
-      { to: '/vouchers', icon: FileText, label: 'Vouchers' },
-      { to: '/expenses', icon: TrendingUp, label: 'Expenses' },
+      { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions', permKey: 'transactions' },
+      { to: '/checkbook', icon: BookOpen, label: 'Checkbook', permKey: 'checkbook' },
+      { to: '/invoices', icon: Receipt, label: 'Invoices', permKey: 'invoices' },
+      { to: '/vouchers', icon: FileText, label: 'Vouchers', permKey: 'vouchers' },
+      { to: '/expenses', icon: TrendingUp, label: 'Expenses', permKey: 'expenses' },
       { to: '/coop-monitoring', icon: LayoutDashboard, label: 'Account Monitoring' },
     ],
   },
   {
     label: 'Analytics',
     items: [
-      { to: '/reports', icon: BarChart2, label: 'Reports' },
-      { to: '/logs', icon: ActivitySquare, label: 'Activity Logs' },
+      { to: '/reports', icon: BarChart2, label: 'Reports', permKey: 'reports' },
+      { to: '/logs', icon: ActivitySquare, label: 'Activity Logs', permKey: 'logs' },
     ],
   },
   {
     label: 'Admin',
-    items: [{ to: '/settings', icon: Settings, label: 'Settings' }],
+    items: [
+      { to: '/settings', icon: Settings, label: 'Settings', permKey: 'settings' },
+      { to: '/account-management', icon: ShieldCheck, label: 'Accounts', adminOnly: true },
+      { to: '/user-management', icon: UserCog, label: 'User Management', adminOnly: true },
+    ],
   },
 ];
 
-const ADMIN_ONLY_ITEMS = [
-  { to: '/account-management', icon: ShieldCheck, label: 'Accounts' },
-  { to: '/user-management',    icon: UserCog,    label: 'User Management' },
-];
-
 export default function Sidebar({ onClose }) {
-  const { isAdmin, profile } = useAuth();
+  const { profile, hasPermission } = useAuth();
 
-  // Use both isAdmin and raw profile.role so items appear immediately after profile loads
-  const showAdminItems = isAdmin || profile?.role === 'admin';
+  const isAdminUser = profile?.role === 'admin';
 
-  const renderedGroups = navGroups.map((group) => {
-    if (group.label === 'Admin' && showAdminItems) {
-      return { ...group, items: [...group.items, ...ADMIN_ONLY_ITEMS] };
-    }
-    return group;
-  });
+  const renderedGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(item => {
+        if (item.adminOnly && !isAdminUser) return false;
+        // Items without a permKey are always visible (e.g. Dashboard)
+        if (!item.permKey) return true;
+        return hasPermission(item.permKey, 'view');
+      }),
+    }))
+    .filter(group => group.items.length > 0); // hide empty groups
 
   return (
     <div className="flex h-full flex-col border-r border-gray-200 bg-white shadow-sm">

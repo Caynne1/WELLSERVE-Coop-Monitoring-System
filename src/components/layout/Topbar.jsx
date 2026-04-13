@@ -5,7 +5,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import NotificationPanel from '../notifications/NotificationPanel';
 
 export default function Topbar({ onMenuClick, isSidebarOpen = false }) {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const { unreadCount, panelOpen, setPanelOpen } = useNotifications();
   const initials = user?.email?.[0]?.toUpperCase() || 'A';
   const bellRef = useRef(null);
@@ -107,7 +107,9 @@ export default function Topbar({ onMenuClick, isSidebarOpen = false }) {
             <p style={{ fontSize: '12px', fontWeight: '600', color: '#ffffff', margin: 0, maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.email || 'Admin'}
             </p>
-            <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.68)', marginTop: '4px', letterSpacing: '0.35px' }}>Administrator</p>
+            <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.68)', marginTop: '4px', letterSpacing: '0.35px', textTransform: 'capitalize' }}>
+              {profile?.role === 'admin' ? 'Administrator' : profile?.role || 'Staff'}
+            </p>
           </div>
 
           <button

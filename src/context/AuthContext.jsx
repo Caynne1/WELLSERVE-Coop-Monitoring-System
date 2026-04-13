@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
       // Timeout wrapper so profile fetch can never freeze the app
       const profilePromise = supabase
         .from('profiles')
-        .select('id, full_name, email, role, status')
+        .select('id, full_name, email, role, status, permissions')
         .eq('id', authUser.id)
         .maybeSingle();
 
@@ -126,6 +126,14 @@ export function AuthProvider({ children }) {
 
   const isAdmin = profile?.role === 'admin';
 
+  // hasPermission('loans', 'view') → true/false
+  // Admins always have full access regardless of permissions object
+  function hasPermission(module, action = 'view') {
+    if (!profile) return false;
+    if (isAdmin) return true;
+    return !!profile.permissions?.[module]?.[action];
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -135,6 +143,7 @@ export function AuthProvider({ children }) {
         isAdmin,
         loading,
         signOut,
+        hasPermission,
       }}
     >
       {children}
