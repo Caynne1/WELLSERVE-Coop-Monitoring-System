@@ -23,6 +23,7 @@ import { createMembership } from '../../services/membershipService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 
 import { useAuth } from '../../context/AuthContext';
+import { formatCurrency } from '../../utils/formatters';
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -35,10 +36,19 @@ const MEMBERSHIP_TYPE_OPTIONS = [
   { value: 'regular', label: 'Regular' },
 ];
 
-const PAYMENT_MODE_OPTIONS = [
+const PAYMENT_OPTION_OPTIONS = [
   { value: 'none', label: 'No payment yet' },
   { value: 'partial', label: 'Partial payment' },
   { value: 'full', label: 'Full payment' },
+];
+
+const PAYMENT_MODE_OPTIONS = [
+  { value: '', label: 'Select mode of payment' },
+  { value: 'Cash', label: 'Cash' },
+  { value: 'GCash', label: 'GCash' },
+  { value: 'Bank Transfer', label: 'Bank Transfer' },
+  { value: 'Check', label: 'Check' },
+  { value: 'Others', label: 'Others' },
 ];
 
 const MEMBERSHIP_BREAKDOWN = {
@@ -110,28 +120,35 @@ export function MemberFormContent({
       membership_type: 'associate',
       notes: '',
       date_joined: '',
-      payment_mode: 'none',
+      payment_option: 'none',
       membership_paid: '',
       cbu_paid: '',
       savings_paid: '',
       payment_date: '',
+      invoice_no: '',
+      payment_mode: '',
+      payment_reference: '',
+      payment_notes: '',
       cbu_account_no: '',
       savings_account_no: '',
     },
   });
 
   const membershipType = watch('membership_type');
+  const paymentOption = watch('payment_option');
   const paymentMode = watch('payment_mode');
+  const paymentReference = watch('payment_reference');
   const membershipPaid = parseFloat(watch('membership_paid')) || 0;
   const cbuPaid = parseFloat(watch('cbu_paid')) || 0;
   const savingsPaid = parseFloat(watch('savings_paid')) || 0;
 
   const breakdown = MEMBERSHIP_BREAKDOWN[membershipType];
-
   const total =
     (breakdown?.membership_fee || 0) +
     (breakdown?.cbu || 0) +
     (breakdown?.savings || 0);
+
+  const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
   useEffect(() => {
     if (isEdit) loadMember();
@@ -140,7 +157,7 @@ export function MemberFormContent({
   useEffect(() => {
     if (!breakdown || isEdit) return;
 
-    if (paymentMode === 'full') {
+    if (paymentOption === 'full') {
       setValue('membership_paid', String(breakdown.membership_fee));
       setValue('cbu_paid', String(breakdown.cbu));
       setValue('savings_paid', String(breakdown.savings));
@@ -149,12 +166,16 @@ export function MemberFormContent({
       }
     }
 
-    if (paymentMode === 'none') {
+    if (paymentOption === 'none') {
       setValue('membership_paid', '');
       setValue('cbu_paid', '');
       setValue('savings_paid', '');
+      setValue('invoice_no', '');
+      setValue('payment_mode', '');
+      setValue('payment_reference', '');
+      setValue('payment_notes', '');
     }
-  }, [paymentMode, membershipType, isEdit, breakdown, setValue]);
+  }, [paymentOption, membershipType, isEdit, breakdown, setValue, watch]);
 
   async function loadMember() {
     try {
@@ -184,11 +205,15 @@ export function MemberFormContent({
         membership_type: data.membership_type || 'associate',
         notes: data.notes || '',
         date_joined: data.date_joined || '',
-        payment_mode: 'none',
+        payment_option: 'none',
         membership_paid: '',
         cbu_paid: '',
         savings_paid: '',
         payment_date: '',
+        invoice_no: '',
+        payment_mode: '',
+        payment_reference: '',
+        payment_notes: '',
         cbu_account_no: cbu?.account_no || '',
         savings_account_no: savings?.account_no || '',
       });
@@ -268,11 +293,11 @@ export function MemberFormContent({
       let postedCbuPaid = 0;
       let postedSavingsPaid = 0;
 
-      if (values.payment_mode === 'full') {
+      if (values.payment_option === 'full') {
         postedMembershipPaid = selectedBreakdown.membership_fee;
         postedCbuPaid = selectedBreakdown.cbu;
         postedSavingsPaid = selectedBreakdown.savings;
-      } else if (values.payment_mode === 'partial') {
+      } else if (values.payment_option === 'partial') {
         postedMembershipPaid = parseFloat(values.membership_paid) || 0;
         postedCbuPaid = parseFloat(values.cbu_paid) || 0;
         postedSavingsPaid = parseFloat(values.savings_paid) || 0;
@@ -298,9 +323,33 @@ export function MemberFormContent({
         return;
       }
 
-      if (values.payment_mode !== 'none' && !paymentDate) {
-        toast.error('Payment date is required.');
+      const totalPaid = postedMembershipPaid + postedCbuPaid + postedSavingsPaid;
+
+      if (values.payment_option !== 'none' && totalPaid <= 0) {
+        toast.error('Enter at least one onboarding payment amount.');
         return;
+      }
+
+      if (totalPaid > 0) {
+        if (!paymentDate) {
+          toast.error('Payment date is required.');
+          return;
+        }
+
+        if (!values.invoice_no?.trim()) {
+          toast.error('SI# is required when there is onboarding payment.');
+          return;
+        }
+
+        if (!values.payment_mode) {
+          toast.error('Mode of payment is required when there is onboarding payment.');
+          return;
+        }
+
+        if (referenceRequired && !values.payment_reference?.trim()) {
+          toast.error('Reference / Account / Check No. is required for the selected payment mode.');
+          return;
+        }
       }
 
       const newMember = await createMember(payload);
@@ -329,7 +378,10 @@ export function MemberFormContent({
       const refreshedCbuAccount = (refreshedAccounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
       const refreshedSavingsAccount = (refreshedAccounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
 
-      await createMembership({
+      const paymentModeNote =
+        [values.payment_reference?.trim(), values.payment_notes?.trim()].filter(Boolean).join(' | ') || null;
+
+      const membershipRecord = await createMembership({
         member_id: newMemberId,
         membership_type: values.membership_type,
         fee_required: selectedBreakdown.membership_fee,
@@ -338,19 +390,18 @@ export function MemberFormContent({
       });
 
       if (postedMembershipPaid > 0) {
-        await createInvoiceStrict(
-          {
-            payment_type: 'membership',
-            member_id: newMemberId,
-            member_name: memberName || 'Member',
-            amount: postedMembershipPaid,
-            purpose: 'Membership Initial Payment',
-            ref_id: null,
-            created_by: user.id,
-            date: paymentDate,
-          },
-          'Membership initial payment'
-        );
+        await createTransaction({
+          member_id: newMemberId,
+          category: 'membership',
+          type: 'membership_payment',
+          amount: postedMembershipPaid,
+          reference: values.payment_reference?.trim() || null,
+          notes: values.payment_notes?.trim() || 'Membership initial payment',
+          created_by: user.id,
+          transaction_date: paymentDate,
+          payment_mode: values.payment_mode,
+          payment_mode_note: paymentModeNote,
+        });
       }
 
       if (postedCbuPaid > 0) {
@@ -362,24 +413,13 @@ export function MemberFormContent({
           category: 'cbu',
           type: 'deposit',
           amount: postedCbuPaid,
-          reference: refreshedCbuAccount.account_no || null,
+          reference: values.payment_reference?.trim() || refreshedCbuAccount.account_no || null,
+          notes: values.payment_notes?.trim() || 'Initial CBU deposit',
           created_by: user.id,
+          transaction_date: paymentDate,
+          payment_mode: values.payment_mode,
+          payment_mode_note: paymentModeNote,
         });
-
-        await createInvoiceStrict(
-          {
-            payment_type: 'cbu',
-            member_id: newMemberId,
-            member_name: memberName || 'Member',
-            amount: postedCbuPaid,
-            purpose: 'Initial CBU Deposit',
-            ref_id: refreshedCbuAccount.id,
-            account_id: refreshedCbuAccount.id,
-            created_by: user.id,
-            date: paymentDate,
-          },
-          'Initial CBU deposit'
-        );
       }
 
       if (postedSavingsPaid > 0) {
@@ -391,23 +431,40 @@ export function MemberFormContent({
           category: 'savings',
           type: 'deposit',
           amount: postedSavingsPaid,
-          reference: refreshedSavingsAccount.account_no || null,
+          reference: values.payment_reference?.trim() || refreshedSavingsAccount.account_no || null,
+          notes: values.payment_notes?.trim() || 'Initial savings deposit',
           created_by: user.id,
+          transaction_date: paymentDate,
+          payment_mode: values.payment_mode,
+          payment_mode_note: paymentModeNote,
         });
+      }
+
+      if (totalPaid > 0) {
+        const invoiceBreakdown = [];
+        if (postedMembershipPaid > 0) invoiceBreakdown.push(`Membership: ${formatCurrency(postedMembershipPaid)}`);
+        if (postedCbuPaid > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(postedCbuPaid)}`);
+        if (postedSavingsPaid > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(postedSavingsPaid)}`);
 
         await createInvoiceStrict(
           {
-            payment_type: 'savings',
+            invoice_no: values.invoice_no.trim(),
+            payment_type: 'membership',
             member_id: newMemberId,
             member_name: memberName || 'Member',
-            amount: postedSavingsPaid,
-            purpose: 'Initial Savings Deposit',
-            ref_id: refreshedSavingsAccount.id,
-            account_id: refreshedSavingsAccount.id,
+            amount: totalPaid,
+            purpose: invoiceBreakdown.length > 1 ? 'Combined Onboarding Payment' : (invoiceBreakdown[0] || 'Onboarding Payment'),
+            ref_id: membershipRecord?.id || null,
             created_by: user.id,
             date: paymentDate,
+            payment_mode: values.payment_mode,
+            payment_mode_note: paymentModeNote,
+            notes: [
+              ...invoiceBreakdown,
+              values.payment_notes?.trim() || null,
+            ].filter(Boolean).join(' | '),
           },
-          'Initial savings deposit'
+          'Combined onboarding payment'
         );
       }
 
@@ -578,12 +635,12 @@ export function MemberFormContent({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Select
-                    label="Payment Mode"
-                    options={PAYMENT_MODE_OPTIONS}
-                    {...register('payment_mode')}
+                    label="Payment Option"
+                    options={PAYMENT_OPTION_OPTIONS}
+                    {...register('payment_option')}
                   />
 
-                  {paymentMode !== 'none' && (
+                  {paymentOption !== 'none' && (
                     <Input
                       label="Payment Date"
                       type="date"
@@ -592,14 +649,14 @@ export function MemberFormContent({
                   )}
                 </div>
 
-                {paymentMode !== 'none' && (
+                {paymentOption !== 'none' && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
                     <Input
                       label={`Membership Entry Paid (max ₱${breakdown.membership_fee.toLocaleString()})`}
                       type="number"
                       step="0.01"
                       min="0"
-                      disabled={paymentMode === 'full'}
+                      disabled={paymentOption === 'full'}
                       {...register('membership_paid')}
                     />
 
@@ -608,7 +665,7 @@ export function MemberFormContent({
                       type="number"
                       step="0.01"
                       min="0"
-                      disabled={paymentMode === 'full'}
+                      disabled={paymentOption === 'full'}
                       {...register('cbu_paid')}
                     />
 
@@ -617,13 +674,45 @@ export function MemberFormContent({
                       type="number"
                       step="0.01"
                       min="0"
-                      disabled={paymentMode === 'full'}
+                      disabled={paymentOption === 'full'}
                       {...register('savings_paid')}
                     />
                   </div>
                 )}
 
-                {paymentMode !== 'none' && (
+                {paymentOption !== 'none' && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <Input
+                        label="SI#"
+                        placeholder="Enter SI# manually"
+                        {...register('invoice_no')}
+                      />
+
+                      <Select
+                        label="Mode of Payment"
+                        options={PAYMENT_MODE_OPTIONS}
+                        {...register('payment_mode')}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <Input
+                        label="Reference / Account / Check No."
+                        placeholder="Optional for Cash, required for GCash/Bank/Check"
+                        {...register('payment_reference')}
+                      />
+
+                      <Input
+                        label="Payment Notes"
+                        placeholder="Optional notes"
+                        {...register('payment_notes')}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {paymentOption !== 'none' && (
                   <div className="mt-4 p-3 rounded-lg bg-white border border-green-100 text-sm">
                     <div className="flex justify-between">
                       <span>Membership Remaining</span>
