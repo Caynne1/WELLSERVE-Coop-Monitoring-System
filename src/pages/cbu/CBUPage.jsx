@@ -17,6 +17,7 @@ import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 import { getAllCBUAccounts } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
@@ -202,6 +203,7 @@ export default function CBUPage() {
       });
 
       toast.success('CBU deposit posted.');
+      trackActivity({ userId: user?.id, module: 'cbu', action: 'deposit', description: `CBU deposit of ${formatCurrency(value)} for ${memberName}` });
       setDepositTarget(null);
       resetDepositFields();
       fetchAccounts();
@@ -261,6 +263,7 @@ export default function CBUPage() {
       });
 
       toast.success('CBU withdrawal posted from approved voucher.');
+      trackActivity({ userId: user?.id, module: 'cbu', action: 'withdrawal', description: `CBU withdrawal of ${formatCurrency(value)} via voucher ${voucher.voucher_no}` });
       setWithdrawTarget(null);
       resetWithdrawFields();
       fetchAccounts();

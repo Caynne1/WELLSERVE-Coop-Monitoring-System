@@ -23,6 +23,7 @@ import { createMembership } from '../../services/membershipService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 
 import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 import { formatCurrency } from '../../utils/formatters';
 
 const STATUS_OPTIONS = [
@@ -276,6 +277,7 @@ export function MemberFormContent({
         }
 
         toast.success('Member updated successfully');
+        trackActivity({ userId: user?.id, module: 'member', action: 'update', description: `Updated member: ${values.first_name} ${values.last_name}` });
 
         if (inModal) {
           onUpdated?.(memberId);
@@ -469,6 +471,7 @@ export function MemberFormContent({
       }
 
       toast.success('Member added successfully.');
+      trackActivity({ userId: user?.id, module: 'member', action: 'create', description: `Added new member: ${values.first_name} ${values.last_name}` });
 
       if (inModal) {
         onCreated?.(newMemberId);

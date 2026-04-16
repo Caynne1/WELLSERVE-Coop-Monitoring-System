@@ -38,6 +38,7 @@ import { createInvoiceForPayment } from '../../services/invoiceService';
 import { createTransaction } from '../../services/transactionService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 
 const statusVariant = {
   active: 'success',
@@ -216,6 +217,7 @@ export default function LoansPage() {
     try {
       await deleteLoan(toDelete.id);
       toast.success('Loan deleted');
+      trackActivity({ userId: user?.id, module: 'loan', action: 'delete', description: `Deleted loan ID: ${toDelete.id}` });
       setLoans(prev => prev.filter(l => l.id !== toDelete.id));
       setToDelete(null);
     } catch {
@@ -232,6 +234,7 @@ export default function LoansPage() {
       setStatusSavingId(loan.id);
       await updateLoan(loan.id, { status: newStatus });
       toast.success('Loan status updated');
+      trackActivity({ userId: user?.id, module: 'loan', action: newStatus, description: `Loan status changed to ${newStatus} (ID: ${loan.id})` });
       await fetchLoans();
     } catch (err) {
       toast.error(err.message || 'Failed to update loan status');
@@ -887,6 +890,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
       });
 
       toast.success('Payment posted successfully.');
+      trackActivity({ userId: user?.id, module: 'loan', action: 'payment', description: `Posted loan payment of ${formatCurrency(totalPayment)} for ${memberName}` });
       await onSuccess();
       onClose();
     } catch (err) {

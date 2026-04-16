@@ -9,6 +9,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
 import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 import {
   getExpenses,
   createExpense,
@@ -175,9 +176,11 @@ export default function ExpensesPage() {
       if (editTarget) {
         await updateExpense(editTarget.id, payload);
         toast.success('Expense updated.');
+        trackActivity({ userId: user?.id, module: 'expense', action: 'update', description: `Updated expense: ${form.description.trim()} — ${form.amount}` });
       } else {
         await createExpense(payload);
         toast.success('Expense recorded.');
+        trackActivity({ userId: user?.id, module: 'expense', action: 'create', description: `Recorded expense: ${form.description.trim()} — ${form.amount}` });
       }
 
       setModalOpen(false);
@@ -197,6 +200,7 @@ export default function ExpensesPage() {
     try {
       await voidExpense(voidTarget.id);
       toast.success('Expense voided.');
+      trackActivity({ userId: user?.id, module: 'expense', action: 'void', description: `Voided expense ID: ${voidTarget.id}` });
       setVoidTarget(null);
       fetchExpenses();
     } catch (err) {

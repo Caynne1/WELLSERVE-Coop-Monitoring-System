@@ -11,6 +11,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 import {
   getCheckbookEntries,
   createCheckbookEntry,
@@ -189,9 +190,11 @@ export default function CheckbookPage() {
       if (editTarget) {
         await updateCheckbookEntry(editTarget.id, payload);
         toast.success('Checkbook entry updated.');
+        trackActivity({ userId: user?.id, module: 'checkbook', action: 'update', description: `Updated check #${form.check_no.trim()} payable to ${form.payee.trim()}` });
       } else {
         await createCheckbookEntry(payload);
         toast.success('Check recorded.');
+        trackActivity({ userId: user?.id, module: 'checkbook', action: 'create', description: `Recorded check #${form.check_no.trim()} — ₱${form.amount} to ${form.payee.trim()}` });
       }
 
       setFormOpen(false);
@@ -216,6 +219,7 @@ export default function CheckbookPage() {
     try {
       await clearCheck(clearTarget.id);
       toast.success(`Check ${clearTarget.check_no} marked as cleared.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'clear', description: `Cleared check #${clearTarget.check_no}` });
       setClearTarget(null);
       fetchEntries();
     } catch (err) {
@@ -233,6 +237,7 @@ export default function CheckbookPage() {
     try {
       await voidCheck(voidTarget.id);
       toast.success(`Check ${voidTarget.check_no} voided.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'void', description: `Voided check #${voidTarget.check_no}` });
       setVoidTarget(null);
       fetchEntries();
     } catch (err) {

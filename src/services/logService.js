@@ -1,29 +1,88 @@
 import { supabase } from './supabase';
 
-export async function getLogs(limit = 100) {
-  const { data, error } = await supabase
+// ─── Fetch logs with optional filters ────────────────────────────────────────
+// Two-step fetch: get activity_logs first, then resolve user names separately.
+// This prevents an RLS block on the join from killing the entire query.
+export async function getLogs({ limit = 200, search = '', dateFrom = null, dateTo = null } = {}) {
+  let query = supabase
     .from('activity_logs')
-    .select('*')
+    .select('id, action, module, description, user_id, created_at, record_id')
     .order('created_at', { ascending: false })
     .limit(limit);
-  if (error) throw error;
-  return data;
+
+  // Date range filter — uses the btree index on created_at
+  if (dateFrom) {
+    query = query.gte('created_at', new Date(dateFrom).toISOString());
+  }
+  if (dateTo) {
+    const end = new Date(dateTo);
+    end.setHours(23, 59, 59, 999);
+    query = query.lte('created_at', end.toISOString());
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[logService] getLogs error:', error.code, error.message, error.hint);
+    throw error;
+  }
+
+  const logs = data || [];
+
+  // ── Resolve user names in one extra query ──────────────────────────────────
+  const userIds = [...new Set(logs.map(l => l.user_id).filter(Boolean))];
+  let profileMap = {};
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', userIds);
+
+    if (profileError) {
+      // Non-fatal — rows will show UID fallback instead of name
+      console.warn('[logService] profiles fetch error (check RLS):', profileError.message);
+    } else {
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+    }
+  }
+
+  // Attach resolved name to each log row
+  const rows = logs.map(log => ({
+    ...log,
+    user_name: profileMap[log.user_id]?.full_name
+            || profileMap[log.user_id]?.email
+            || null,
+  }));
+
+  // Client-side text search across action, module, description, user_name
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    return rows.filter(log =>
+      (log.action      || '').toLowerCase().includes(q) ||
+      (log.module      || '').toLowerCase().includes(q) ||
+      (log.description || '').toLowerCase().includes(q) ||
+      (log.user_name   || '').toLowerCase().includes(q)
+    );
+  }
+
+  return rows;
 }
 
 export async function createLog(payload) {
   const { error } = await supabase.from('activity_logs').insert(payload);
-  if (error) console.warn('Log write failed:', error);
+  if (error) console.warn('[logService] createLog failed:', error.message);
 }
 
-// ─── Realtime subscription ───────────────────────────────────────────────────
-// Call this to listen for any INSERT on the activity_logs table.
-// The trigger writes logs automatically — this just tells the page to re-fetch.
-// Returns the channel so the caller can unsubscribe on cleanup.
-//
-// Usage:
-//   const channel = subscribeToLogs(() => refetch());
-//   return () => supabase.removeChannel(channel);
-//
+// ─── Track user activity ──────────────────────────────────────────────────────
+// Call from any page/action to write an audit row.
+// module: 'loan' | 'cbu' | 'savings' | 'member' | 'voucher' | 'logs' | etc.
+// action: 'create' | 'update' | 'delete' | 'view' | 'approve' | 'reject' | 'export'
+export async function trackActivity({ userId, module, action, description }) {
+  if (!userId) return;
+  await createLog({ user_id: userId, module, action, description });
+}
+
+// ─── Realtime subscription ────────────────────────────────────────────────────
 export function subscribeToLogs(onChange) {
   const channel = supabase
     .channel('activity-logs-realtime')

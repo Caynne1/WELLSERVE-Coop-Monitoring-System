@@ -30,6 +30,8 @@ import Badge from '../../components/ui/Badge';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import AddMemberModal from '../../components/members/AddMemberModal';
 import { getMembers, deleteMember, updateMember } from '../../services/memberService';
+import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 import { formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
 
@@ -179,6 +181,7 @@ function CheckboxCell({ checked, indeterminate, onChange, onClick }) {
 
 export default function MembersPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Data
   const [members, setMembers]           = useState([]);
@@ -295,6 +298,7 @@ export default function MembersPage() {
     try {
       const result = await deleteMember(id);
       toast.success(result?.message || 'Member deleted');
+      trackActivity({ userId: user?.id, module: 'member', action: 'delete', description: `Deleted member ID: ${id}` });
       await fetchMembers();
     } catch (err) {
       toast.error(err.message || 'Failed to delete member');
@@ -307,6 +311,7 @@ export default function MembersPage() {
     try {
       await updateMember(member.id, { status: 'active' });
       toast.success('Member reactivated');
+      trackActivity({ userId: user?.id, module: 'member', action: 'reactivate', description: `Reactivated member: ${member.first_name} ${member.last_name}` });
       await fetchMembers();
     } catch (err) {
       toast.error(err.message || 'Failed to reactivate member');
@@ -353,7 +358,10 @@ export default function MembersPage() {
       )
     );
 
-    if (successCount > 0) toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} set to ${newStatus}.`);
+    if (successCount > 0) {
+      toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} set to ${newStatus}.`);
+      trackActivity({ userId: user?.id, module: 'member', action: newStatus === 'active' ? 'reactivate' : 'deactivate', description: `Bulk status change: ${successCount} member(s) set to ${newStatus}.` });
+    }
     if (failCount > 0) toast.error(`${failCount} update${failCount !== 1 ? 's' : ''} failed.`);
 
     clearSelection();
@@ -374,7 +382,10 @@ export default function MembersPage() {
       )
     );
 
-    if (successCount > 0) toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} deleted/archived.`);
+    if (successCount > 0) {
+      toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} deleted/archived.`);
+      trackActivity({ userId: user?.id, module: 'member', action: 'delete', description: `Bulk deleted ${successCount} member(s).` });
+    }
     if (failCount > 0) toast.error(`${failCount} deletion${failCount !== 1 ? 's' : ''} failed.`);
 
     clearSelection();

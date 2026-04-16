@@ -11,6 +11,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { useAuth } from '../../context/AuthContext';
+import { trackActivity } from '../../services/logService';
 import {
   getVouchers,
   createVoucher,
@@ -345,9 +346,11 @@ export default function VouchersPage() {
         if (editTarget) {
           await updateVoucher(editTarget.id, payload);
           toast.success('Withdrawal voucher updated.');
+          trackActivity({ userId: user?.id, module: 'voucher', action: 'update', description: `Updated withdrawal voucher for ${form.payee.trim()}` });
         } else {
           await createMemberWithdrawalVoucher(payload);
           toast.success('Withdrawal voucher created.');
+          trackActivity({ userId: user?.id, module: 'voucher', action: 'create', description: `Created withdrawal voucher for ${form.payee.trim()} — ₱${form.amount}` });
         }
       } else {
         const payload = {
@@ -364,9 +367,11 @@ export default function VouchersPage() {
         if (editTarget) {
           await updateVoucher(editTarget.id, payload);
           toast.success('Voucher updated.');
+          trackActivity({ userId: user?.id, module: 'voucher', action: 'update', description: `Updated voucher: ${form.purpose.trim()}` });
         } else {
           await createVoucher(payload);
           toast.success('Voucher created.');
+          trackActivity({ userId: user?.id, module: 'voucher', action: 'create', description: `Created voucher: ${form.purpose.trim()} — ₱${form.amount}` });
         }
       }
 
@@ -387,6 +392,7 @@ export default function VouchersPage() {
     try {
       await approveVoucher(approveTarget.id);
       toast.success(`Voucher ${approveTarget.voucher_no} approved.`);
+      trackActivity({ userId: user?.id, module: 'voucher', action: 'approve', description: `Approved voucher ${approveTarget.voucher_no}` });
       setApproveTarget(null);
       fetchVouchers();
     } catch (err) {
@@ -404,6 +410,7 @@ export default function VouchersPage() {
     try {
       await voidVoucher(voidTarget.id);
       toast.success(`Voucher ${voidTarget.voucher_no} voided.`);
+      trackActivity({ userId: user?.id, module: 'voucher', action: 'void', description: `Voided voucher ${voidTarget.voucher_no}` });
       setVoidTarget(null);
       fetchVouchers();
     } catch (err) {
