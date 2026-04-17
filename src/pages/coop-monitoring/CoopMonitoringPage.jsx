@@ -108,9 +108,9 @@ function LineChart({ series, height = 120, labels }) {
   const n = series[0].data.length;
   if (n < 2) return null;
 
-  const W = 100;
-  const H = height;
-  const pad = { t: 8, b: 20, l: 4, r: 4 };
+  const W = 600;
+  const H = 180;
+  const pad = { t: 12, b: 30, l: 8, r: 8 };
   const innerW = W - pad.l - pad.r;
   const innerH = H - pad.t - pad.b;
 
@@ -126,14 +126,14 @@ function LineChart({ series, height = 120, labels }) {
   };
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="w-full" style={{ height }}>
       {/* Grid lines */}
       {[0, 0.5, 1].map((pct, i) => (
         <line
           key={i}
           x1={pad.l} y1={pad.t + innerH * (1 - pct)}
           x2={W - pad.r} y2={pad.t + innerH * (1 - pct)}
-          stroke="#f0f0f0" strokeWidth="0.5"
+          stroke="#f0f0f0" strokeWidth="1.5"
         />
       ))}
       {/* Area fills */}
@@ -142,17 +142,17 @@ function LineChart({ series, height = 120, labels }) {
       ))}
       {/* Lines */}
       {series.map((s, si) => (
-        <path key={`line-${si}`} d={makePath(s.data)} fill="none" stroke={s.color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path key={`line-${si}`} d={makePath(s.data)} fill="none" stroke={s.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       ))}
       {/* Dots */}
       {series.map((s, si) =>
         s.data.map((v, i) => (
-          <circle key={`dot-${si}-${i}`} cx={px(i)} cy={py(v)} r="1.5" fill={s.color} />
+          <circle key={`dot-${si}-${i}`} cx={px(i)} cy={py(v)} r="5" fill={s.color} />
         ))
       )}
       {/* X Labels */}
       {labels && labels.map((lbl, i) => (
-        <text key={i} x={px(i)} y={H - 2} textAnchor="middle" fontSize="5" fill="#9ca3af">
+        <text key={i} x={px(i)} y={H - 4} textAnchor="middle" fontSize="16" fill="#9ca3af">
           {lbl}
         </text>
       ))}
@@ -346,7 +346,7 @@ function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
             { color: '#ef4444', data: cashOutByMonth },
           ]}
           labels={labels}
-          height={130}
+          height={220}
         />
       </div>
 
