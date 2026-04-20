@@ -38,6 +38,7 @@ import {
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 import { exportMemberReport } from '../../utils/excelExport.js';
 import { createInvoiceForPayment } from '../../services/invoiceService';
+import { trackActivity } from '../../services/logService';
 
 import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
 
@@ -498,6 +499,7 @@ export default function MemberDetailPage() {
           {activeTab === 'penalty' && (
             <PenaltyTab
               memberId={id}
+              memberName={memberFullName}
               penalties={penalties}
               loading={penaltyLoading}
               userId={user?.id}
@@ -735,6 +737,13 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
         'Combined payment'
       );
 
+      trackActivity({
+        userId,
+        module: 'loan',
+        action: 'payment',
+        description: `Posted payment of ${formatCurrency(totalPayment)} for member (${memberName})${invoiceBreakdown.length ? ': ' + invoiceBreakdown.join(', ') : ''}`,
+      });
+
       toast.success('Payment posted successfully.');
       await onSuccess();
       onClose();
@@ -963,6 +972,13 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
         `${label} deposit`
       );
 
+      trackActivity({
+        userId,
+        module: accountType,
+        action: 'deposit',
+        description: `${label} deposit of ${formatCurrency(value)} for member (${memberName}) via Member Detail`,
+      });
+
       toast.success(`${label} deposit posted.`);
       await onSuccess();
       onClose();
@@ -1163,6 +1179,13 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
         payment_mode_note: paymentModeNote || voucher.reference || null,
       });
 
+      trackActivity({
+        userId,
+        module: accountType,
+        action: 'withdrawal',
+        description: `${label} withdrawal of ${formatCurrency(value)} via voucher ${voucher.voucher_no} via Member Detail`,
+      });
+
       toast.success(`${label} withdrawal posted from approved voucher.`);
       await onSuccess();
       onClose();
@@ -1323,6 +1346,13 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         );
       }
 
+      trackActivity({
+        userId,
+        module: 'member',
+        action: 'create',
+        description: `Set up ${setupType} membership for member (${memberName})${paid > 0 ? ` with initial payment of ${formatCurrency(paid)}` : ''}`,
+      });
+
       toast.success('Membership record created.');
       setSetupOpen(false);
       await onRefresh();
@@ -1368,6 +1398,13 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         'Membership payment'
       );
 
+      trackActivity({
+        userId,
+        module: 'member',
+        action: 'payment',
+        description: `Membership payment of ${formatCurrency(amt)} recorded for member (${memberName})`,
+      });
+
       toast.success('Membership payment recorded.');
       setPayOpen(false);
       setPayAmount('');
@@ -1392,6 +1429,13 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         upgradeNotes || null,
         userId
       );
+      trackActivity({
+        userId,
+        module: 'member',
+        action: 'update',
+        description: `Membership upgraded to Regular for member (${memberName})`,
+      });
+
       toast.success('Member upgraded to Regular.');
       setUpgradeOpen(false);
       setUpgradeNotes('');
@@ -1668,7 +1712,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   );
 }
 
-function PenaltyTab({ memberId, penalties, loading, userId, onRefresh }) {
+function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefresh }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [amount, setAmount] = useState('');
@@ -1689,6 +1733,13 @@ function PenaltyTab({ memberId, penalties, loading, userId, onRefresh }) {
         penalty_date: penaltyDate,
         created_by: userId,
       });
+      trackActivity({
+        userId,
+        module: 'member',
+        action: 'create',
+        description: `Penalty of ${formatCurrency(value)} recorded for member (${memberName || memberId})${description ? ': ' + description : ''}`,
+      });
+
       toast.success('Penalty recorded.');
       setOpen(false);
       setAmount('');
@@ -1705,6 +1756,12 @@ function PenaltyTab({ memberId, penalties, loading, userId, onRefresh }) {
   async function handleDelete(id) {
     try {
       await deletePenalty(id);
+      trackActivity({
+        userId,
+        module: 'member',
+        action: 'delete',
+        description: `Penalty (ID: ${id}) deleted for member (${memberName || memberId})`,
+      });
       toast.success('Penalty deleted.');
       onRefresh();
     } catch (err) {

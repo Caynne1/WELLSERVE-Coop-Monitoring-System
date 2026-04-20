@@ -295,10 +295,20 @@ export default function MembersPage() {
   // ── Single-row actions ─────────────────────────────────────────────────────
 
   async function handleDelete(id) {
+    const memberName = confirmDelete
+      ? `${confirmDelete.first_name ?? ''} ${confirmDelete.last_name ?? ''}`.trim()
+      : null;
     try {
       const result = await deleteMember(id);
       toast.success(result?.message || 'Member deleted');
-      trackActivity({ userId: user?.id, module: 'member', action: 'delete', description: `Deleted member ID: ${id}` });
+      trackActivity({
+        userId: user?.id,
+        module: 'member',
+        action: 'delete',
+        description: memberName
+          ? `Deleted member: ${memberName}`
+          : `Deleted member ID: ${id}`,
+      });
       await fetchMembers();
     } catch (err) {
       toast.error(err.message || 'Failed to delete member');
