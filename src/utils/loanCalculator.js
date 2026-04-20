@@ -108,7 +108,15 @@ export function getRatePerPeriod(monthlyRatePercent = 0, frequency = 'monthly') 
 }
 
 export function addPeriodsToDate(dateInput, frequency = 'monthly', count = 1) {
-  const base = new Date(dateInput);
+  // If dateInput is a date-only string (e.g. "2025-04-20"), parse it as local
+  // time to avoid UTC-offset shifting the date backward in PH timezone (UTC+8).
+  let base;
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    const [year, month, day] = dateInput.trim().split('-').map(Number);
+    base = new Date(year, month - 1, day);
+  } else {
+    base = new Date(dateInput);
+  }
   if (Number.isNaN(base.getTime())) return new Date();
 
   const d = new Date(base);
@@ -276,7 +284,7 @@ export function generateLoanSchedule({
 
     const totalDue = round2(principalAmount + interestAmount + cbu + savings);
     const endingBalance = round2(beginningBalance - principalAmount);
-    const dueDate = addPeriodsToDate(startDate, paymentFrequency, i - 1);
+    const dueDate = addPeriodsToDate(startDate, paymentFrequency, i);
 
     schedule.push({
       payment_no: i,

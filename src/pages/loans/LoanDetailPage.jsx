@@ -325,7 +325,7 @@ export default function LoanDetailPage() {
       loan.amount,
       annualRateDecimal,
       loan.term_months,
-      loan.release_date ? new Date(loan.release_date) : new Date(),
+      loan.release_date ? (() => { const s = loan.release_date.split('T')[0]; const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); })() : new Date(),
       loan.repayment_frequency || 'monthly'
     );
     return schedule.map(row => ({

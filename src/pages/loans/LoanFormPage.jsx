@@ -18,6 +18,7 @@ import Spinner from '../../components/ui/Spinner';
 import MemberSearchInput from '../../components/shared/MemberSearchInput';
 
 import { createLoan, updateLoan, getLoanById } from '../../services/loanService';
+import { trackActivity } from '../../services/logService';
 import { createTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 import { getAccountsByMemberId } from '../../services/accountService';
@@ -424,6 +425,18 @@ export default function LoanFormPage() {
       let loan;
       if (isEdit) {
         loan = await updateLoan(id, payload);
+
+        const memberDisplayName = [
+          selectedMember?.first_name,
+          selectedMember?.last_name,
+        ].filter(Boolean).join(' ') || 'Member';
+
+        trackActivity({
+          userId: user?.id,
+          module: 'loan',
+          action: 'update',
+          description: `Updated loan for ${memberDisplayName} — Amount: ₱${principalAmount.toLocaleString()}`,
+        });
       } else {
         loan = await createLoan(payload);
 
@@ -431,6 +444,13 @@ export default function LoanFormPage() {
           selectedMember?.first_name,
           selectedMember?.last_name,
         ].filter(Boolean).join(' ') || 'Member';
+
+        trackActivity({
+          userId: user?.id,
+          module: 'loan',
+          action: 'create',
+          description: `Created loan for ${memberDisplayName} — Amount: ₱${principalAmount.toLocaleString()}`,
+        });
 
         await createTransaction({
           member_id: loan.member_id,
