@@ -227,7 +227,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
             value={form.full_name}
             onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))}
             error={errors.full_name}
-            placeholder="e.g. Juan dela Cruz"
+            placeholder="Your Full Name"
           />
           <Input
             label="Email Address" type="email" required

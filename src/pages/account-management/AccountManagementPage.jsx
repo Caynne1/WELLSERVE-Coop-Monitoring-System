@@ -380,7 +380,7 @@ function CreateAccountModal({ open, onClose, onSuccess }) {
             type="text"
             value={form.full_name}
             onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))}
-            placeholder="Juan dela Cruz"
+            placeholder="Your Full Name"
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl
               focus:outline-none focus:ring-2 focus:ring-[#07A04E] focus:border-transparent"
           />

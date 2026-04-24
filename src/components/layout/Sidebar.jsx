@@ -13,10 +13,10 @@ import {
   BarChart2,
   ActivitySquare,
   Settings,
-  X,
   Wallet,
   ShieldCheck,
   UserCog,
+  Monitor,
 } from 'lucide-react';
 import WellserveLogo from '../shared/WellserveLogo';
 
@@ -24,123 +24,174 @@ const navGroups = [
   {
     label: 'Main',
     items: [
-      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/members', icon: Users, label: 'Members', permKey: 'members' },
-      { to: '/passbook', icon: BookOpen, label: 'Passbook', permKey: 'members' },
+      { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/members',    icon: Users,            label: 'Members',  permKey: 'members' },
+      { to: '/passbook',   icon: BookOpen,         label: 'Passbook', permKey: 'members' },
     ],
   },
   {
     label: 'Financial',
     items: [
-      { to: '/loans', icon: CreditCard, label: 'Loans', permKey: 'loans' },
-      { to: '/cbu', icon: PiggyBank, label: 'CBU', permKey: 'cbu' },
-      { to: '/savings', icon: Wallet, label: 'Savings', permKey: 'savings' },
+      { to: '/loans',   icon: CreditCard, label: 'Loans',   permKey: 'loans' },
+      { to: '/cbu',     icon: PiggyBank,  label: 'CBU',     permKey: 'cbu' },
+      { to: '/savings', icon: Wallet,     label: 'Savings', permKey: 'savings' },
     ],
   },
   {
     label: 'Operations',
     items: [
-      { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions', permKey: 'transactions' },
-      { to: '/checkbook', icon: BookOpen, label: 'Checkbook', permKey: 'checkbook' },
-      { to: '/invoices', icon: Receipt, label: 'Invoices', permKey: 'invoices' },
-      { to: '/vouchers', icon: FileText, label: 'Vouchers', permKey: 'vouchers' },
-      { to: '/expenses', icon: TrendingUp, label: 'Expenses', permKey: 'expenses' },
-      { to: '/coop-monitoring', icon: LayoutDashboard, label: 'Account Monitoring' },
+      { to: '/transactions',    icon: ArrowLeftRight, label: 'Transactions',      permKey: 'transactions' },
+      { to: '/checkbook',       icon: BookOpen,       label: 'Checkbook',         permKey: 'checkbook' },
+      { to: '/invoices',        icon: Receipt,        label: 'Invoices',           permKey: 'invoices' },
+      { to: '/vouchers',        icon: FileText,       label: 'Vouchers',           permKey: 'vouchers' },
+      { to: '/expenses',        icon: TrendingUp,     label: 'Expenses',           permKey: 'expenses' },
+      { to: '/coop-monitoring', icon: Monitor,        label: 'Account Monitoring' },
     ],
   },
   {
     label: 'Analytics',
     items: [
-      { to: '/reports', icon: BarChart2, label: 'Reports', permKey: 'reports' },
-      { to: '/logs', icon: ActivitySquare, label: 'Activity Logs', permKey: 'logs' },
+      { to: '/reports', icon: BarChart2,      label: 'Reports',       permKey: 'reports' },
+      { to: '/logs',    icon: ActivitySquare, label: 'Activity Logs', permKey: 'logs' },
     ],
   },
   {
     label: 'Admin',
     items: [
-      { to: '/settings', icon: Settings, label: 'Settings', permKey: 'settings' },
-      { to: '/account-management', icon: ShieldCheck, label: 'Accounts', adminOnly: true },
-      { to: '/user-management', icon: UserCog, label: 'User Management', adminOnly: true },
+      { to: '/settings',          icon: Settings,  label: 'Settings',        permKey: 'settings' },
+      { to: '/account-management',icon: ShieldCheck,label: 'Accounts',        adminOnly: true },
+      { to: '/user-management',   icon: UserCog,   label: 'User Management', adminOnly: true },
     ],
   },
 ];
 
-export default function Sidebar({ onClose }) {
+export default function Sidebar({ isOpen, onClose }) {
   const { profile, hasPermission } = useAuth();
-
   const isAdminUser = profile?.role === 'admin';
 
   const renderedGroups = navGroups
-    .map((group) => ({
+    .map(group => ({
       ...group,
       items: group.items.filter(item => {
         if (item.adminOnly && !isAdminUser) return false;
-        // Items without a permKey are always visible (e.g. Dashboard)
         if (!item.permKey) return true;
         return hasPermission(item.permKey, 'view');
       }),
     }))
-    .filter(group => group.items.length > 0); // hide empty groups
+    .filter(g => g.items.length > 0);
 
   return (
-    <div className="flex h-full flex-col border-r border-gray-200 bg-white shadow-sm">
-      {/* Brand Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4">
-        <div className="flex items-center gap-3">
-          <WellserveLogo size={40} variant="dark" />
-          <div className="leading-tight">
-            <p className="m-0 text-[14px] font-extrabold tracking-[0.16em] text-gray-900">
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      height: '100%',
+      background: '#ffffff',
+      borderRight: '1px solid #E8EAED',
+      boxShadow: isOpen ? '4px 0 20px rgba(0,0,0,0.06)' : 'none',
+      overflow: 'hidden',
+    }}>
+
+      {/* ── Brand header ────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 14px',
+        height: '60px',
+        flexShrink: 0,
+        borderBottom: '1px solid #ECEEF0',
+        background: 'linear-gradient(100deg, #0B3580 0%, #1148B8 52%, #1A5CE0 100%)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+          <div style={{ flexShrink: 0 }}>
+            <WellserveLogo size={32} variant="light" />
+          </div>
+          <div style={{
+            overflow: 'hidden',
+            opacity: 1,
+            transition: 'opacity 0.2s ease',
+            whiteSpace: 'nowrap',
+          }}>
+            <p style={{ margin: 0, fontSize: '13px', fontWeight: 800, letterSpacing: '0.18em', color: '#ffffff' }}>
               WELLSERVE
             </p>
-            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-600">
+            <p style={{ margin: 0, marginTop: '2px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', color: 'rgba(255,255,255,0.68)', textTransform: 'uppercase' }}>
               Credit Cooperative
             </p>
           </div>
         </div>
-
-        <button
-          onClick={onClose}
-          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 lg:hidden"
-        >
-          <X size={16} />
-        </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-        {renderedGroups.map((group) => (
-          <div key={group.label}>
-            <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+      {/* ── Navigation ──────────────────────────────── */}
+      <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 8px' }}>
+        {renderedGroups.map((group, gi) => (
+          <div key={group.label} style={{ marginBottom: gi < renderedGroups.length - 1 ? '20px' : 0 }}>
+            {/* Group label */}
+            <p style={{
+              margin: '0 0 4px 0',
+              padding: '0 8px',
+              fontSize: '9.5px',
+              fontWeight: 700,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: '#9CA3AF',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}>
               {group.label}
             </p>
 
-            <ul className="space-y-1">
-              {group.items.map((item) => (
+            {/* Items */}
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+              {group.items.map(item => (
                 <li key={item.to}>
-                  <NavLink to={item.to} onClick={onClose} className="block">
+                  <NavLink to={item.to} onClick={onClose} style={{ textDecoration: 'none', display: 'block' }}>
                     {({ isActive }) => (
-                      <div
-                        className={[
-                          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150',
-                          isActive
-                            ? 'bg-emerald-50 font-semibold text-emerald-700 shadow-sm'
-                            : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                        ].join(' ')}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        background: isActive ? '#EBF8F1' : 'transparent',
+                        transition: 'background 0.14s ease',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                      }}
+                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#F5F6F8'; }}
+                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                       >
-                        <span
-                          className={[
-                            'flex flex-shrink-0',
-                            isActive ? 'text-emerald-600' : 'text-gray-400',
-                          ].join(' ')}
-                        >
-                          <item.icon size={16} strokeWidth={isActive ? 2.4 : 2} />
+                        {/* Active left accent bar */}
+                        {isActive && (
+                          <span style={{
+                            position: 'absolute', left: 0, top: '20%', bottom: '20%',
+                            width: '3px', borderRadius: '0 3px 3px 0',
+                            background: '#07A04E',
+                          }} />
+                        )}
+
+                        {/* Icon */}
+                        <span style={{
+                          flexShrink: 0,
+                          color: isActive ? '#07A04E' : '#6B7280',
+                          display: 'flex',
+                          alignItems: 'center',
+                          transition: 'color 0.14s ease',
+                        }}>
+                          <item.icon size={16} strokeWidth={isActive ? 2.5 : 1.8} />
                         </span>
 
-                        <span className="truncate">{item.label}</span>
-
-                        {isActive && (
-                          <span className="ml-auto h-5 w-1.5 rounded-full bg-emerald-600" />
-                        )}
+                        {/* Label */}
+                        <span style={{
+                          fontSize: '13px',
+                          fontWeight: isActive ? 700 : 500,
+                          color: isActive ? '#065F46' : '#374151',
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          transition: 'color 0.14s ease',
+                        }}>
+                          {item.label}
+                        </span>
                       </div>
                     )}
                   </NavLink>
@@ -151,10 +202,20 @@ export default function Sidebar({ onClose }) {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
-        <p className="text-center text-[10px] font-medium tracking-[0.06em] text-gray-400">
-          WELLSERVE Coop Monitoring v2.0
+      {/* ── Footer ──────────────────────────────────── */}
+      <div style={{
+        flexShrink: 0,
+        padding: '10px 14px',
+        borderTop: '1px solid #ECEEF0',
+        background: '#FAFAFA',
+      }}>
+        <p style={{
+          margin: 0, textAlign: 'center',
+          fontSize: '10px', color: '#9CA3AF',
+          fontWeight: 500, letterSpacing: '0.04em',
+          whiteSpace: 'nowrap', overflow: 'hidden',
+        }}>
+          WELLServe Coop Monitoring v2.0
         </p>
       </div>
     </div>
