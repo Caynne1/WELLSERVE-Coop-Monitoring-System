@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   DollarSign,
   RefreshCw,
+  Clock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeDashboard } from '../../hooks/useRealtimeDashboard';
@@ -781,6 +782,21 @@ export default function DashboardPage() {
                 {formatCurrency(stats?.totalSavings ?? 0)}
               </p>
               <p className="mt-1 text-xs text-gray-400">Member savings accounts</p>
+            </div>
+            <div
+              className="app-card app-card-hover p-5 cursor-pointer group"
+              onClick={() => navigate('/time-deposit')}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Clock size={13} className="text-violet-400" />
+                <p className="stat-label">Time Deposits</p>
+              </div>
+              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-violet-700 transition-colors">
+                {formatCurrency(stats?.totalTimeDeposit ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                {stats?.timeDepositCount ?? 0} active deposit{(stats?.timeDepositCount ?? 0) !== 1 ? 's' : ''}
+              </p>
             </div>
           </div>
 

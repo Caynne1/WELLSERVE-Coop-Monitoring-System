@@ -26,6 +26,7 @@ export function useRealtimeDashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, fetchStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, fetchStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, fetchStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'time_deposits' }, fetchStats)
       .subscribe();
 
     return () => supabase.removeChannel(channel);

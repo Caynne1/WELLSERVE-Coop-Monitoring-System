@@ -183,6 +183,7 @@ export const CATEGORY_LABEL = {
   invoice: 'Invoice',
   void_reversal: 'Void Reversal',
   capital: 'Capital / Fund Deposit',
+  time_deposit: 'Time Deposit Payment',   // ← NEW
 };
 
 export const CATEGORY_COLOR = {
@@ -200,4 +201,5 @@ export const CATEGORY_COLOR = {
   invoice: 'text-gray-700 bg-gray-100',
   void_reversal: 'text-gray-500 bg-gray-100',
   capital: 'text-indigo-700 bg-indigo-50',
+  time_deposit: 'text-violet-700 bg-violet-50',  // ← NEW
 };

@@ -19,7 +19,8 @@ const MODULE_COLORS = {
   invoice:    'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
   expense:    'bg-red-50 text-red-600 ring-1 ring-red-200',
   checkbook:  'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-  transaction:'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+  transaction:   'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
+  time_deposit:  'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
 };
 
 // ─── Action badge colours ─────────────────────────────────────────────────────

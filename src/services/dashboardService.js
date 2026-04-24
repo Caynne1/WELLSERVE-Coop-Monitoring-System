@@ -14,7 +14,7 @@ export async function getDashboardStats() {
     };
   });
 
-  const [membersRes, loansRes, accountsRes, txRes] = await Promise.all([
+  const [membersRes, loansRes, accountsRes, txRes, tdRes] = await Promise.all([
     supabase.from('members').select('id, status, date_joined, created_at'),
     supabase.from('loans').select('id, status, amount, balance, due_date, created_at'),
     supabase.from('accounts').select('id, account_type, balance'),
@@ -23,12 +23,14 @@ export async function getDashboardStats() {
       .select('id, type, amount, created_at, transaction_date')
       .order('created_at', { ascending: false })
       .limit(200),
+    supabase.from('time_deposits').select('amount, status'),
   ]);
 
   const memberData = membersRes.data || [];
   const loanData = loansRes.data || [];
   const accountData = accountsRes.data || [];
   const txData = txRes.data || [];
+  const tdData = tdRes.data || [];
 
   const cbuAccounts = accountData.filter(a => a.account_type === 'cbu');
   const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
@@ -95,6 +97,10 @@ export async function getDashboardStats() {
     totalIncome: totalCashIn,
     totalCBU: cbuAccounts.reduce((s, a) => s + (a.balance || 0), 0),
     totalSavings: savingsAccounts.reduce((s, a) => s + (a.balance || 0), 0),
+    totalTimeDeposit: tdData
+      .filter(td => td.status === 'active')
+      .reduce((s, td) => s + (td.amount || 0), 0),
+    timeDepositCount: tdData.filter(td => td.status === 'active').length,
 
     loanStatusChart,
     cashFlowChart,

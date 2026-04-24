@@ -40,6 +40,9 @@ import UserManagementPage from './pages/user-management/UserManagementPage';
 // ── NEW: Cooperative Fund Monitoring ──────────────────────────────────────────
 import CoopMonitoringPage from './pages/coop-monitoring/CoopMonitoringPage';
 
+// ── NEW: Time Deposit ──────────────────────────────────────────────────────────
+import TimeDepositPage from './pages/time-deposit/TimeDepositPage';
+
 // Compatibility routes
 import AccountsPage from './pages/accounts/AccountsPage';
 import AccountDetailPage from './pages/accounts/AccountDetailPage';
@@ -146,6 +149,9 @@ export default function App() {
 
               {/* Cooperative Monitoring */}
               <Route path="coop-monitoring" element={<CoopMonitoringPage />} />
+
+              {/* Time Deposit */}
+              <Route path="time-deposit" element={<TimeDepositPage />} />
 
               {/* Analytics */}
               <Route path="reports" element={<PermissionRoute module="reports"><ReportsPage /></PermissionRoute>} />

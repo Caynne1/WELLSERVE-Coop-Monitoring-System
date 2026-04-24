@@ -311,6 +311,7 @@ function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
     { key: 'membership', label: 'Membership', color: '#a855f7' },
     { key: 'capital', label: 'Capital', color: '#6366f1' },
     { key: 'penalty', label: 'Penalties', color: '#ef4444' },
+    { key: 'time_deposit', label: 'Time Deposits', color: '#8b5cf6' },
     { key: 'invoice', label: 'Other', color: '#9ca3af' },
   ];
 
@@ -444,6 +445,7 @@ function CashInBreakdown({ transactions }) {
     { key: 'membership', label: 'Membership Fees', color: 'bg-purple-400' },
     { key: 'capital', label: 'Capital / Fund Deposit', color: 'bg-indigo-400' },
     { key: 'penalty', label: 'Penalty Income', color: 'bg-amber-400' },
+    { key: 'time_deposit', label: 'Time Deposits', color: 'bg-violet-400' },
     { key: 'invoice', label: 'Other Invoices', color: 'bg-gray-400' },
   ].map(g => ({
     ...g,

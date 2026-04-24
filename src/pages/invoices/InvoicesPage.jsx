@@ -40,6 +40,7 @@ const PAYMENT_TYPE_OPTIONS = [
   { value: 'loan_payment', label: 'Loan Payment' },
   { value: 'cbu', label: 'CBU Deposit' },
   { value: 'savings', label: 'Savings Deposit' },
+  { value: 'time_deposit', label: 'Time Deposit' },
 ];
 
 const PAYMENT_TYPE_LABEL = {
@@ -48,6 +49,7 @@ const PAYMENT_TYPE_LABEL = {
   savings: 'Savings Deposit',
   membership: 'Membership Fee',
   capital: 'Manual Fund Deposit',
+  time_deposit: 'Time Deposit',
 };
 
 const PAYMENT_TYPE_STYLE = {
@@ -56,6 +58,7 @@ const PAYMENT_TYPE_STYLE = {
   savings: 'bg-blue-100 text-blue-700',
   membership: 'bg-purple-100 text-purple-700',
   capital: 'bg-indigo-100 text-indigo-700',
+  time_deposit: 'bg-violet-100 text-violet-700',
 };
 
 const EMPTY_FORM = {
@@ -77,8 +80,8 @@ function getAccountNoDisplay(invoice) {
   return '—';
 }
 
-function getPaymentSource(invoice) {
-  return invoice.payment_type ? 'System' : 'Manual';
+function getPaymentMode(invoice) {
+  return invoice.payment_mode || '—';
 }
 
 export default function InvoicesPage() {
@@ -279,7 +282,7 @@ export default function InvoicesPage() {
         <td style="padding:8px;border:1px solid #ddd;">${invoice.payee || '—'}</td>
         <td style="padding:8px;border:1px solid #ddd;">${invoice.purpose || '—'}</td>
         <td style="padding:8px;border:1px solid #ddd;">${PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others'}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${getPaymentSource(invoice)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${getPaymentMode(invoice)}</td>
         <td style="padding:8px;border:1px solid #ddd;">${formatCurrency(invoice.amount)}</td>
         <td style="padding:8px;border:1px solid #ddd;">${STATUS_LABEL[invoice.status] || invoice.status}</td>
       </tr>
@@ -316,7 +319,7 @@ export default function InvoicesPage() {
                 <th>Payee</th>
                 <th>Purpose</th>
                 <th>Payment Type</th>
-                <th>Payment Source</th>
+                <th>Mode of Payment</th>
                 <th>Amount</th>
                 <th>Status</th>
               </tr>
@@ -342,7 +345,7 @@ export default function InvoicesPage() {
         'Payee',
         'Purpose',
         'Payment Type',
-        'Payment Source',
+        'Mode of Payment',
         'Amount',
         'Status',
       ];
@@ -354,7 +357,7 @@ export default function InvoicesPage() {
         invoice.payee || '',
         invoice.purpose || '',
         PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others',
-        getPaymentSource(invoice),
+        getPaymentMode(invoice),
         invoice.amount || 0,
         STATUS_LABEL[invoice.status] || invoice.status || '',
       ]);
@@ -477,7 +480,7 @@ export default function InvoicesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Invoice No.', 'Date', 'Account No.', 'Payee', 'Purpose', 'Payment Type', 'Payment Source', 'Amount', 'Status', ''].map(h => (
+                  {['Invoice No.', 'Date', 'Account No.', 'Payee', 'Purpose', 'Payment Type', 'Mode of Payment', 'Amount', 'Status', ''].map(h => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -544,10 +547,8 @@ export default function InvoicesPage() {
                       )}
                     </td>
 
-                    <td className="px-4 py-3">
-                      <Badge variant={getPaymentSource(invoice) === 'System' ? 'info' : 'default'}>
-                        {getPaymentSource(invoice)}
-                      </Badge>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                      {getPaymentMode(invoice)}
                     </td>
 
                     <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
@@ -778,7 +779,7 @@ export default function InvoicesPage() {
                 ['Payee', viewTarget.payee],
                 ['Purpose', viewTarget.purpose],
                 ['Amount', <span key="amt" className="font-semibold text-gray-900">{formatCurrency(viewTarget.amount)}</span>],
-                ['Payment Source', getPaymentSource(viewTarget)],
+                ['Mode of Payment', viewTarget.payment_mode || '—'],
                 ['Notes', viewTarget.notes || '—'],
                 ['Created', formatDateTime(viewTarget.created_at)],
               ].map(([label, value]) => (
