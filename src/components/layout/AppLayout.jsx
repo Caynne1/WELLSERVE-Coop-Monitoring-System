@@ -4,15 +4,27 @@ import Topbar from './Topbar';
 import { useState, useEffect, useRef } from 'react';
 
 export default function AppLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const location = useLocation();
   const mainRef = useRef(null);
 
-  // Re-trigger page entrance animation on route change
+  // Auto-open on desktop, auto-close on mobile when resizing across the lg breakpoint
+  useEffect(() => {
+    let wasDesktop = window.innerWidth >= 1024;
+    const handleResize = () => {
+      const isDesktop = window.innerWidth >= 1024;
+      if (isDesktop !== wasDesktop) {
+        setSidebarOpen(isDesktop);
+        wasDesktop = isDesktop;
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     if (mainRef.current) {
       mainRef.current.style.animation = 'none';
-      // Force reflow
       void mainRef.current.offsetHeight;
       mainRef.current.style.animation = '';
     }
@@ -20,7 +32,7 @@ export default function AppLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Mobile overlay */}
+      {/* Mobile/tablet overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/30 z-20 lg:hidden"
@@ -28,9 +40,19 @@ export default function AppLayout() {
         />
       )}
 
-      {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-100
-        transform transition-transform duration-300 ease-out lg:static lg:translate-x-0
+      {/* Desktop sidebar — collapses by shrinking width, nav clicks do NOT close it */}
+      <div
+        className="hidden lg:block flex-shrink-0 overflow-hidden transition-all duration-300 ease-out"
+        style={{ width: sidebarOpen ? 256 : 0 }}
+      >
+        <aside className="h-full w-64 bg-white border-r border-gray-100">
+          <Sidebar onClose={() => {}} />
+        </aside>
+      </div>
+
+      {/* Mobile/tablet sidebar — fixed overlay, nav clicks close it */}
+      <aside className={`lg:hidden fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-100
+        transform transition-transform duration-300 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </aside>

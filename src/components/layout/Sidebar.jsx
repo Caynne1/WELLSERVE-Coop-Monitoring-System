@@ -130,16 +130,16 @@ export default function Sidebar({ onClose }) {
                           'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm',
                           'transition-all duration-200',
                           isActive
-                            ? 'bg-emerald-50 font-semibold text-emerald-700 shadow-sm translate-x-0.5'
-                            : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5',
+                            ? 'bg-blue-600 font-semibold text-white shadow-sm translate-x-0.5'
+                            : 'font-medium text-gray-600 hover:bg-blue-600 hover:text-white hover:translate-x-0.5',
                         ].join(' ')}
                       >
                         <span
                           className={[
                             'flex flex-shrink-0 transition-all duration-200',
                             isActive
-                              ? 'text-emerald-600 scale-110'
-                              : 'text-gray-400 group-hover:text-gray-700 group-hover:scale-110',
+                              ? 'text-white scale-110'
+                              : 'text-gray-400 group-hover:text-white group-hover:scale-110',
                           ].join(' ')}
                         >
                           <item.icon size={16} strokeWidth={isActive ? 2.4 : 2} />
@@ -148,7 +148,7 @@ export default function Sidebar({ onClose }) {
                         <span className="truncate">{item.label}</span>
 
                         {isActive && (
-                          <span className="ml-auto h-5 w-1.5 rounded-full bg-emerald-600 animate-scale-in" />
+                          <span className="ml-auto h-5 w-1.5 rounded-full bg-white animate-scale-in" />
                         )}
                       </div>
                     )}
