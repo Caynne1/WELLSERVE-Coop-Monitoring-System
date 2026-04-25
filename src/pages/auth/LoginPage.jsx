@@ -3,16 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Mail, Lock, Loader2, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Loader2, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import WellserveLogo from '../../components/shared/WellserveLogo';
 
-// ────────────────────────────────────────────────────────────────
-//  Auth logic is COMPLETELY UNCHANGED.
-//  Only the visual presentation below this line is modified.
-// ────────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm();
 
   async function onSubmit({ email, password }) {
@@ -23,556 +20,387 @@ export default function LoginPage() {
     navigate('/');
   }
 
-  const S = {
-    root: {
-      position: 'relative',
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      overflow: 'hidden',
-      padding: '32px 18px',
-      fontFamily: "'Inter', 'Segoe UI', Arial, sans-serif",
-      background: '#f8fafc',
-    },
-
-    bgLayer: {
-      position: 'absolute',
-      inset: 0,
-      background: `
-        radial-gradient(circle at 12% 18%, rgba(16,185,129,0.09) 0%, transparent 32%),
-        radial-gradient(circle at 85% 15%, rgba(6,95,70,0.08) 0%, transparent 28%),
-        radial-gradient(circle at 78% 82%, rgba(59,130,246,0.06) 0%, transparent 26%),
-        linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)
-      `,
-    },
-
-    meshOne: {
-      position: 'absolute',
-      width: '420px',
-      height: '420px',
-      borderRadius: '9999px',
-      top: '-120px',
-      left: '-100px',
-      background: 'rgba(16,185,129,0.08)',
-      filter: 'blur(70px)',
-      pointerEvents: 'none',
-    },
-
-    meshTwo: {
-      position: 'absolute',
-      width: '360px',
-      height: '360px',
-      borderRadius: '9999px',
-      bottom: '-120px',
-      right: '-80px',
-      background: 'rgba(14,165,233,0.07)',
-      filter: 'blur(80px)',
-      pointerEvents: 'none',
-    },
-
-    watermarkWrap: {
-      position: 'absolute',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      opacity: 0.035,
-      pointerEvents: 'none',
-      userSelect: 'none',
-      zIndex: 1,
-    },
-
-    shell: {
-      position: 'relative',
-      zIndex: 10,
-      width: '100%',
-      maxWidth: '960px',
-      display: 'grid',
-      gridTemplateColumns: '1.05fr 0.95fr',
-      borderRadius: '28px',
-      overflow: 'hidden',
-      border: '1px solid rgba(226,232,240,0.9)',
-      background: 'rgba(255,255,255,0.84)',
-      backdropFilter: 'blur(18px)',
-      WebkitBackdropFilter: 'blur(18px)',
-      boxShadow: '0 24px 70px rgba(15,23,42,0.12)',
-    },
-
-    leftPanel: {
-      position: 'relative',
-      padding: '56px 48px',
-      background: `
-        linear-gradient(145deg, rgba(255,255,255,0.84) 0%, rgba(248,250,252,0.94) 100%)
-      `,
-      borderRight: '1px solid rgba(226,232,240,0.9)',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'space-between',
-      minHeight: '620px',
-    },
-
-    rightPanel: {
-      padding: '56px 48px',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      background: 'rgba(255,255,255,0.72)',
-      minHeight: '620px',
-    },
-
-    brandRow: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '14px',
-      marginBottom: '28px',
-    },
-
-    brandWordmark: {
-      display: 'flex',
-      flexDirection: 'column',
-      lineHeight: 1.05,
-    },
-
-    brandTitle: {
-      margin: 0,
-      fontSize: '20px',
-      fontWeight: '800',
-      letterSpacing: '0.14em',
-      color: '#0f172a',
-    },
-
-    brandSub: {
-      margin: '6px 0 0',
-      fontSize: '10px',
-      fontWeight: '700',
-      textTransform: 'uppercase',
-      letterSpacing: '0.16em',
-      color: '#059669',
-    },
-
-    eyebrow: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '8px',
-      alignSelf: 'flex-start',
-      padding: '8px 12px',
-      borderRadius: '9999px',
-      background: '#ecfdf5',
-      color: '#065f46',
-      border: '1px solid #d1fae5',
-      fontSize: '12px',
-      fontWeight: '700',
-      marginBottom: '18px',
-    },
-
-    heroTitle: {
-      margin: 0,
-      fontSize: '38px',
-      fontWeight: '700',
-      letterSpacing: '-0.03em',
-      lineHeight: 1.08,
-      color: '#0f172a',
-      maxWidth: '420px',
-    },
-
-    heroText: {
-      marginTop: '16px',
-      marginBottom: 0,
-      fontSize: '15px',
-      lineHeight: 1.7,
-      color: '#64748b',
-      maxWidth: '430px',
-    },
-
-    featureGrid: {
-      display: 'grid',
-      gridTemplateColumns: '1fr',
-      gap: '14px',
-      marginTop: '34px',
-      maxWidth: '420px',
-    },
-
-    featureCard: {
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '12px',
-      padding: '14px 16px',
-      borderRadius: '18px',
-      background: 'rgba(255,255,255,0.88)',
-      border: '1px solid #e2e8f0',
-      boxShadow: '0 8px 24px rgba(15,23,42,0.04)',
-    },
-
-    featureIcon: {
-      width: '36px',
-      height: '36px',
-      flexShrink: 0,
-      borderRadius: '12px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#ecfdf5',
-      color: '#059669',
-    },
-
-    featureTitle: {
-      margin: 0,
-      fontSize: '13px',
-      fontWeight: '700',
-      color: '#0f172a',
-    },
-
-    featureText: {
-      margin: '4px 0 0',
-      fontSize: '12px',
-      lineHeight: 1.55,
-      color: '#64748b',
-    },
-
-    leftFooter: {
-      marginTop: '28px',
-      fontSize: '12px',
-      color: '#94a3b8',
-      lineHeight: 1.6,
-    },
-
-    formWrap: {
-      width: '100%',
-      maxWidth: '380px',
-      margin: '0 auto',
-    },
-
-    formCard: {
-      padding: '0',
-    },
-
-    formEyebrow: {
-      margin: 0,
-      fontSize: '12px',
-      fontWeight: '700',
-      letterSpacing: '0.12em',
-      textTransform: 'uppercase',
-      color: '#059669',
-    },
-
-    formTitle: {
-      margin: '10px 0 0',
-      fontSize: '30px',
-      fontWeight: '700',
-      letterSpacing: '-0.03em',
-      color: '#0f172a',
-    },
-
-    formText: {
-      margin: '10px 0 0',
-      fontSize: '14px',
-      lineHeight: 1.65,
-      color: '#64748b',
-    },
-
-    formDivider: {
-      height: '1px',
-      background: '#e2e8f0',
-      margin: '26px 0 24px',
-    },
-
-    label: {
-      display: 'block',
-      fontSize: '11px',
-      fontWeight: '700',
-      color: '#64748b',
-      letterSpacing: '0.1em',
-      textTransform: 'uppercase',
-      marginBottom: '8px',
-    },
-
-    inputWrap: {
-      position: 'relative',
-    },
-
-    input: (hasError) => ({
-      width: '100%',
-      boxSizing: 'border-box',
-      paddingLeft: '42px',
-      paddingRight: '14px',
-      paddingTop: '13px',
-      paddingBottom: '13px',
-      borderRadius: '14px',
-      border: hasError ? '1.5px solid #fca5a5' : '1.5px solid #e2e8f0',
-      background: '#ffffff',
-      color: '#0f172a',
-      fontSize: '14px',
-      fontWeight: '500',
-      outline: 'none',
-      transition: 'border-color 0.18s, box-shadow 0.18s, transform 0.18s',
-      boxShadow: '0 1px 2px rgba(15,23,42,0.03)',
-    }),
-
-    inputIcon: {
-      position: 'absolute',
-      left: '14px',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      color: '#94a3b8',
-      display: 'flex',
-      pointerEvents: 'none',
-    },
-
-    errorText: {
-      fontSize: '11px',
-      color: '#dc2626',
-      marginTop: '7px',
-      fontWeight: '500',
-    },
-
-    signInBtn: (isLoading) => ({
-      width: '100%',
-      padding: '13px 16px',
-      borderRadius: '14px',
-      border: 'none',
-      background: 'linear-gradient(135deg, #065f46 0%, #059669 100%)',
-      color: '#ffffff',
-      fontSize: '14px',
-      fontWeight: '700',
-      letterSpacing: '0.02em',
-      cursor: isLoading ? 'not-allowed' : 'pointer',
-      opacity: isLoading ? 0.72 : 1,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '8px',
-      boxShadow: '0 10px 24px rgba(5,150,105,0.22)',
-      transition: 'transform 0.16s, box-shadow 0.16s, filter 0.16s',
-      marginTop: '4px',
-    }),
-
-    secureNote: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '8px',
-      marginTop: '16px',
-      fontSize: '12px',
-      color: '#64748b',
-    },
-
-    footer: {
-      textAlign: 'center',
-      fontSize: '11px',
-      color: '#94a3b8',
-      marginTop: '28px',
-      lineHeight: 1.6,
-    },
-
-    mobileLogoWrap: {
-      display: 'none',
-    },
-  };
-
   return (
-    <div style={S.root}>
-      <div style={S.bgLayer} />
-      <div style={S.meshOne} />
-      <div style={S.meshTwo} />
+    <div className="ws-root">
+      {/* Background */}
+      <div className="ws-bg" />
+      <div className="ws-blob ws-blob-1" />
+      <div className="ws-blob ws-blob-2" />
+      <div className="ws-blob ws-blob-3" />
 
-      <div style={S.watermarkWrap}>
-        <WellserveLogo size={500} variant="dark" />
-      </div>
+      <div className="ws-shell">
 
-      <div style={S.shell} className="ws-shell">
-        {/* Left Brand / Intro Panel */}
-        <div style={S.leftPanel} className="ws-left-panel">
-          <div>
-            <div style={S.brandRow}>
-              <WellserveLogo size={48} variant="dark" />
-              <div style={S.brandWordmark}>
-                <p style={S.brandTitle}>WELLSERVE</p>
-                <p style={S.brandSub}>Credit Cooperative</p>
+        {/* ══════════ LEFT PANEL ══════════ */}
+        <div className="ws-left">
+          <div className="ws-deco ws-deco-1" />
+          <div className="ws-deco ws-deco-2" />
+          <div className="ws-deco ws-deco-3" />
+
+          <div className="ws-left-inner">
+            {/* Brand */}
+            <div className="ws-brand">
+              <div className="ws-logo-ring">
+                <WellserveLogo size={40} variant="light" />
+              </div>
+              <div>
+                <p className="ws-brand-name">WELLSERVE</p>
+                <p className="ws-brand-tagline">Credit Cooperative</p>
               </div>
             </div>
 
-            <div style={S.eyebrow}>
-              <ShieldCheck size={14} />
-              Secure cooperative access
+            {/* Hero */}
+            <div className="ws-hero">
+              <span className="ws-badge">
+                <ShieldCheck size={13} />
+                Secure &amp; Trusted Platform
+              </span>
+              <h1 className="ws-headline">
+                Your Cooperative,<br />
+                Fully in Control
+              </h1>
+              <p className="ws-sub">
+                Manage members, loans, savings, CBU, and all financial activity
+                from one clean, secure monitoring system built for your cooperative.
+              </p>
+
+              <div className="ws-divider" />
+
+              <p className="ws-quote">
+                "Empowering cooperatives with clarity, efficiency, and security — every transaction, every member, every day."
+              </p>
             </div>
 
-            <h1 style={S.heroTitle}>
-              Welcome back to your cooperative workspace
-            </h1>
-
-            <p style={S.heroText}>
-              Access member records, savings, CBU, loans, and financial activity
-              from one clean and secure monitoring system.
+            <p className="ws-left-foot">
+              © {new Date().getFullYear()} WELLSERVE Credit Cooperative. All rights reserved.
             </p>
-
-            <div style={S.featureGrid}>
-              <div style={S.featureCard}>
-                <div style={S.featureIcon}>
-                  <ShieldCheck size={16} />
-                </div>
-                <div>
-                  <p style={S.featureTitle}>Protected access</p>
-                  <p style={S.featureText}>
-                    Sign in securely to manage cooperative operations with confidence.
-                  </p>
-                </div>
-              </div>
-
-              <div style={S.featureCard}>
-                <div style={S.featureIcon}>
-                  <Mail size={16} />
-                </div>
-                <div>
-                  <p style={S.featureTitle}>Organized financial records</p>
-                  <p style={S.featureText}>
-                    Review members, monitor balances, and keep transaction data clear and structured.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
-
-          <p style={S.leftFooter}>
-            WELLSERVE Credit Cooperative Monitoring System
-          </p>
         </div>
 
-        {/* Right Form Panel */}
-        <div style={S.rightPanel} className="ws-right-panel">
-          <div style={S.formWrap}>
-            <div style={S.mobileLogoWrap} className="ws-mobile-brand">
-              <WellserveLogo size={56} variant="dark" />
+        {/* ══════════ RIGHT PANEL ══════════ */}
+        <div className="ws-right">
+          {/* Mobile logo */}
+          <div className="ws-mobile-logo">
+            <div className="ws-mobile-logo-ring">
+              <WellserveLogo size={36} variant="dark" />
             </div>
-
-            <div style={S.formCard}>
-              <p style={S.formEyebrow}>Administrator Login</p>
-              <h2 style={S.formTitle}>Sign in</h2>
-              <p style={S.formText}>
-                Enter your credentials to continue to the dashboard.
-              </p>
-
-              <div style={S.formDivider} />
-
-              <form onSubmit={handleSubmit(onSubmit)}>
-                <div style={{ marginBottom: '18px' }}>
-                  <label style={S.label}>Email Address</label>
-                  <div style={S.inputWrap}>
-                    <span style={S.inputIcon}>
-                      <Mail size={16} />
-                    </span>
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      placeholder="admin@wellserve.coop"
-                      {...register('email', { required: 'Email is required' })}
-                      className="ws-input"
-                      style={S.input(!!errors.email)}
-                    />
-                  </div>
-                  {errors.email && <p style={S.errorText}>{errors.email.message}</p>}
-                </div>
-
-                <div style={{ marginBottom: '24px' }}>
-                  <label style={S.label}>Password</label>
-                  <div style={S.inputWrap}>
-                    <span style={S.inputIcon}>
-                      <Lock size={16} />
-                    </span>
-                    <input
-                      type="password"
-                      autoComplete="current-password"
-                      placeholder="••••••••"
-                      {...register('password', { required: 'Password is required' })}
-                      className="ws-input"
-                      style={S.input(!!errors.password)}
-                    />
-                  </div>
-                  {errors.password && <p style={S.errorText}>{errors.password.message}</p>}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="ws-btn"
-                  style={S.signInBtn(loading)}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 size={16} className="ws-spin" />
-                      Signing in...
-                    </>
-                  ) : 'Sign In'}
-                </button>
-              </form>
-
-              <div style={S.secureNote}>
-                <ShieldCheck size={14} />
-                Secure access for authorized personnel only
-              </div>
-
-              <p style={S.footer}>
-                WELLSERVE Credit Cooperative · Secure Access
-              </p>
+            <div>
+              <p className="ws-mobile-brand-name">WELLSERVE</p>
+              <p className="ws-mobile-brand-tag">Credit Cooperative</p>
             </div>
           </div>
+
+          <div className="ws-form-wrap">
+            <div className="ws-form-header">
+              <span className="ws-form-eyebrow">
+                <ShieldCheck size={12} /> Administrator Portal
+              </span>
+              <h2 className="ws-form-title">Welcome back</h2>
+              <p className="ws-form-sub">Sign in to your account to continue</p>
+            </div>
+
+            <form onSubmit={handleSubmit(onSubmit)} className="ws-form">
+              {/* Email */}
+              <div className="ws-field">
+                <label className="ws-label">Email address</label>
+                <div className="ws-input-wrap">
+                  <span className="ws-input-icon"><Mail size={15} /></span>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="admin@wellserve.coop"
+                    {...register('email', { required: 'Email is required' })}
+                    className={`ws-input${errors.email ? ' ws-input-err' : ''}`}
+                  />
+                </div>
+                {errors.email && <p className="ws-err">{errors.email.message}</p>}
+              </div>
+
+              {/* Password */}
+              <div className="ws-field">
+                <label className="ws-label">Password</label>
+                <div className="ws-input-wrap">
+                  <span className="ws-input-icon"><Lock size={15} /></span>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    {...register('password', { required: 'Password is required' })}
+                    className={`ws-input${errors.password ? ' ws-input-err' : ''}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="ws-eye"
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                {errors.password && <p className="ws-err">{errors.password.message}</p>}
+              </div>
+
+              <button type="submit" disabled={loading} className="ws-btn">
+                {loading ? (
+                  <><Loader2 size={16} className="ws-spin" /> Signing in…</>
+                ) : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="ws-secure">
+              <ShieldCheck size={13} />
+              <span>Secure access · Authorized personnel only</span>
+            </div>
+          </div>
+
+          <p className="ws-right-foot">WELLSERVE Credit Cooperative Monitoring System</p>
         </div>
       </div>
 
       <style>{`
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .ws-root {
+          position: relative; min-height: 100vh;
+          display: flex; align-items: center; justify-content: center;
+          overflow: hidden; padding: 24px 16px;
+          font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+        }
+
+        /* ── Background ── */
+        .ws-bg {
+          position: absolute; inset: 0;
+          background: linear-gradient(135deg, #030d2e 0%, #0f2d6b 45%, #091d4a 100%);
+        }
+        .ws-blob {
+          position: absolute; border-radius: 9999px;
+          pointer-events: none; filter: blur(90px);
+        }
+        .ws-blob-1 {
+          width: 520px; height: 520px; top: -160px; left: -130px;
+          background: rgba(29, 78, 216, 0.50);
+        }
+        .ws-blob-2 {
+          width: 440px; height: 440px; bottom: -150px; right: -110px;
+          background: rgba(15, 44, 110, 0.60);
+        }
+        .ws-blob-3 {
+          width: 340px; height: 340px; top: 38%; left: 36%;
+          background: rgba(96, 165, 250, 0.08);
+        }
+
+        /* ── Shell ── */
+        .ws-shell {
+          position: relative; z-index: 10;
+          width: 100%; max-width: 980px;
+          display: grid; grid-template-columns: 1.1fr 0.9fr;
+          border-radius: 28px; overflow: hidden;
+          box-shadow: 0 32px 80px rgba(0,0,0,0.50), 0 4px 16px rgba(0,0,0,0.25);
+        }
+
+        /* ── Left panel ── */
+        .ws-left {
+          position: relative; overflow: hidden;
+          background: linear-gradient(155deg, #0f2d6b 0%, #1e40af 55%, #2563eb 100%);
+          padding: 52px 48px;
+          display: flex; flex-direction: column;
+          min-height: 640px;
+        }
+
+        .ws-deco {
+          position: absolute; border-radius: 9999px;
+          pointer-events: none; border: 1px solid rgba(255,255,255,0.07);
+        }
+        .ws-deco-1 { width: 360px; height: 360px; top: -110px; right: -110px; background: rgba(255,255,255,0.04); }
+        .ws-deco-2 { width: 230px; height: 230px; bottom: 50px; left: -80px; background: rgba(255,255,255,0.03); }
+        .ws-deco-3 { width: 150px; height: 150px; top: 50%; right: 28px; background: rgba(255,255,255,0.05); }
+
+        .ws-left-inner {
+          position: relative; z-index: 2;
+          display: flex; flex-direction: column;
+          height: 100%; gap: 36px;
+        }
+
+        .ws-brand { display: flex; align-items: center; gap: 14px; }
+        .ws-logo-ring {
+          width: 62px; height: 62px; border-radius: 18px;
+          background: rgba(255,255,255,0.14);
+          border: 1px solid rgba(255,255,255,0.22);
+          display: flex; align-items: center; justify-content: center;
+          backdrop-filter: blur(8px);
+        }
+        .ws-brand-name {
+          font-size: 21px; font-weight: 800; letter-spacing: 0.14em;
+          color: #ffffff; line-height: 1;
+        }
+        .ws-brand-tagline {
+          font-size: 11px; font-weight: 600; letter-spacing: 0.10em;
+          text-transform: uppercase; color: rgba(255,255,255,0.60);
+          margin-top: 5px;
+        }
+
+        .ws-hero { display: flex; flex-direction: column; gap: 16px; }
+        .ws-badge {
+          display: inline-flex; align-items: center; gap: 7px;
+          padding: 6px 14px; border-radius: 9999px;
+          background: rgba(255,255,255,0.13);
+          border: 1px solid rgba(255,255,255,0.20);
+          color: rgba(255,255,255,0.92);
+          font-size: 12px; font-weight: 600; width: fit-content;
+        }
+        .ws-headline {
+          font-size: 38px; font-weight: 800;
+          letter-spacing: -0.03em; line-height: 1.1;
+          color: #ffffff;
+        }
+        .ws-sub {
+          font-size: 14px; line-height: 1.72;
+          color: rgba(255,255,255,0.68);
+          max-width: 390px;
+        }
+        .ws-divider {
+          width: 48px; height: 3px;
+          background: rgba(255,255,255,0.28);
+          border-radius: 9999px;
+        }
+        .ws-quote {
+          font-size: 13px; line-height: 1.7;
+          color: rgba(255,255,255,0.50);
+          font-style: italic;
+          max-width: 380px;
+        }
+
+        .ws-left-foot {
+          font-size: 11px; color: rgba(255,255,255,0.35);
+          margin-top: auto; padding-top: 8px;
+        }
+
+        /* ── Right panel ── */
+        .ws-right {
+          background: #ffffff;
+          padding: 52px 48px;
+          display: flex; flex-direction: column;
+          justify-content: center; min-height: 640px;
+        }
+
+        .ws-mobile-logo {
+          display: none; align-items: center; gap: 12px;
+          justify-content: center; margin-bottom: 28px;
+        }
+        .ws-mobile-logo-ring {
+          width: 52px; height: 52px; border-radius: 16px;
+          background: #eff6ff; border: 1px solid #bfdbfe;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .ws-mobile-brand-name {
+          font-size: 17px; font-weight: 800; letter-spacing: 0.12em; color: #0f172a;
+        }
+        .ws-mobile-brand-tag {
+          font-size: 10px; font-weight: 600; color: #2563eb;
+          text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px;
+        }
+
+        .ws-form-wrap { width: 100%; max-width: 360px; margin: 0 auto; }
+
+        .ws-form-header { margin-bottom: 28px; }
+        .ws-form-eyebrow {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; color: #1d4ed8;
+          background: #eff6ff; padding: 5px 12px; border-radius: 9999px;
+          border: 1px solid #bfdbfe;
+        }
+        .ws-form-title {
+          font-size: 30px; font-weight: 800;
+          letter-spacing: -0.03em; color: #0f172a;
+          margin-top: 14px;
+        }
+        .ws-form-sub {
+          font-size: 14px; color: #64748b;
+          line-height: 1.6; margin-top: 6px;
+        }
+
+        .ws-form { display: flex; flex-direction: column; gap: 18px; }
+        .ws-field { display: flex; flex-direction: column; gap: 7px; }
+        .ws-label {
+          font-size: 12px; font-weight: 700;
+          color: #374151; letter-spacing: 0.04em;
+        }
+        .ws-input-wrap { position: relative; }
+        .ws-input-icon {
+          position: absolute; left: 14px; top: 50%;
+          transform: translateY(-50%);
+          color: #9ca3af; display: flex; pointer-events: none;
+        }
+        .ws-input {
+          width: 100%;
+          padding: 13px 14px 13px 42px;
+          border-radius: 12px;
+          border: 1.5px solid #e2e8f0;
+          background: #f8fafc;
+          color: #0f172a; font-size: 14px; font-weight: 500;
+          outline: none;
+          transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+        }
         .ws-input:focus {
-          border-color: #10b981 !important;
-          box-shadow: 0 0 0 4px rgba(16,185,129,0.12) !important;
+          border-color: #2563eb;
+          background: #ffffff;
+          box-shadow: 0 0 0 4px rgba(37,99,235,0.10);
         }
-
-        .ws-input::placeholder {
-          color: #94a3b8;
+        .ws-input::placeholder { color: #94a3b8; }
+        .ws-input-err { border-color: #fca5a5 !important; }
+        .ws-eye {
+          position: absolute; right: 13px; top: 50%;
+          transform: translateY(-50%);
+          background: none; border: none; cursor: pointer;
+          color: #9ca3af; display: flex; align-items: center;
+          padding: 2px; transition: color 0.15s;
         }
+        .ws-eye:hover { color: #374151; }
+        .ws-err { font-size: 12px; color: #dc2626; font-weight: 500; }
 
+        .ws-btn {
+          width: 100%; padding: 14px;
+          border-radius: 12px; border: none;
+          background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+          color: #ffffff; font-size: 15px; font-weight: 700;
+          letter-spacing: 0.02em; cursor: pointer;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          box-shadow: 0 8px 24px rgba(37,99,235,0.30);
+          transition: transform 0.16s, box-shadow 0.16s, filter 0.16s;
+          margin-top: 6px;
+        }
         .ws-btn:not(:disabled):hover {
-          transform: translateY(-1px);
-          box-shadow: 0 14px 28px rgba(5,150,105,0.26) !important;
-          filter: saturate(1.03);
+          transform: translateY(-2px);
+          box-shadow: 0 14px 32px rgba(37,99,235,0.38);
+          filter: saturate(1.05);
         }
-
         .ws-btn:not(:disabled):active {
           transform: translateY(0);
-          box-shadow: 0 8px 18px rgba(5,150,105,0.18) !important;
+          box-shadow: 0 6px 16px rgba(37,99,235,0.22);
+        }
+        .ws-btn:disabled { opacity: 0.65; cursor: not-allowed; }
+
+        .ws-secure {
+          display: flex; align-items: center; justify-content: center;
+          gap: 7px; margin-top: 20px;
+          font-size: 12px; color: #94a3b8;
         }
 
-        @keyframes ws-spin {
-          to { transform: rotate(360deg); }
+        .ws-right-foot {
+          font-size: 11px; color: #cbd5e1;
+          text-align: center; margin-top: 28px;
         }
 
-        .ws-spin {
-          animation: ws-spin 0.85s linear infinite;
+        @keyframes ws-spin { to { transform: rotate(360deg); } }
+        .ws-spin { animation: ws-spin 0.85s linear infinite; }
+
+        @media (max-width: 860px) {
+          .ws-shell { grid-template-columns: 1fr; max-width: 460px; }
+          .ws-left { display: none; }
+          .ws-right { min-height: auto; padding: 40px 32px; }
+          .ws-mobile-logo { display: flex; }
         }
-
-        @media (max-width: 920px) {
-          .ws-shell {
-            grid-template-columns: 1fr !important;
-            max-width: 440px !important;
-          }
-
-          .ws-left-panel {
-            display: none !important;
-          }
-
-          .ws-right-panel {
-            min-height: auto !important;
-            padding: 36px 26px !important;
-          }
-
-          .ws-mobile-brand {
-            display: flex !important;
-            justify-content: center;
-            margin-bottom: 20px;
-          }
-        }
-
-        @media (max-width: 520px) {
-          .ws-right-panel {
-            padding: 30px 20px !important;
-          }
+        @media (max-width: 500px) {
+          .ws-right { padding: 32px 20px; }
         }
       `}</style>
     </div>
