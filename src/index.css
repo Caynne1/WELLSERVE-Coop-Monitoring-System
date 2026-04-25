@@ -4,6 +4,90 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Keyframe Animations ──────────────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(7, 160, 78, 0.30); }
+  50%       { box-shadow: 0 0 0 6px rgba(7, 160, 78, 0); }
+}
+
+@keyframes pulseGlowRed {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  50%       { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+@keyframes pulseGlowAmber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.30); }
+  50%       { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
+@keyframes notifBell {
+  0%, 100% { transform: rotate(0deg); }
+  10%       { transform: rotate(14deg); }
+  20%       { transform: rotate(-12deg); }
+  30%       { transform: rotate(10deg); }
+  40%       { transform: rotate(-8deg); }
+  50%       { transform: rotate(5deg); }
+  60%       { transform: rotate(0deg); }
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.5); opacity: 0.7; }
+}
+
+@keyframes rowSlideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes statCountUp {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes spinnerFade {
+  0%, 39%, 100% { opacity: 0.2; }
+  40%            { opacity: 1; }
+}
+
+/* ─── Base Layer ───────────────────────────────────────────────────────────── */
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -25,15 +109,29 @@
   }
 }
 
+/* ─── Component Layer ──────────────────────────────────────────────────────── */
+
 @layer components {
+  /* Cards */
   .app-card {
     @apply rounded-2xl border border-gray-200 bg-white shadow-sm;
+    transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
   }
 
   .app-card-hover {
-    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md;
+    cursor: pointer;
+  }
+  .app-card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 28px -4px rgba(0,0,0,0.10), 0 2px 8px -2px rgba(0,0,0,0.06);
+    border-color: rgba(7,160,78,0.20);
+  }
+  .app-card-hover:active {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -2px rgba(0,0,0,0.08);
   }
 
+  /* Typography */
   .section-title {
     @apply text-2xl font-semibold tracking-tight text-gray-900;
   }
@@ -48,28 +146,47 @@
 
   .stat-value {
     @apply text-3xl font-bold tracking-tight text-gray-900;
+    animation: statCountUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
+  /* Sidebar */
   .sidebar-section-label {
     @apply mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400;
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 transition-all duration-150;
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600;
+    transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
   }
-
   .sidebar-item:hover {
     @apply bg-gray-50 text-gray-900;
+    transform: translateX(2px);
   }
-
   .sidebar-item-active {
     @apply bg-emerald-50 font-semibold text-emerald-700 shadow-sm;
   }
 
+  /* Topbar */
   .topbar-icon-button {
-    @apply rounded-xl transition-all duration-150;
+    @apply rounded-xl;
+    transition: all 0.16s ease;
+  }
+  .topbar-icon-button:hover {
+    transform: translateY(-1px);
+  }
+  .topbar-icon-button:active {
+    transform: translateY(0) scale(0.95);
+  }
+
+  /* Shimmer skeleton */
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 37%, #f0f0f0 63%);
+    background-size: 400px 100%;
+    animation: shimmer 1.4s ease infinite;
   }
 }
+
+/* ─── Utility Layer ────────────────────────────────────────────────────────── */
 
 @layer utilities {
   .scrollbar-thin {
@@ -78,5 +195,73 @@
 
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Entrance animations */
+  .animate-fade-in-up {
+    animation: fadeInUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-fade-in-down {
+    animation: fadeInDown 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease both;
+  }
+  .animate-slide-in-left {
+    animation: slideInLeft 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-slide-in-right {
+    animation: slideInRight 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-scale-in {
+    animation: scaleIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-row-slide {
+    animation: rowSlideIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Pulse glows */
+  .animate-pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+  .animate-pulse-glow-red {
+    animation: pulseGlowRed 2s ease-in-out infinite;
+  }
+  .animate-pulse-glow-amber {
+    animation: pulseGlowAmber 2s ease-in-out infinite;
+  }
+
+  /* Bell notification */
+  .animate-bell {
+    animation: notifBell 1s ease both;
+  }
+
+  /* Badge dot pulse */
+  .animate-dot-pulse {
+    animation: dotPulse 1.8s ease-in-out infinite;
+  }
+
+  /* Stagger delays for lists */
+  .stagger-1  { animation-delay: 0.05s; }
+  .stagger-2  { animation-delay: 0.10s; }
+  .stagger-3  { animation-delay: 0.15s; }
+  .stagger-4  { animation-delay: 0.20s; }
+  .stagger-5  { animation-delay: 0.25s; }
+  .stagger-6  { animation-delay: 0.30s; }
+  .stagger-7  { animation-delay: 0.35s; }
+  .stagger-8  { animation-delay: 0.40s; }
+  .stagger-9  { animation-delay: 0.45s; }
+  .stagger-10 { animation-delay: 0.50s; }
+
+  /* Hover lift for interactive items */
+  .hover-lift {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(0,0,0,0.12);
+  }
+  .hover-lift:active {
+    transform: translateY(0);
   }
 }

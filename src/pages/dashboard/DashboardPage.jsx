@@ -60,7 +60,7 @@ function Skeleton({ className = '' }) {
 
 function DashboardSkeleton() {
   return (
-    <div className="mx-auto max-w-7xl px-6 py-6 space-y-6">
+    <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1.5">
           <Skeleton className="h-6 w-32" />
@@ -104,15 +104,16 @@ function BarChart({ data, valueKey, color = '#2563EB', height = 100, formatValue
 
   const max = Math.max(...data.map(d => d[valueKey] || 0), 1);
   const fmt = formatValue || (v => String(v));
+  const labelH = 20; // reserve px for month label + value label row
+  const innerH = height - labelH;
 
   return (
     <>
       <Tooltip {...tooltip} />
       <div className="flex items-end gap-1.5 w-full" style={{ height }}>
         {data.map((d, i) => {
-          const pct = ((d[valueKey] || 0) / max) * 100;
+          const barH = Math.max(((d[valueKey] || 0) / max) * innerH, d[valueKey] > 0 ? 4 : 2);
           const isHovered = hoveredIdx === i;
-          const barH = Math.max(pct, 4);
 
           return (
             <div
@@ -133,7 +134,7 @@ function BarChart({ data, valueKey, color = '#2563EB', height = 100, formatValue
               <div
                 className="w-full rounded-t-md transition-all duration-300"
                 style={{
-                  height: `${barH}%`,
+                  height: `${barH}px`,
                   background: color,
                   opacity: hoveredIdx === null ? 0.82 : isHovered ? 1 : 0.35,
                   transform: isHovered ? 'scaleX(1.06)' : 'scaleX(1)',
@@ -609,7 +610,7 @@ export default function DashboardPage() {
         navigate={navigate}
       />
 
-      <div className="mx-auto max-w-7xl px-6 py-6 space-y-6">
+      <div className="p-6 space-y-6">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between">

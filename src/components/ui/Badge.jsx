@@ -44,7 +44,7 @@ export default function Badge({ children, variant = 'default', dot = false, clas
       text-xs font-semibold ring-1 ring-inset
       ${v} ${className}
     `.replace(/\s+/g, ' ').trim()}>
-      {dot && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${d}`} />}
+      {dot && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 animate-dot-pulse ${d}`} />}
       {children}
     </span>
   );

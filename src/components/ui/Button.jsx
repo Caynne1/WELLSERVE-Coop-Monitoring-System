@@ -50,6 +50,7 @@ export default function Button({
         transition-all duration-150
         focus:outline-none focus:ring-2 focus:ring-offset-1
         disabled:opacity-50 disabled:cursor-not-allowed
+        active:scale-[0.96] hover:scale-[1.02] hover:-translate-y-px
         ${variants[variant] ?? variants.primary}
         ${sizes[size] ?? sizes.md}
         ${className}

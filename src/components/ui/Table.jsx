@@ -30,7 +30,14 @@ export function Tr({ children, onClick, className = '' }) {
   return (
     <tr
       onClick={onClick}
-      className={`hover:bg-gray-50/50 transition-colors ${onClick ? 'cursor-pointer' : ''} ${className}`}
+      className={[
+        'transition-all duration-150',
+        onClick
+          ? 'cursor-pointer hover:bg-emerald-50/30 hover:shadow-sm hover:scale-[1.001] active:bg-emerald-50/50'
+          : 'hover:bg-gray-50/60',
+        className,
+      ].join(' ')}
+      style={onClick ? { transformOrigin: 'center' } : undefined}
     >
       {children}
     </tr>

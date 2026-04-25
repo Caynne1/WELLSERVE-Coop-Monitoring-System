@@ -1,6 +1,13 @@
-export default function Card({ children, className = '' }) {
+export default function Card({ children, className = '', hoverable = false }) {
   return (
-    <div className={`bg-white rounded-xl border border-gray-200 ${className}`}>
+    <div
+      className={`
+        bg-white rounded-xl border border-gray-200
+        transition-all duration-200
+        ${hoverable ? 'hover:-translate-y-1 hover:shadow-md hover:border-emerald-200/60 cursor-pointer' : ''}
+        ${className}
+      `.replace(/\s+/g, ' ').trim()}
+    >
       {children}
     </div>
   );

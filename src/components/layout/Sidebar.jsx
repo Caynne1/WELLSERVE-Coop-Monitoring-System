@@ -110,29 +110,36 @@ export default function Sidebar({ onClose }) {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-        {renderedGroups.map((group) => (
-          <div key={group.label}>
+        {renderedGroups.map((group, groupIdx) => (
+          <div key={group.label} className="animate-fade-in-up" style={{ animationDelay: `${groupIdx * 0.06}s` }}>
             <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
               {group.label}
             </p>
 
             <ul className="space-y-1">
-              {group.items.map((item) => (
-                <li key={item.to}>
+              {group.items.map((item, itemIdx) => (
+                <li
+                  key={item.to}
+                  className="animate-slide-in-left"
+                  style={{ animationDelay: `${(groupIdx * 0.06) + (itemIdx * 0.04)}s` }}
+                >
                   <NavLink to={item.to} onClick={onClose} className="block">
                     {({ isActive }) => (
                       <div
                         className={[
-                          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-150',
+                          'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm',
+                          'transition-all duration-200',
                           isActive
-                            ? 'bg-emerald-50 font-semibold text-emerald-700 shadow-sm'
-                            : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                            ? 'bg-emerald-50 font-semibold text-emerald-700 shadow-sm translate-x-0.5'
+                            : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5',
                         ].join(' ')}
                       >
                         <span
                           className={[
-                            'flex flex-shrink-0',
-                            isActive ? 'text-emerald-600' : 'text-gray-400',
+                            'flex flex-shrink-0 transition-all duration-200',
+                            isActive
+                              ? 'text-emerald-600 scale-110'
+                              : 'text-gray-400 group-hover:text-gray-700 group-hover:scale-110',
                           ].join(' ')}
                         >
                           <item.icon size={16} strokeWidth={isActive ? 2.4 : 2} />
@@ -141,7 +148,7 @@ export default function Sidebar({ onClose }) {
                         <span className="truncate">{item.label}</span>
 
                         {isActive && (
-                          <span className="ml-auto h-5 w-1.5 rounded-full bg-emerald-600" />
+                          <span className="ml-auto h-5 w-1.5 rounded-full bg-emerald-600 animate-scale-in" />
                         )}
                       </div>
                     )}

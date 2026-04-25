@@ -64,9 +64,13 @@ export async function getDashboardStats() {
 
   // Cash Flow per Month (last 6 months)
   const cashFlowChart = months.map(({ label, start, end }) => {
+    const startTs = new Date(start).getTime();
+    const endTs = new Date(end).getTime();
     const periodTx = txData.filter(t => {
-      const d = t.transaction_date || t.created_at;
-      return d >= start && d <= end;
+      const raw = t.transaction_date || t.created_at;
+      if (!raw) return false;
+      const ts = new Date(raw).getTime();
+      return ts >= startTs && ts <= endTs;
     });
     const cashIn = periodTx
       .filter(t => INFLOW_TYPES.includes(t.type))
@@ -79,9 +83,13 @@ export async function getDashboardStats() {
 
   // Member Growth per Month (last 6 months)
   const memberGrowthChart = months.map(({ label, start, end }) => {
+    const startTs = new Date(start).getTime();
+    const endTs = new Date(end).getTime();
     const count = memberData.filter(m => {
-      const d = m.date_joined || m.created_at;
-      return d >= start && d <= end;
+      const raw = m.date_joined || m.created_at;
+      if (!raw) return false;
+      const ts = new Date(raw).getTime();
+      return ts >= startTs && ts <= endTs;
     }).length;
     return { label, count };
   });
