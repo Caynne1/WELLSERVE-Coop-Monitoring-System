@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FileText, Search, Download, X, Calendar } from 'lucide-react';
+import { FileText, Search, Download, X, Calendar, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
@@ -166,6 +166,8 @@ export default function ActivityLogsPage() {
     }
   };
 
+  function handlePrint() { window.print(); }
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-6">
@@ -225,7 +227,14 @@ export default function ActivityLogsPage() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Export button */}
+        {/* Print + Export buttons */}
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Printer size={14} />
+          Print
+        </button>
         <Button
           variant="outline"
           size="sm"

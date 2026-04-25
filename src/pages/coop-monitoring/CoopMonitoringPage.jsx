@@ -3,8 +3,9 @@ import {
   TrendingUp, TrendingDown, DollarSign,
   RefreshCw, ArrowUpRight, ArrowDownRight,
   LayoutDashboard, Plus, AlertTriangle, Calendar,
-  BarChart2, X,
+  BarChart2, X, Printer, Download,
 } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
@@ -710,6 +711,26 @@ export default function CoopMonitoringPage() {
   const categories = [...new Set(transactions.map(tx => tx.category).filter(Boolean))];
   const hasFilters = typeFilter || catFilter || dateRange.from || dateRange.to;
 
+  function handlePrint() { window.print(); }
+
+  function handleExportCSV() {
+    try {
+      if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
+      const rows = filtered.map(tx => ({
+        date: tx.created_at ? formatDate(tx.created_at) : '',
+        category: CATEGORY_LABEL[tx.category] || tx.category || '',
+        description: tx.description || '',
+        reference: tx.ref_no || '',
+        amount: tx.amount || 0,
+        flow: tx.type === 'cash_in' ? 'Cash In' : 'Cash Out',
+      }));
+      exportToCSV('coop_monitoring_transactions.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -836,6 +857,21 @@ export default function CoopMonitoringPage() {
                 Clear all filters
               </button>
             )}
+
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+            >
+              <Printer size={14} />
+              Print
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+            >
+              <Download size={14} />
+              Export CSV
+            </button>
 
             <p className="ml-auto self-center text-xs text-gray-400">
               {filtered.length} of {transactions.length} transactions

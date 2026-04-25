@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   Printer,
+  Download,
   Search,
   User,
   PiggyBank,
   Wallet,
   CheckCircle2,
 } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -241,6 +243,27 @@ export default function PassbookPage() {
     });
   }, [transactions, selectedMemberId, selectedPassbookType]);
 
+  function handleExportRegistryCSV() {
+    try {
+      if (registryRows.length === 0) { toast.error('No data to export.'); return; }
+      const rows = registryRows.map(r => ({
+        no: r.registry_no,
+        surname: r.last_name || '',
+        first_name: r.first_name || '',
+        middle_initial: r.middle_initial || '',
+        cbu_account_no: r.cbu_account_no || '—',
+        savings_account_no: r.savings_account_no || '—',
+        passbook_status: r.passbook_status || '',
+        print_status: r.passbook_print_status || '',
+        recruiter: r.recruiter_name || 'Self',
+      }));
+      exportToCSV('passbook_registry.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
   function handlePrintPassbook(type) {
     if (!selectedMember) {
       toast.error('Please select a member first.');
@@ -409,6 +432,23 @@ export default function PassbookPage() {
                   </option>
                 ))}
               </select>
+
+              <div className="flex gap-2 ml-auto">
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+                >
+                  <Printer size={14} />
+                  Print
+                </button>
+                <button
+                  onClick={handleExportRegistryCSV}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+                >
+                  <Download size={14} />
+                  Export CSV
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto border border-gray-100 rounded-xl">
@@ -428,7 +468,11 @@ export default function PassbookPage() {
                     ].map(h => (
                       <th
                         key={h}
-                        className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
+                        className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${
+                          ['Status', 'Print Passbook', 'CBU Account', 'Savings Account', 'No.'].includes(h)
+                            ? 'text-center'
+                            : 'text-left'
+                        }`}
                       >
                         {h}
                       </th>
@@ -446,19 +490,19 @@ export default function PassbookPage() {
                     registryRows.map(row => (
                       <tr key={row.id} className="hover:bg-emerald-50/30">
                         <td className="px-4 py-3">{row.recruiter_name || 'Self'}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-center">
                           <Badge variant={getBadgeVariant(row.passbook_status)}>
                             {row.passbook_status === 'claimed' ? 'Claimed' : 'Unclaimed'}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-center">
                           <Badge variant={getPrintBadgeVariant(row.passbook_print_status)}>
                             {row.passbook_print_status === 'done' ? 'Done' : 'Not Yet'}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs">{row.cbu_account_no}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{row.savings_account_no}</td>
-                        <td className="px-4 py-3">{row.registry_no}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-center">{row.cbu_account_no}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-center">{row.savings_account_no}</td>
+                        <td className="px-4 py-3 text-center">{row.registry_no}</td>
                         <td className="px-4 py-3">{row.last_name || '—'}</td>
                         <td className="px-4 py-3">{row.first_name || '—'}</td>
                         <td className="px-4 py-3">{row.middle_initial || '—'}</td>

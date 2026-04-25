@@ -9,7 +9,10 @@ import {
   Users,
   DollarSign,
   Plus,
+  Printer,
+  Download,
 } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Badge from '../../components/ui/Badge';
@@ -288,6 +291,27 @@ export default function SavingsPage() {
   const totalDeposits = accounts.reduce((s, a) => s + (a.total_deposits || 0), 0);
   const activeCount = accounts.filter(a => a.status === 'active').length;
 
+  function handlePrint() { window.print(); }
+
+  function handleExportCSV() {
+    try {
+      if (filtered.length === 0) { toast.error('No data to export.'); return; }
+      const rows = filtered.map(a => ({
+        member: `${a.members?.first_name || ''} ${a.members?.last_name || ''}`.trim(),
+        member_no: a.members?.member_no || '',
+        account_no: a.account_no || '',
+        balance: a.balance || 0,
+        total_deposits: a.total_deposits || 0,
+        total_withdrawals: a.total_withdrawals || 0,
+        status: a.status || '',
+      }));
+      exportToCSV('savings_accounts.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
   return (
     <div className="p-6">
       <PageHeader title="Savings Monitoring" subtitle="Member savings accounts overview" />
@@ -313,8 +337,8 @@ export default function SavingsPage() {
         />
       </div>
 
-      <div className="mb-4">
-        <div className="relative max-w-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -324,6 +348,20 @@ export default function SavingsPage() {
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
           />
         </div>
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Printer size={14} />
+          Print
+        </button>
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
       </div>
 
       {loading ? (
@@ -334,8 +372,8 @@ export default function SavingsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Member', 'Account No.', 'Balance', 'Total Deposits', 'Total Withdrawals', 'Status', 'Updated', ''].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  {['Member', 'Account No.', 'Balance', 'Total Deposits', 'Total Withdrawals', 'Status', 'Updated', 'Actions'].map(h => (
+                    <th key={h} className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${['Account No.', 'Balance', 'Total Deposits', 'Total Withdrawals', 'Actions'].includes(h) ? 'text-center' : 'text-left'}`}>
                       {h}
                     </th>
                   ))}
@@ -370,16 +408,16 @@ export default function SavingsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600 text-center">
                       {account.account_no || '—'}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-blue-700">
+                    <td className="px-4 py-3 font-semibold text-blue-700 text-center">
                       {formatCurrency(account.balance || 0)}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">
+                    <td className="px-4 py-3 text-gray-600 text-center">
                       {formatCurrency(account.total_deposits || 0)}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">
+                    <td className="px-4 py-3 text-gray-600 text-center">
                       {formatCurrency(account.total_withdrawals || 0)}
                     </td>
                     <td className="px-4 py-3">
@@ -391,7 +429,7 @@ export default function SavingsPage() {
                       {account.updated_at ? formatDate(account.updated_at) : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
+                      <div className="flex items-center gap-1 justify-center">
                         <button
                           onClick={() => openDepositModal(account)}
                           title="Post Savings Deposit"

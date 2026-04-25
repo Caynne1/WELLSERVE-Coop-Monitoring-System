@@ -11,7 +11,10 @@ import {
   Layers3,
   DollarSign,
   AlertCircle,
+  Printer,
+  Download,
 } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -290,6 +293,29 @@ export default function LoansPage() {
     };
   }, [loans]);
 
+  function handlePrint() { window.print(); }
+
+  function handleExportCSV() {
+    try {
+      if (filtered.length === 0) { toast.error('No loans to export.'); return; }
+      const rows = filtered.map(l => ({
+        member: `${l.members?.first_name || ''} ${l.members?.last_name || ''}`.trim(),
+        member_no: l.members?.member_no || '',
+        amount: l.amount || 0,
+        balance: l.balance ?? l.amount,
+        method: titleCase(l.loan_method),
+        frequency: frequencyLabel(l.repayment_frequency),
+        term_months: l.term_months || '',
+        released: formatDate(l.release_date || l.created_at),
+        status: l.status || '',
+      }));
+      exportToCSV('loans_report.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
   return (
     <div className="p-6">
       <PageHeader
@@ -372,11 +398,27 @@ export default function LoansPage() {
           </select>
         </div>
 
-        {!loading && (
-          <p className="text-xs text-gray-400">
-            {filtered.length} of {loans.length} loans
-          </p>
-        )}
+        <div className="flex items-center gap-2">
+          {!loading && (
+            <p className="text-xs text-gray-400 mr-2">
+              {filtered.length} of {loans.length} loans
+            </p>
+          )}
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          >
+            <Printer size={14} />
+            Print
+          </button>
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       {loading ? (

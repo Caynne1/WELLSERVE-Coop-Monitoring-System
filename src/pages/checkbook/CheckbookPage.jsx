@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   BookOpen, Search, Plus, Pencil, Ban, Eye,
-  DollarSign, CheckCircle, Hash,
+  DollarSign, CheckCircle, Hash, Printer, Download,
 } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Badge from '../../components/ui/Badge';
@@ -247,6 +248,28 @@ export default function CheckbookPage() {
     }
   }
 
+  function handlePrint() { window.print(); }
+
+  function handleExportCSV() {
+    try {
+      if (filtered.length === 0) { toast.error('No entries to export.'); return; }
+      const rows = filtered.map(e => ({
+        check_no: e.check_no || '',
+        date: e.date || '',
+        payee: e.payee || '',
+        purpose: e.purpose || '',
+        bank: e.bank || '',
+        amount: e.amount || 0,
+        status: e.status || '',
+        notes: e.notes || '',
+      }));
+      exportToCSV('checkbook_report.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -309,6 +332,20 @@ export default function CheckbookPage() {
           <option value="cleared">Cleared</option>
           <option value="voided">Voided</option>
         </select>
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Printer size={14} />
+          Print
+        </button>
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
       </div>
 
       {/* ── Table ── */}

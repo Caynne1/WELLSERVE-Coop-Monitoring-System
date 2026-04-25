@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { TrendingUp, Search, Plus, Pencil, Ban, DollarSign, Calendar, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Search, Plus, Pencil, Ban, DollarSign, Calendar, AlertTriangle, Printer, Download } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Badge from '../../components/ui/Badge';
@@ -210,6 +211,27 @@ export default function ExpensesPage() {
     }
   }
 
+  function handlePrint() { window.print(); }
+
+  function handleExportCSV() {
+    try {
+      if (filtered.length === 0) { toast.error('No expenses to export.'); return; }
+      const rows = filtered.map(e => ({
+        date: e.date || '',
+        description: e.description || '',
+        category: e.category || '',
+        payee: e.payee || '',
+        amount: e.amount || 0,
+        status: e.status || '',
+        notes: e.notes || '',
+      }));
+      exportToCSV('expenses_report.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -277,6 +299,20 @@ export default function ExpensesPage() {
           <option value="recorded">Recorded</option>
           <option value="voided">Voided</option>
         </select>
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Printer size={14} />
+          Print
+        </button>
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
       </div>
 
       {/* ── Table ── */}
@@ -288,10 +324,14 @@ export default function ExpensesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Date', 'Description', 'Category', 'Payee', 'Amount', 'Status', ''].map(h => (
+                  {['Date', 'Description', 'Category', 'Payee', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                      className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
+                        ['Date', 'Category', 'Amount', 'Status', 'Actions'].includes(h)
+                          ? 'text-center'
+                          : 'text-left'
+                      }`}
                     >
                       {h}
                     </th>
@@ -315,7 +355,7 @@ export default function ExpensesPage() {
                       expense.status === 'voided' ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-center">
                       {formatDate(expense.date)}
                     </td>
                     <td className="px-4 py-3">
@@ -326,23 +366,23 @@ export default function ExpensesPage() {
                         </p>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <Badge variant={CATEGORY_BADGE[expense.category] || 'default'}>
                         {expense.category}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{expense.payee || '—'}</td>
-                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
+                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap text-center">
                       {formatCurrency(expense.amount)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <Badge variant={STATUS_BADGE[expense.status] || 'default'} dot>
                         {expense.status}
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
                       {expense.status === 'recorded' && (
-                        <div className="flex items-center gap-1 justify-end">
+                        <div className="flex items-center gap-1 justify-center">
                           <button
                             onClick={() => openEdit(expense)}
                             title="Edit Expense"

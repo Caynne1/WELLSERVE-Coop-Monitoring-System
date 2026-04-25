@@ -593,12 +593,14 @@ export default function MembersPage() {
                       'Status',
                       'Quick Access',
                       'Actions',
-                    ].map((h, i) => (
+                    ].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          i === 7 ? 'text-right print:hidden' : 'text-left'
-                        } ${h === 'Quick Access' ? 'print:hidden' : ''}`}
+                          ['Member No.', 'Joined', 'Status', 'Quick Access', 'Actions'].includes(h)
+                            ? 'text-center'
+                            : 'text-left'
+                        } ${h === 'Quick Access' || h === 'Actions' ? 'print:hidden' : ''}`}
                       >
                         {h}
                       </th>
@@ -694,7 +696,7 @@ export default function MembersPage() {
                           </td>
 
                           {/* Member No. */}
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 text-center">
                             <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded-lg text-gray-700 ring-1 ring-gray-200">
                               {member.member_no || '—'}
                             </span>
@@ -707,12 +709,12 @@ export default function MembersPage() {
                           <td className="px-4 py-3 text-gray-600 text-sm">{member.recruiter_name || 'Self'}</td>
 
                           {/* Joined */}
-                          <td className="px-4 py-3 text-gray-500 text-xs">
+                          <td className="px-4 py-3 text-gray-500 text-xs text-center">
                             {member.created_at ? formatDate(member.created_at) : '—'}
                           </td>
 
                           {/* Status */}
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 text-center">
                             <Badge variant={statusVariant[member.status] || 'default'} dot>
                               {member.status || 'active'}
                             </Badge>
@@ -720,7 +722,7 @@ export default function MembersPage() {
 
                           {/* Quick Access */}
                           <td className="px-4 py-3 print:hidden" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => openMemberTab(member.id, 'loan')}
                                 className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg
@@ -747,7 +749,7 @@ export default function MembersPage() {
 
                           {/* Row Actions */}
                           <td className="px-4 py-3 print:hidden" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => navigate(`/members/${member.id}`)}
                                 title="View profile"

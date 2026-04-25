@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, Search, Plus, Pencil, Ban, Eye,
-  DollarSign, CheckCircle, AlertTriangle,
+  DollarSign, CheckCircle, AlertTriangle, Printer, Download,
 } from 'lucide-react';
+import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Badge from '../../components/ui/Badge';
@@ -196,6 +197,28 @@ export default function VouchersPage() {
   const totalActive = active.reduce((s, v) => s + (v.amount || 0), 0);
 
   // ── Form helpers ────────────────────────────────────────────────────────────
+
+  function handlePrint() { window.print(); }
+
+  function handleExportCSV() {
+    try {
+      if (filtered.length === 0) { toast.error('No vouchers to export.'); return; }
+      const rows = filtered.map(v => ({
+        voucher_no: v.voucher_no || '',
+        type: voucherKindLabel(v.voucher_kind),
+        date: v.date || '',
+        payee: v.payee || '',
+        purpose: v.purpose || '',
+        amount: v.amount || 0,
+        status: STATUS_LABEL[v.status] || v.status || '',
+        notes: v.notes || '',
+      }));
+      exportToCSV('vouchers_report.csv', rows);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export CSV');
+    }
+  }
 
   function openAdd() {
     setEditTarget(null);
@@ -490,6 +513,20 @@ export default function VouchersPage() {
           <option value="approved">Approved</option>
           <option value="voided">Voided</option>
         </select>
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Printer size={14} />
+          Print
+        </button>
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
       </div>
 
       {loading ? (
@@ -500,10 +537,14 @@ export default function VouchersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Voucher No.', 'Type', 'Date', 'Payee', 'Purpose', 'Amount', 'Status', ''].map(h => (
+                  {['Voucher No.', 'Type', 'Date', 'Payee', 'Purpose', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                      className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
+                        ['Voucher No.', 'Type', 'Date', 'Amount', 'Status', 'Actions'].includes(h)
+                          ? 'text-center'
+                          : 'text-left'
+                      }`}
                     >
                       {h}
                     </th>
@@ -527,13 +568,13 @@ export default function VouchersPage() {
                       voucher.status === 'voided' ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
                         {voucher.voucher_no}
                       </span>
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
                         (voucher.voucher_kind || 'expense') === 'member_withdrawal'
                           ? 'bg-red-50 text-red-700'
@@ -543,7 +584,7 @@ export default function VouchersPage() {
                       </span>
                     </td>
 
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-center">
                       {formatDate(voucher.date)}
                     </td>
 
@@ -567,18 +608,18 @@ export default function VouchersPage() {
                       )}
                     </td>
 
-                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
+                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap text-center">
                       {formatCurrency(voucher.amount)}
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <Badge variant={STATUS_BADGE[voucher.status] || 'default'} dot>
                         {STATUS_LABEL[voucher.status] || voucher.status}
                       </Badge>
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
+                      <div className="flex items-center gap-1 justify-center">
                         <button
                           onClick={() => setViewTarget(voucher)}
                           title="View Details"

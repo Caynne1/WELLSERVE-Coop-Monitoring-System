@@ -1,34 +1,8 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
-import { Menu, X, Bell, LogOut, Search, LayoutDashboard, Users, BookOpen,
-  CreditCard, PiggyBank, Wallet, ArrowLeftRight, CheckSquare, FileText,
-  Ticket, Receipt, BarChart3, ScrollText, Settings, UserCog, Building2,
-  Clock, Shield } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useRef, useState } from 'react';
+import { Menu, X, Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import NotificationPanel from '../notifications/NotificationPanel';
-
-const NAV_ITEMS = [
-  { label: 'Dashboard',          path: '/dashboard',          icon: LayoutDashboard,  keywords: ['home', 'overview'] },
-  { label: 'Members',            path: '/members',            icon: Users,            keywords: ['member', 'people', 'person'] },
-  { label: 'Passbook',           path: '/passbook',           icon: BookOpen,         keywords: ['passbook', 'book'] },
-  { label: 'Loans',              path: '/loans',              icon: CreditCard,       keywords: ['loan', 'lending', 'credit'] },
-  { label: 'CBU',                path: '/cbu',                icon: PiggyBank,        keywords: ['capital build-up', 'cbu'] },
-  { label: 'Savings',            path: '/savings',            icon: Wallet,           keywords: ['savings', 'deposit', 'save'] },
-  { label: 'Transactions',       path: '/transactions',       icon: ArrowLeftRight,   keywords: ['transaction', 'payment', 'transfer'] },
-  { label: 'Checkbook',          path: '/checkbook',          icon: CheckSquare,      keywords: ['check', 'cheque'] },
-  { label: 'Invoices',           path: '/invoices',           icon: FileText,         keywords: ['invoice', 'billing', 'bill'] },
-  { label: 'Vouchers',           path: '/vouchers',           icon: Ticket,           keywords: ['voucher', 'receipt'] },
-  { label: 'Expenses',           path: '/expenses',           icon: Receipt,          keywords: ['expense', 'cost', 'spending'] },
-  { label: 'Coop Monitoring',    path: '/coop-monitoring',    icon: Building2,        keywords: ['cooperative', 'fund', 'monitoring', 'coop'] },
-  { label: 'Time Deposit',       path: '/time-deposit',       icon: Clock,            keywords: ['time deposit', 'td', 'fixed'] },
-  { label: 'Reports',            path: '/reports',            icon: BarChart3,        keywords: ['report', 'analytics', 'statistics'] },
-  { label: 'Activity Logs',      path: '/logs',               icon: ScrollText,       keywords: ['log', 'activity', 'audit', 'history'] },
-  { label: 'Settings',           path: '/settings',           icon: Settings,         keywords: ['setting', 'configuration', 'config'] },
-  { label: 'Staff',              path: '/staff',              icon: Shield,           keywords: ['staff', 'employee', 'team'] },
-  { label: 'Account Management', path: '/account-management', icon: UserCog,          keywords: ['account', 'manage'] },
-  { label: 'User Management',    path: '/user-management',    icon: UserCog,          keywords: ['user', 'manage', 'admin'] },
-];
 
 const btnBase = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -38,180 +12,11 @@ const btnBase = {
   flexShrink: 0,
 };
 
-function GlobalSearch({ autoFocus = false, onClose }) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef(null);
-  const containerRef = useRef(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (autoFocus) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [autoFocus]);
-
-  const results = query.trim().length === 0 ? [] : NAV_ITEMS.filter(item => {
-    const q = query.toLowerCase();
-    return item.label.toLowerCase().includes(q) || item.keywords.some(k => k.includes(q));
-  });
-
-  const handleSelect = useCallback((path) => {
-    navigate(path);
-    setQuery('');
-    setOpen(false);
-    inputRef.current?.blur();
-    onClose?.();
-  }, [navigate, onClose]);
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, results.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter' && results[activeIndex]) { handleSelect(results[activeIndex].path); }
-    else if (e.key === 'Escape') { setQuery(''); setOpen(false); inputRef.current?.blur(); onClose?.(); }
-  };
-
-  useEffect(() => { setActiveIndex(0); }, [query]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '8px',
-        background: '#ffffff',
-        border: focused ? '2px solid #04522A' : '2px solid transparent',
-        borderRadius: '10px', padding: '0 12px', height: '38px',
-        transition: 'border-color 0.18s ease',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
-      }}>
-        <Search size={15} style={{ color: '#07A04E', flexShrink: 0 }} />
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          placeholder="Search pages..."
-          onChange={e => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => { setFocused(true); if (query.trim()) setOpen(true); }}
-          onBlur={() => setFocused(false)}
-          onKeyDown={handleKeyDown}
-          style={{
-            border: 'none', outline: 'none', background: 'transparent',
-            color: '#111827', fontSize: '13px', width: '100%',
-            caretColor: '#07A04E',
-          }}
-        />
-        {query && (
-          <button
-            onMouseDown={() => { setQuery(''); setOpen(false); inputRef.current?.focus(); }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#9ca3af', display: 'flex', alignItems: 'center' }}
-          >
-            <X size={13} />
-          </button>
-        )}
-      </div>
-
-      {open && results.length > 0 && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
-          background: '#ffffff', borderRadius: '14px',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08)',
-          overflow: 'hidden', zIndex: 9999, border: '1px solid rgba(0,0,0,0.06)',
-        }}>
-          <div style={{ padding: '6px' }}>
-            {results.map((item, idx) => {
-              const Icon = item.icon;
-              const isActive = idx === activeIndex;
-              return (
-                <button
-                  key={item.path}
-                  onMouseDown={() => handleSelect(item.path)}
-                  onMouseEnter={() => setActiveIndex(idx)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    width: '100%', padding: '9px 12px', borderRadius: '9px',
-                    border: 'none', cursor: 'pointer',
-                    background: isActive ? '#f0fdf4' : 'transparent',
-                    color: isActive ? '#07A04E' : '#374151',
-                    fontSize: '13px', fontWeight: isActive ? '600' : '500',
-                    textAlign: 'left', transition: 'all 0.12s ease',
-                  }}
-                >
-                  <span style={{
-                    width: '28px', height: '28px', borderRadius: '8px',
-                    background: isActive ? 'rgba(7,160,78,0.12)' : '#f3f4f6',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <Icon size={14} style={{ color: isActive ? '#07A04E' : '#9ca3af' }} />
-                  </span>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ borderTop: '1px solid #f3f4f6', padding: '8px 14px 9px', background: '#fafafa' }}>
-            <p style={{ margin: 0, fontSize: '11px', color: '#9ca3af' }}>
-              <kbd style={{ background: '#e5e7eb', borderRadius: '4px', padding: '1px 5px', fontFamily: 'monospace', fontSize: '10px' }}>↑↓</kbd> navigate &nbsp;·&nbsp;
-              <kbd style={{ background: '#e5e7eb', borderRadius: '4px', padding: '1px 5px', fontFamily: 'monospace', fontSize: '10px' }}>Enter</kbd> open &nbsp;·&nbsp;
-              <kbd style={{ background: '#e5e7eb', borderRadius: '4px', padding: '1px 5px', fontFamily: 'monospace', fontSize: '10px' }}>Esc</kbd> close
-            </p>
-          </div>
-        </div>
-      )}
-
-      {open && query.trim() && results.length === 0 && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
-          background: '#ffffff', borderRadius: '14px',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.16)', padding: '20px',
-          textAlign: 'center', zIndex: 9999, border: '1px solid rgba(0,0,0,0.06)',
-        }}>
-          <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>
-            No pages found for "<strong style={{ color: '#374151' }}>{query}</strong>"
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Topbar({ onMenuClick, isSidebarOpen = false }) {
   const { user, profile, signOut } = useAuth();
   const { unreadCount, panelOpen, setPanelOpen } = useNotifications();
   const initials = user?.email?.[0]?.toUpperCase() || 'A';
   const bellRef = useRef(null);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-
-  // Mobile search mode — full-width input replaces topbar content
-  if (mobileSearchOpen) {
-    return (
-      <header style={{
-        height: '64px', display: 'flex', alignItems: 'center',
-        paddingLeft: '12px', paddingRight: '12px', gap: '10px',
-        background: '#07A04E', borderBottom: '1px solid rgba(0,0,0,0.08)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.12)', flexShrink: 0,
-        position: 'relative', zIndex: 20,
-      }}>
-        <button
-          onClick={() => setMobileSearchOpen(false)}
-          style={{ ...btnBase, width: '38px', height: '38px', flexShrink: 0 }}
-        >
-          <X size={20} />
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <GlobalSearch autoFocus onClose={() => setMobileSearchOpen(false)} />
-        </div>
-      </header>
-    );
-  }
 
   return (
     <>
@@ -238,25 +43,8 @@ export default function Topbar({ onMenuClick, isSidebarOpen = false }) {
           </button>
         </div>
 
-        {/* Center — search bar (hidden on mobile, shown on sm+) */}
-        <div className="hidden sm:flex" style={{ flex: 1, justifyContent: 'center', minWidth: 0 }}>
-          <GlobalSearch />
-        </div>
-
         {/* Right — actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-
-          {/* Mobile search icon — only visible below sm */}
-          <button
-            className="sm:hidden"
-            onClick={() => setMobileSearchOpen(true)}
-            title="Search"
-            style={{ ...btnBase, width: '38px', height: '38px' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.22)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.10)'; }}
-          >
-            <Search size={17} />
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: 'auto' }}>
 
           {/* Bell */}
           <div style={{ position: 'relative' }}>
