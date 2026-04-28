@@ -8,6 +8,8 @@ import {
   PiggyBank,
   Wallet,
   CheckCircle2,
+  ChevronDown,
+  Truck,
 } from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
@@ -24,7 +26,16 @@ const REGISTRY_STATUS_OPTIONS = [
   { value: '', label: 'All Status' },
   { value: 'claimed', label: 'Claimed' },
   { value: 'unclaimed', label: 'Unclaimed' },
+  { value: 'delivered', label: 'Delivered' },
 ];
+
+const PASSBOOK_STATUS_CYCLE = ['unclaimed', 'claimed', 'delivered'];
+
+const STATUS_META = {
+  unclaimed: { label: 'Unclaimed', color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
+  claimed:   { label: 'Claimed',   color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-400' },
+  delivered: { label: 'Delivered', color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-400' },
+};
 
 const PRINT_STATUS_OPTIONS = [
   { value: '', label: 'All Print Status' },
@@ -51,6 +62,7 @@ function plainFullName(member) {
 function getBadgeVariant(status) {
   if (status === 'claimed') return 'success';
   if (status === 'unclaimed') return 'warning';
+  if (status === 'delivered') return 'info';
   return 'default';
 }
 
@@ -73,6 +85,8 @@ export default function PassbookPage() {
   const [printStatusFilter, setPrintStatusFilter] = useState('');
 
   const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [statusUpdating, setStatusUpdating] = useState(null); // member id being updated
+  const [openStatusMenu, setOpenStatusMenu] = useState(null); // member id with open dropdown
   const [selectedPassbookType, setSelectedPassbookType] = useState('savings');
   const [passbookSearch, setPassbookSearch] = useState('');
 
@@ -242,6 +256,28 @@ export default function PassbookPage() {
       return tx.category === 'cbu';
     });
   }, [transactions, selectedMemberId, selectedPassbookType]);
+
+  async function handleUpdatePassbookStatus(memberId, newStatus) {
+    setStatusUpdating(memberId);
+    setOpenStatusMenu(null);
+    try {
+      const { error } = await supabase
+        .from('members')
+        .update({ passbook_status: newStatus })
+        .eq('id', memberId);
+
+      if (error) throw error;
+
+      setMembers(prev =>
+        prev.map(m => m.id === memberId ? { ...m, passbook_status: newStatus } : m)
+      );
+      toast.success(`Status updated to ${STATUS_META[newStatus]?.label || newStatus}`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status');
+    } finally {
+      setStatusUpdating(null);
+    }
+  }
 
   function handleExportRegistryCSV() {
     try {
@@ -465,11 +501,12 @@ export default function PassbookPage() {
                       'Surname',
                       'First Name',
                       'Middle Name',
+                      'Action',
                     ].map(h => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${
-                          ['Status', 'Print Passbook', 'CBU Account', 'Savings Account', 'No.'].includes(h)
+                          ['Status', 'Print Passbook', 'CBU Account', 'Savings Account', 'No.', 'Action'].includes(h)
                             ? 'text-center'
                             : 'text-left'
                         }`}
@@ -482,17 +519,21 @@ export default function PassbookPage() {
                 <tbody className="divide-y divide-gray-50">
                   {registryRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-16 text-gray-400">
+                      <td colSpan={10} className="text-center py-16 text-gray-400">
                         No passbook registry rows found.
                       </td>
                     </tr>
                   ) : (
-                    registryRows.map(row => (
+                    registryRows.map(row => {
+                      const meta = STATUS_META[row.passbook_status] || STATUS_META.unclaimed;
+                      const isUpdating = statusUpdating === row.id;
+                      const isOpen = openStatusMenu === row.id;
+                      return (
                       <tr key={row.id} className="hover:bg-emerald-50/30">
                         <td className="px-4 py-3">{row.recruiter_name || 'Self'}</td>
                         <td className="px-4 py-3 text-center">
                           <Badge variant={getBadgeVariant(row.passbook_status)}>
-                            {row.passbook_status === 'claimed' ? 'Claimed' : 'Unclaimed'}
+                            {row.passbook_status === 'claimed' ? 'Claimed' : row.passbook_status === 'delivered' ? 'Delivered' : 'Unclaimed'}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -506,8 +547,55 @@ export default function PassbookPage() {
                         <td className="px-4 py-3">{row.last_name || '—'}</td>
                         <td className="px-4 py-3">{row.first_name || '—'}</td>
                         <td className="px-4 py-3">{row.middle_initial || '—'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="relative inline-block">
+                            <button
+                              disabled={isUpdating}
+                              onClick={() => setOpenStatusMenu(isOpen ? null : row.id)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${meta.color} ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot} shrink-0`} />
+                              {isUpdating ? 'Saving…' : meta.label}
+                              {!isUpdating && <ChevronDown size={11} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
+                            </button>
+
+                            {isOpen && (
+                              <>
+                                {/* Backdrop */}
+                                <div
+                                  className="fixed inset-0 z-10"
+                                  onClick={() => setOpenStatusMenu(null)}
+                                />
+                                <div className="absolute right-0 mt-1.5 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 min-w-[140px]">
+                                  <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Set Status</p>
+                                  {PASSBOOK_STATUS_CYCLE.map(s => {
+                                    const sm = STATUS_META[s];
+                                    const isCurrent = row.passbook_status === s;
+                                    return (
+                                      <button
+                                        key={s}
+                                        disabled={isCurrent}
+                                        onClick={() => handleUpdatePassbookStatus(row.id, s)}
+                                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${
+                                          isCurrent
+                                            ? 'text-gray-300 cursor-default'
+                                            : 'text-gray-700 hover:bg-gray-50 cursor-pointer'
+                                        }`}
+                                      >
+                                        <span className={`w-2 h-2 rounded-full ${sm.dot}`} />
+                                        {sm.label}
+                                        {isCurrent && <span className="ml-auto text-[10px] text-gray-300">current</span>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -680,7 +768,13 @@ export default function PassbookPage() {
                       <StatCard
                         icon={<BookOpen size={16} className="text-emerald-600" />}
                         label="Passbook Status"
-                        value={selectedMember.passbook_status === 'claimed' ? 'Claimed' : 'Unclaimed'}
+                        value={
+                          selectedMember.passbook_status === 'claimed'
+                            ? 'Claimed'
+                            : selectedMember.passbook_status === 'delivered'
+                              ? 'Delivered'
+                              : 'Unclaimed'
+                        }
                       />
                       <StatCard
                         icon={<CheckCircle2 size={16} className="text-blue-600" />}
