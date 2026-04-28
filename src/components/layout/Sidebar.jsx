@@ -130,9 +130,15 @@ export default function Sidebar({ onClose }) {
                           'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm',
                           'transition-all duration-200',
                           isActive
-                            ? 'bg-blue-600 font-semibold text-white shadow-sm translate-x-0.5'
-                            : 'font-medium text-gray-600 hover:bg-blue-600 hover:text-white hover:translate-x-0.5',
+                            ? 'font-semibold text-white shadow-sm translate-x-0.5'
+                            : 'font-medium text-gray-600 hover:text-white hover:translate-x-0.5',
                         ].join(' ')}
+                        style={isActive
+                          ? { background: '#07A04E' }
+                          : undefined
+                        }
+                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#07A04E'; }}
+                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = ''; }}
                       >
                         <span
                           className={[
@@ -163,7 +169,7 @@ export default function Sidebar({ onClose }) {
       {/* Footer */}
       <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
         <p className="text-center text-[10px] font-medium tracking-[0.06em] text-gray-400">
-          WELLSERVE Coop Monitoring v2.0
+          WELLServe Coop Monitoring System
         </p>
       </div>
     </div>

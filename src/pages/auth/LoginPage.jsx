@@ -22,19 +22,27 @@ export default function LoginPage() {
 
   return (
     <div className="ws-root">
-      {/* Background */}
-      <div className="ws-bg" />
-      <div className="ws-blob ws-blob-1" />
-      <div className="ws-blob ws-blob-2" />
-      <div className="ws-blob ws-blob-3" />
+
+      {/* ── Animated gradient wave background ── */}
+      <div className="ws-wave-bg" />
+      <svg className="ws-wave ws-wave-1" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,160 C240,260 480,60 720,160 C960,260 1200,60 1440,160 L1440,320 L0,320 Z" />
+      </svg>
+      <svg className="ws-wave ws-wave-2" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,200 C300,100 600,300 900,200 C1100,130 1280,240 1440,180 L1440,320 L0,320 Z" />
+      </svg>
+      <svg className="ws-wave ws-wave-3" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,240 C360,160 720,320 1080,240 C1260,200 1380,260 1440,220 L1440,320 L0,320 Z" />
+      </svg>
 
       <div className="ws-shell">
 
         {/* ══════════ LEFT PANEL ══════════ */}
         <div className="ws-left">
-          <div className="ws-deco ws-deco-1" />
-          <div className="ws-deco ws-deco-2" />
-          <div className="ws-deco ws-deco-3" />
+          {/* Decorative wave at bottom of left panel */}
+          <svg className="ws-panel-wave" viewBox="0 0 400 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0,40 C80,0 160,80 240,40 C300,10 360,60 400,30 L400,80 L0,80 Z" />
+          </svg>
 
           <div className="ws-left-inner">
             {/* Brand */}
@@ -165,26 +173,44 @@ export default function LoginPage() {
           font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
         }
 
-        /* ── Background ── */
-        .ws-bg {
+        /* ── Wave Background ── */
+        .ws-wave-bg {
           position: absolute; inset: 0;
-          background: linear-gradient(135deg, #030d2e 0%, #0f2d6b 45%, #091d4a 100%);
+          background: linear-gradient(160deg, #022c1a 0%, #045c32 30%, #07A04E 65%, #34d399 100%);
         }
-        .ws-blob {
-          position: absolute; border-radius: 9999px;
-          pointer-events: none; filter: blur(90px);
+
+        .ws-wave {
+          position: absolute;
+          width: 100%; left: 0;
+          pointer-events: none;
         }
-        .ws-blob-1 {
-          width: 520px; height: 520px; top: -160px; left: -130px;
-          background: rgba(29, 78, 216, 0.50);
+        .ws-wave-1 {
+          bottom: -2px; height: 38vh;
+          fill: rgba(4, 120, 64, 0.55);
+          animation: waveFloat1 9s ease-in-out infinite;
         }
-        .ws-blob-2 {
-          width: 440px; height: 440px; bottom: -150px; right: -110px;
-          background: rgba(15, 44, 110, 0.60);
+        .ws-wave-2 {
+          bottom: -2px; height: 30vh;
+          fill: rgba(16, 185, 97, 0.40);
+          animation: waveFloat2 12s ease-in-out infinite;
         }
-        .ws-blob-3 {
-          width: 340px; height: 340px; top: 38%; left: 36%;
-          background: rgba(96, 165, 250, 0.08);
+        .ws-wave-3 {
+          bottom: -2px; height: 22vh;
+          fill: rgba(52, 211, 153, 0.30);
+          animation: waveFloat3 7s ease-in-out infinite;
+        }
+
+        @keyframes waveFloat1 {
+          0%, 100% { transform: translateX(0); }
+          50%       { transform: translateX(-40px); }
+        }
+        @keyframes waveFloat2 {
+          0%, 100% { transform: translateX(0); }
+          50%       { transform: translateX(50px); }
+        }
+        @keyframes waveFloat3 {
+          0%, 100% { transform: translateX(0); }
+          50%       { transform: translateX(-30px); }
         }
 
         /* ── Shell ── */
@@ -193,25 +219,25 @@ export default function LoginPage() {
           width: 100%; max-width: 980px;
           display: grid; grid-template-columns: 1.1fr 0.9fr;
           border-radius: 28px; overflow: hidden;
-          box-shadow: 0 32px 80px rgba(0,0,0,0.50), 0 4px 16px rgba(0,0,0,0.25);
+          box-shadow: 0 32px 80px rgba(0,0,0,0.28), 0 4px 16px rgba(0,0,0,0.14);
         }
 
         /* ── Left panel ── */
         .ws-left {
           position: relative; overflow: hidden;
-          background: linear-gradient(155deg, #0f2d6b 0%, #1e40af 55%, #2563eb 100%);
+          background: linear-gradient(155deg, #036636 0%, #07A04E 55%, #10b961 100%);
           padding: 52px 48px;
           display: flex; flex-direction: column;
           min-height: 640px;
         }
 
-        .ws-deco {
-          position: absolute; border-radius: 9999px;
-          pointer-events: none; border: 1px solid rgba(255,255,255,0.07);
+        .ws-panel-wave {
+          position: absolute;
+          bottom: 0; left: 0;
+          width: 100%; height: 80px;
+          fill: rgba(255,255,255,0.07);
+          pointer-events: none;
         }
-        .ws-deco-1 { width: 360px; height: 360px; top: -110px; right: -110px; background: rgba(255,255,255,0.04); }
-        .ws-deco-2 { width: 230px; height: 230px; bottom: 50px; left: -80px; background: rgba(255,255,255,0.03); }
-        .ws-deco-3 { width: 150px; height: 150px; top: 50%; right: 28px; background: rgba(255,255,255,0.05); }
 
         .ws-left-inner {
           position: relative; z-index: 2;
@@ -222,8 +248,8 @@ export default function LoginPage() {
         .ws-brand { display: flex; align-items: center; gap: 14px; }
         .ws-logo-ring {
           width: 62px; height: 62px; border-radius: 18px;
-          background: rgba(255,255,255,0.14);
-          border: 1px solid rgba(255,255,255,0.22);
+          background: rgba(255,255,255,0.18);
+          border: 1px solid rgba(255,255,255,0.28);
           display: flex; align-items: center; justify-content: center;
           backdrop-filter: blur(8px);
         }
@@ -233,7 +259,7 @@ export default function LoginPage() {
         }
         .ws-brand-tagline {
           font-size: 11px; font-weight: 600; letter-spacing: 0.10em;
-          text-transform: uppercase; color: rgba(255,255,255,0.60);
+          text-transform: uppercase; color: rgba(255,255,255,0.72);
           margin-top: 5px;
         }
 
@@ -241,8 +267,8 @@ export default function LoginPage() {
         .ws-badge {
           display: inline-flex; align-items: center; gap: 7px;
           padding: 6px 14px; border-radius: 9999px;
-          background: rgba(255,255,255,0.13);
-          border: 1px solid rgba(255,255,255,0.20);
+          background: rgba(255,255,255,0.18);
+          border: 1px solid rgba(255,255,255,0.26);
           color: rgba(255,255,255,0.92);
           font-size: 12px; font-weight: 600; width: fit-content;
         }
@@ -253,23 +279,22 @@ export default function LoginPage() {
         }
         .ws-sub {
           font-size: 14px; line-height: 1.72;
-          color: rgba(255,255,255,0.68);
+          color: rgba(255,255,255,0.78);
           max-width: 390px;
         }
         .ws-divider {
           width: 48px; height: 3px;
-          background: rgba(255,255,255,0.28);
+          background: rgba(255,255,255,0.36);
           border-radius: 9999px;
         }
         .ws-quote {
           font-size: 13px; line-height: 1.7;
-          color: rgba(255,255,255,0.50);
+          color: rgba(255,255,255,0.60);
           font-style: italic;
           max-width: 380px;
         }
-
         .ws-left-foot {
-          font-size: 11px; color: rgba(255,255,255,0.35);
+          font-size: 11px; color: rgba(255,255,255,0.45);
           margin-top: auto; padding-top: 8px;
         }
 
@@ -279,6 +304,14 @@ export default function LoginPage() {
           padding: 52px 48px;
           display: flex; flex-direction: column;
           justify-content: center; min-height: 640px;
+          position: relative; overflow: hidden;
+        }
+        .ws-right::after {
+          content: '';
+          position: absolute;
+          bottom: 0; left: 0; right: 0; height: 130px;
+          background: linear-gradient(to top, rgba(7,160,78,0.06), transparent);
+          pointer-events: none;
         }
 
         .ws-mobile-logo {
@@ -287,26 +320,29 @@ export default function LoginPage() {
         }
         .ws-mobile-logo-ring {
           width: 52px; height: 52px; border-radius: 16px;
-          background: #eff6ff; border: 1px solid #bfdbfe;
+          background: #f0fdf4; border: 1px solid #bbf7d0;
           display: flex; align-items: center; justify-content: center;
         }
         .ws-mobile-brand-name {
           font-size: 17px; font-weight: 800; letter-spacing: 0.12em; color: #0f172a;
         }
         .ws-mobile-brand-tag {
-          font-size: 10px; font-weight: 600; color: #2563eb;
+          font-size: 10px; font-weight: 600; color: #07A04E;
           text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px;
         }
 
-        .ws-form-wrap { width: 100%; max-width: 360px; margin: 0 auto; }
+        .ws-form-wrap {
+          width: 100%; max-width: 360px; margin: 0 auto;
+          position: relative; z-index: 1;
+        }
 
         .ws-form-header { margin-bottom: 28px; }
         .ws-form-eyebrow {
           display: inline-flex; align-items: center; gap: 6px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
-          text-transform: uppercase; color: #1d4ed8;
-          background: #eff6ff; padding: 5px 12px; border-radius: 9999px;
-          border: 1px solid #bfdbfe;
+          text-transform: uppercase; color: #059033;
+          background: #f0fdf4; padding: 5px 12px; border-radius: 9999px;
+          border: 1px solid #bbf7d0;
         }
         .ws-form-title {
           font-size: 30px; font-weight: 800;
@@ -341,9 +377,9 @@ export default function LoginPage() {
           transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
         }
         .ws-input:focus {
-          border-color: #2563eb;
+          border-color: #07A04E;
           background: #ffffff;
-          box-shadow: 0 0 0 4px rgba(37,99,235,0.10);
+          box-shadow: 0 0 0 4px rgba(7,160,78,0.10);
         }
         .ws-input::placeholder { color: #94a3b8; }
         .ws-input-err { border-color: #fca5a5 !important; }
@@ -360,22 +396,22 @@ export default function LoginPage() {
         .ws-btn {
           width: 100%; padding: 14px;
           border-radius: 12px; border: none;
-          background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+          background: linear-gradient(135deg, #07A04E 0%, #10b961 100%);
           color: #ffffff; font-size: 15px; font-weight: 700;
           letter-spacing: 0.02em; cursor: pointer;
           display: flex; align-items: center; justify-content: center; gap: 8px;
-          box-shadow: 0 8px 24px rgba(37,99,235,0.30);
+          box-shadow: 0 8px 24px rgba(7,160,78,0.30);
           transition: transform 0.16s, box-shadow 0.16s, filter 0.16s;
           margin-top: 6px;
         }
         .ws-btn:not(:disabled):hover {
           transform: translateY(-2px);
-          box-shadow: 0 14px 32px rgba(37,99,235,0.38);
+          box-shadow: 0 14px 32px rgba(7,160,78,0.38);
           filter: saturate(1.05);
         }
         .ws-btn:not(:disabled):active {
           transform: translateY(0);
-          box-shadow: 0 6px 16px rgba(37,99,235,0.22);
+          box-shadow: 0 6px 16px rgba(7,160,78,0.22);
         }
         .ws-btn:disabled { opacity: 0.65; cursor: not-allowed; }
 
@@ -388,6 +424,7 @@ export default function LoginPage() {
         .ws-right-foot {
           font-size: 11px; color: #cbd5e1;
           text-align: center; margin-top: 28px;
+          position: relative; z-index: 1;
         }
 
         @keyframes ws-spin { to { transform: rotate(360deg); } }
