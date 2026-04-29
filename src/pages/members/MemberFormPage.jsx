@@ -61,9 +61,9 @@ const MEMBERSHIP_BREAKDOWN = {
   },
   regular: {
     label: 'Full Pledge Member',
-    membership_fee: 1500,
-    cbu: 3000,
-    savings: 500,
+    membership_fee: 1800,
+    cbu: 4000,
+    savings: 1000,
   },
 };
 

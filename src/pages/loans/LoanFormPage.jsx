@@ -53,6 +53,15 @@ const LOAN_METHOD_OPTS = [
   { value: 'straight', label: 'Straight' },
 ];
 
+const PAYMENT_MODE_OPTS = [
+  { value: '',              label: 'Select mode of payment' },
+  { value: 'Cash',          label: 'Cash' },
+  { value: 'GCash',         label: 'GCash' },
+  { value: 'Bank Transfer', label: 'Bank Transfer' },
+  { value: 'Check',         label: 'Check' },
+  { value: 'Others',        label: 'Others' },
+];
+
 const emptyMemberProfile = {
   first_name: '',
   last_name: '',
@@ -803,6 +812,7 @@ export default function LoanFormPage() {
               readOnly
               {...register('total_loan_payable')}
             />
+
           </div>
         </section>
 

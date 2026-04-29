@@ -28,7 +28,7 @@ import {
   recordMembershipPayment,
   upgradeMembership,
   createMembership,
-  computeFeeBalance,
+  patchMembershipFeeRequired,
 } from '../../services/membershipService';
 import {
   getPenaltiesByMemberId,
@@ -36,8 +36,13 @@ import {
   deletePenalty,
 } from '../../services/penaltyService';
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
+import {
+  getTimeDepositsByMemberId,
+  createTimeDeposit,
+  recordTimeDepositPayment,
+} from '../../services/timeDepositService';
 import { exportMemberReport } from '../../utils/excelExport.js';
-import { createInvoiceForPayment } from '../../services/invoiceService';
+import { createInvoiceForPayment, createInvoice } from '../../services/invoiceService';
 import { trackActivity } from '../../services/logService';
 
 import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
@@ -47,6 +52,7 @@ const TABS = [
   { id: 'loan', label: 'Loans', icon: CreditCard },
   { id: 'cbu', label: 'CBU', icon: PiggyBank },
   { id: 'savings', label: 'Savings', icon: Wallet },
+  { id: 'time_deposit', label: 'Time Deposit', icon: Clock },
   { id: 'membership', label: 'Membership', icon: Shield },
   { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
   { id: 'penalty', label: 'Penalty', icon: BadgeAlert },
@@ -109,6 +115,9 @@ export default function MemberDetailPage() {
 
   const [penalties, setPenalties] = useState([]);
   const [penaltyLoading, setPenaltyLoading] = useState(false);
+
+  const [memberTimeDeposits, setMemberTimeDeposits] = useState([]);
+  const [timeDepositLoading, setTimeDepositLoading] = useState(false);
 
   async function fetchAll() {
     try {
@@ -177,6 +186,18 @@ export default function MemberDetailPage() {
     }
   }, [id]);
 
+  const fetchTimeDeposits = useCallback(async () => {
+    try {
+      setTimeDepositLoading(true);
+      const data = await getTimeDepositsByMemberId(id);
+      setMemberTimeDeposits(data || []);
+    } catch {
+      // silently fail — member_id column may not exist yet
+    } finally {
+      setTimeDepositLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchAll();
   }, [id]);
@@ -184,7 +205,8 @@ export default function MemberDetailPage() {
   useEffect(() => {
     fetchMembership();
     fetchPenalties();
-  }, [fetchMembership, fetchPenalties]);
+    fetchTimeDeposits();
+  }, [fetchMembership, fetchPenalties, fetchTimeDeposits]);
 
   const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
   const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
@@ -229,6 +251,7 @@ export default function MemberDetailPage() {
       const canMerge =
         last &&
         last.created_by === (tx.created_by || 'System') &&
+        last.created_by_name === (tx.created_by_name || 'System') &&
         last.tx_day === txDay &&
         last.payment_mode === (tx.payment_mode || '') &&
         last.payment_mode_note === (tx.payment_mode_note || '');
@@ -252,6 +275,7 @@ export default function MemberDetailPage() {
           transaction_date: tx.transaction_date || txDay,
           tx_day: txDay,
           created_by: tx.created_by || 'System',
+          created_by_name: tx.created_by_name || 'System',
           payment_mode: tx.payment_mode || '',
           payment_mode_note: tx.payment_mode_note || '',
           loan_amount: tx.type === 'loan_payment' ? Number(tx.amount || 0) : 0,
@@ -488,7 +512,20 @@ export default function MemberDetailPage() {
               upgradeLogs={upgradeLogs}
               loading={membershipLoading}
               userId={user?.id}
-              onRefresh={fetchMembership}
+              cbuAccount={cbuAccount}
+              savingsAccount={savingsAccount}
+              onRefresh={refreshEverything}
+            />
+          )}
+
+          {activeTab === 'time_deposit' && (
+            <MemberTimeDepositTab
+              timeDeposits={memberTimeDeposits}
+              loading={timeDepositLoading}
+              memberId={id}
+              memberName={memberFullName}
+              userId={user?.id}
+              onRefresh={fetchTimeDeposits}
             />
           )}
 
@@ -1290,16 +1327,24 @@ const MEMBERSHIP_TYPE_OPTS = [
   { value: 'regular', label: 'Regular' },
 ];
 
-function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, onRefresh }) {
+const MEMBERSHIP_FEES = {
+  associate: { entry: 300, cbu: 1000, savings: 500, total: 1800 },
+  regular:   { entry: 1800, cbu: 4000, savings: 1000, total: 6800 },
+};
+
+function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, cbuAccount, savingsAccount, onRefresh }) {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupType, setSetupType] = useState('associate');
-  const [setupReq, setSetupReq] = useState('');
-  const [setupPaid, setSetupPaid] = useState('');
   const [setupSaving, setSetupSaving] = useState(false);
 
   const [payOpen, setPayOpen] = useState(false);
-  const [payAmount, setPayAmount] = useState('');
+  const [payEntry, setPayEntry] = useState('');
+  const [payCbu, setPayCbu] = useState('');
+  const [paySavings, setPaySavings] = useState('');
+  const [paySiNo, setPaySiNo] = useState('');
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+  const [payMode, setPayMode] = useState('');
+  const [payReference, setPayReference] = useState('');
   const [payNotes, setPayNotes] = useState('');
   const [paySaving, setPaySaving] = useState(false);
 
@@ -1307,52 +1352,65 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   const [upgradeNotes, setUpgradeNotes] = useState('');
   const [upgrading, setUpgrading] = useState(false);
 
-  const feeBalance = computeFeeBalance(membership);
-  const isFullyPaid = membership && feeBalance <= 0;
+  // Hooks must run before any early return
+  const membershipFees = MEMBERSHIP_FEES[membership?.membership_type] || null;
+  const storedFeeRequired = parseFloat(membership?.fee_required) || 0;
+  const feePaid = parseFloat(membership?.fee_paid) || 0;
+  const effectiveFeeRequired = membershipFees
+    ? Math.max(storedFeeRequired, membershipFees.total)
+    : storedFeeRequired;
+  const feeBalance = Math.max(0, effectiveFeeRequired - feePaid);
+  const isFullyPaid = membership != null && feeBalance <= 0;
+  const setupFees = MEMBERSHIP_FEES[setupType] || MEMBERSHIP_FEES.associate;
+
+  // Parse per-component totals from JSON stored in payment notes
+  const perComponentTotals = useMemo(() => {
+    return (payments || []).reduce((acc, p) => {
+      try {
+        const data = JSON.parse(p.notes || '{}');
+        if (typeof data === 'object' && ('entry' in data || 'cbu' in data || 'savings' in data)) {
+          acc.entry += Number(data.entry || 0);
+          acc.cbu += Number(data.cbu || 0);
+          acc.savings += Number(data.savings || 0);
+        }
+      } catch { /* old-format plain text notes */ }
+      return acc;
+    }, { entry: 0, cbu: 0, savings: 0 });
+  }, [payments]);
+
+  function parsePaymentNotes(notes) {
+    try {
+      const data = JSON.parse(notes || '{}');
+      if (typeof data === 'object' && ('entry' in data || 'cbu' in data || 'savings' in data)) {
+        const parts = [];
+        if (data.entry > 0) parts.push(`Entry ₱${Number(data.entry).toLocaleString()}`);
+        if (data.cbu > 0) parts.push(`CBU ₱${Number(data.cbu).toLocaleString()}`);
+        if (data.savings > 0) parts.push(`Savings ₱${Number(data.savings).toLocaleString()}`);
+        return [parts.join(' · '), data.text].filter(Boolean).join(' | ') || '—';
+      }
+      return notes || '—';
+    } catch {
+      return notes || '—';
+    }
+  }
 
   async function handleSetup() {
     if (!userId) return toast.error('User not authenticated');
-
-    const req = parseFloat(setupReq) || 0;
-    const paid = parseFloat(setupPaid) || 0;
-
-    if (req <= 0) return toast.error('Fee Required must be greater than zero.');
-    if (paid > req) return toast.error('Fee Paid cannot exceed Fee Required.');
-
     setSetupSaving(true);
     try {
       await createMembership({
         member_id: memberId,
         membership_type: setupType,
-        fee_required: req,
-        fee_paid_now: paid,
+        fee_required: setupFees.total,
+        fee_paid_now: 0,
         created_by: userId,
       });
-
-      if (paid > 0) {
-        await createInvoiceStrict(
-          {
-            invoice_no: `TEMP-${Date.now()}`,
-            payment_type: 'membership',
-            member_id: memberId,
-            member_name: memberName || 'Member',
-            amount: paid,
-            purpose: 'Membership Initial Payment',
-            ref_id: null,
-            created_by: userId,
-            date: new Date().toISOString().split('T')[0],
-          },
-          'Membership initial payment'
-        );
-      }
-
       trackActivity({
         userId,
         module: 'member',
         action: 'create',
-        description: `Set up ${setupType} membership for member (${memberName})${paid > 0 ? ` with initial payment of ${formatCurrency(paid)}` : ''}`,
+        description: `Set up ${setupType} membership for member (${memberName}), total fee: ${formatCurrency(setupFees.total)}`,
       });
-
       toast.success('Membership record created.');
       setSetupOpen(false);
       await onRefresh();
@@ -1366,48 +1424,123 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   async function handlePayment() {
     if (!userId) return toast.error('User not authenticated');
 
-    const amt = parseFloat(payAmount) || 0;
-    if (amt <= 0) return toast.error('Enter a valid amount greater than zero.');
+    const entry = parseFloat(payEntry) || 0;
+    const cbu = parseFloat(payCbu) || 0;
+    const savings = parseFloat(paySavings) || 0;
+    const total = entry + cbu + savings;
+
+    if (total <= 0) return toast.error('Enter at least one amount greater than zero.');
     if (!payDate) return toast.error('Payment date is required.');
+    if (!payMode) return toast.error('Mode of payment is required.');
     if (isFullyPaid) return toast.error('Membership fee is already fully paid.');
 
     setPaySaving(true);
     try {
-      await recordMembershipPayment(
-        membership.id,
-        memberId,
-        amt,
-        payDate,
-        payNotes || null,
-        userId
-      );
+      // Fix legacy records where fee_required was stored as entry-only (e.g. ₱300 instead of ₱1,800)
+      if (storedFeeRequired < effectiveFeeRequired) {
+        await patchMembershipFeeRequired(membership.id, effectiveFeeRequired);
+      }
 
-      await createInvoiceStrict(
-        {
-          invoice_no: `TEMP-${Date.now()}`,
-          payment_type: 'membership',
+      // Store breakdown as JSON in notes so per-component balance can be shown
+      const breakdownNote = JSON.stringify({
+        entry,
+        cbu,
+        savings,
+        ...(payNotes.trim() ? { text: payNotes.trim() } : {}),
+      });
+
+      await recordMembershipPayment(membership.id, memberId, total, payDate, breakdownNote, userId);
+
+      const payModeNote = [payReference.trim(), payNotes.trim()].filter(Boolean).join(' | ') || null;
+
+      if (entry > 0) {
+        await createTransaction({
           member_id: memberId,
-          member_name: memberName || 'Member',
-          amount: amt,
-          purpose: 'Membership Fee Payment',
-          ref_id: membership.id,
-          date: payDate,
-          notes: payNotes || null,
+          category: 'membership',
+          type: 'membership_payment',
+          amount: entry,
+          notes: `Membership Entry${payNotes ? ' — ' + payNotes : ''}`,
           created_by: userId,
-        },
-        'Membership payment'
-      );
+          transaction_date: payDate,
+          payment_mode: payMode || null,
+          payment_mode_note: payModeNote,
+        });
+      }
+
+      if (cbu > 0 && cbuAccount) {
+        await createTransaction({
+          member_id: memberId,
+          account_id: cbuAccount.id,
+          category: 'cbu',
+          type: 'deposit',
+          amount: cbu,
+          reference: cbuAccount.account_no || null,
+          notes: `Initial CBU (Membership)${payNotes ? ' — ' + payNotes : ''}`,
+          created_by: userId,
+          transaction_date: payDate,
+          payment_mode: payMode || null,
+          payment_mode_note: payModeNote,
+        });
+      }
+
+      if (savings > 0 && savingsAccount) {
+        await createTransaction({
+          member_id: memberId,
+          account_id: savingsAccount.id,
+          category: 'savings',
+          type: 'deposit',
+          amount: savings,
+          reference: savingsAccount.account_no || null,
+          notes: `Initial Savings (Membership)${payNotes ? ' — ' + payNotes : ''}`,
+          created_by: userId,
+          transaction_date: payDate,
+          payment_mode: payMode || null,
+          payment_mode_note: payModeNote,
+        });
+      }
+
+      if (paySiNo.trim()) {
+        const breakdown = [];
+        if (entry > 0) breakdown.push(`Entry: ${formatCurrency(entry)}`);
+        if (cbu > 0) breakdown.push(`CBU: ${formatCurrency(cbu)}`);
+        if (savings > 0) breakdown.push(`Savings: ${formatCurrency(savings)}`);
+        await createInvoiceStrict(
+          {
+            invoice_no: paySiNo.trim(),
+            payment_type: 'membership',
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: total,
+            purpose: breakdown.length > 1 ? 'Membership Payment' : (breakdown[0] || 'Membership Payment'),
+            ref_id: membership.id,
+            date: payDate,
+            notes: [...breakdown, payNotes.trim()].filter(Boolean).join(' | '),
+            created_by: userId,
+          },
+          'Membership payment'
+        );
+      }
+
+      const parts = [];
+      if (entry > 0) parts.push(`Entry ${formatCurrency(entry)}`);
+      if (cbu > 0) parts.push(`CBU ${formatCurrency(cbu)}`);
+      if (savings > 0) parts.push(`Savings ${formatCurrency(savings)}`);
 
       trackActivity({
         userId,
         module: 'member',
         action: 'payment',
-        description: `Membership payment of ${formatCurrency(amt)} recorded for member (${memberName})`,
+        description: `Membership payment of ${formatCurrency(total)} for member (${memberName})${parts.length ? ': ' + parts.join(', ') : ''}`,
       });
 
       toast.success('Membership payment recorded.');
       setPayOpen(false);
-      setPayAmount('');
+      setPayEntry('');
+      setPayCbu('');
+      setPaySavings('');
+      setPaySiNo('');
+      setPayMode('');
+      setPayReference('');
       setPayNotes('');
       await onRefresh();
     } catch (err) {
@@ -1419,23 +1552,15 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
   async function handleUpgrade() {
     if (!userId) return toast.error('User not authenticated');
-
     setUpgrading(true);
     try {
-      await upgradeMembership(
-        membership.id,
-        memberId,
-        'regular',
-        upgradeNotes || null,
-        userId
-      );
+      await upgradeMembership(membership.id, memberId, 'regular', upgradeNotes || null, userId);
       trackActivity({
         userId,
         module: 'member',
         action: 'update',
         description: `Membership upgraded to Regular for member (${memberName})`,
       });
-
       toast.success('Member upgraded to Regular.');
       setUpgradeOpen(false);
       setUpgradeNotes('');
@@ -1448,6 +1573,20 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   }
 
   if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
+
+  const fieldClass = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]';
+
+  function openPayModal() {
+    setPayEntry('');
+    setPayCbu('');
+    setPaySavings('');
+    setPaySiNo('');
+    setPayDate(new Date().toISOString().split('T')[0]);
+    setPayMode('');
+    setPayReference('');
+    setPayNotes('');
+    setPayOpen(true);
+  }
 
   if (!membership) {
     return (
@@ -1478,25 +1617,31 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
               </select>
             </div>
 
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Fee Required"
-              value={setupReq}
-              onChange={e => setSetupReq(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
-            />
+            <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2 border-b border-gray-100">
+                Fee Breakdown
+              </p>
+              <div className="divide-y divide-gray-100">
+                {[
+                  ['Membership Entry', setupFees.entry],
+                  ['Initial CBU', setupFees.cbu],
+                  ['Initial Savings', setupFees.savings],
+                ].map(([label, amount]) => (
+                  <div key={label} className="flex justify-between items-center px-4 py-2.5 text-sm">
+                    <span className="text-gray-600">{label}</span>
+                    <span className="font-medium text-gray-800">{formatCurrency(amount)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center px-4 py-2.5 text-sm font-semibold bg-emerald-50">
+                  <span className="text-emerald-800">Total</span>
+                  <span className="text-emerald-700">{formatCurrency(setupFees.total)}</span>
+                </div>
+              </div>
+            </div>
 
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Initial Fee Paid"
-              value={setupPaid}
-              onChange={e => setSetupPaid(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
-            />
+            <p className="text-xs text-gray-400">
+              Use "Record Payment" after setup to log partial or full payments.
+            </p>
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
@@ -1512,23 +1657,89 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
     );
   }
 
-  const feeRequired = parseFloat(membership.fee_required) || 0;
-  const feePaid = parseFloat(membership.fee_paid) || 0;
-  const paidPct = feeRequired > 0 ? Math.min(100, (feePaid / feeRequired) * 100) : 0;
+  const paidPct = effectiveFeeRequired > 0 ? Math.min(100, (feePaid / effectiveFeeRequired) * 100) : 0;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MembershipStatCard label="Fee Required" value={formatCurrency(feeRequired)} bg="bg-gray-50" textColor="text-gray-800" />
-        <MembershipStatCard label="Total Paid" value={formatCurrency(feePaid)} bg="bg-green-50" textColor="text-green-700" />
-        <MembershipStatCard
-          label="Outstanding Balance"
-          value={formatCurrency(feeBalance)}
-          bg={feeBalance > 0 ? 'bg-amber-50' : 'bg-green-50'}
-          textColor={feeBalance > 0 ? 'text-amber-700' : 'text-green-600'}
-        />
+
+      {/* ── Header row: balance + action buttons (mirrors CBU/Savings style) ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
+            <Shield size={20} className="text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-400">Outstanding Balance</p>
+            <p className={`text-2xl font-bold ${feeBalance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+              {formatCurrency(feeBalance)}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {isFullyPaid
+                ? 'Fully Paid'
+                : `${formatCurrency(feePaid)} paid of ${formatCurrency(effectiveFeeRequired)}`}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {!isFullyPaid && (
+            <Button variant="finance" icon={<Plus size={14} />} size="sm" onClick={openPayModal}>
+              Record Payment
+            </Button>
+          )}
+          {membership.membership_type === 'associate' && (
+            <Button variant="blue" icon={<Shield size={14} />} size="sm" onClick={() => { setUpgradeNotes(''); setUpgradeOpen(true); }}>
+              Upgrade to Regular
+            </Button>
+          )}
+        </div>
       </div>
 
+      {/* ── Per-component payment progress ── */}
+      {membershipFees && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2.5 border-b border-gray-100">
+            Payment Breakdown — {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
+          </p>
+          <div className="divide-y divide-gray-50">
+            {[
+              ['Membership Entry', membershipFees.entry, perComponentTotals.entry],
+              ['Initial CBU',      membershipFees.cbu,   perComponentTotals.cbu],
+              ['Initial Savings',  membershipFees.savings, perComponentTotals.savings],
+            ].map(([label, target, paid]) => {
+              const remaining = Math.max(0, target - paid);
+              const pct = target > 0 ? Math.min(100, (paid / target) * 100) : 0;
+              return (
+                <div key={label} className="px-4 py-3">
+                  <div className="flex items-center justify-between text-sm mb-1.5">
+                    <span className="text-gray-600">{label}</span>
+                    <span className="text-xs text-gray-500">
+                      <span className="font-semibold text-green-700">{formatCurrency(paid)}</span>
+                      <span className="text-gray-400"> / {formatCurrency(target)}</span>
+                      {remaining > 0 && (
+                        <span className="ml-2 text-amber-600 font-medium">({formatCurrency(remaining)} left)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : 'bg-amber-400'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex justify-between items-center px-4 py-2.5 text-sm font-semibold bg-gray-50">
+              <span className="text-gray-700">Total</span>
+              <span className={feeBalance > 0 ? 'text-amber-700' : 'text-green-700'}>
+                {formatCurrency(feePaid)} / {formatCurrency(effectiveFeeRequired)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Membership meta + progress bar ── */}
       <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
         <div className="flex items-start justify-between px-4 py-3 text-sm">
           <span className="text-gray-400 font-medium w-36 flex-shrink-0">Membership Type</span>
@@ -1548,7 +1759,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         </div>
         <div className="px-4 py-3">
           <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
-            <span>Fee Payment Progress</span>
+            <span>Overall Payment Progress</span>
             <span>{paidPct.toFixed(0)}%</span>
           </div>
           <div className="w-full bg-gray-100 rounded-full h-2">
@@ -1560,35 +1771,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        {!isFullyPaid && (
-          <Button
-            variant="primary"
-            icon={<Plus size={14} />}
-            onClick={() => {
-              setPayAmount('');
-              setPayDate(new Date().toISOString().split('T')[0]);
-              setPayNotes('');
-              setPayOpen(true);
-            }}
-          >
-            Record Payment
-          </Button>
-        )}
-        {membership.membership_type === 'associate' && (
-          <Button
-            variant="blue"
-            icon={<Shield size={14} />}
-            onClick={() => {
-              setUpgradeNotes('');
-              setUpgradeOpen(true);
-            }}
-          >
-            Upgrade to Regular
-          </Button>
-        )}
-      </div>
-
+      {/* ── Payment History ── */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Payment History</h3>
         {payments.length === 0 ? (
@@ -1598,7 +1781,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Date', 'Amount', 'Notes', 'Recorded'].map(h => (
+                  {['Date', 'Amount', 'Breakdown / Notes', 'Recorded'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {h}
                     </th>
@@ -1610,7 +1793,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
                   <tr key={p.id} className="hover:bg-gray-50/50">
                     <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-3 font-semibold text-green-700">{formatCurrency(p.amount)}</td>
-                    <td className="px-4 py-3 text-gray-500">{p.notes || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500">{parsePaymentNotes(p.notes)}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDateTime(p.created_at)}</td>
                   </tr>
                 ))}
@@ -1620,6 +1803,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         )}
       </div>
 
+      {/* ── Upgrade History ── */}
       {upgradeLogs.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Upgrade History</h3>
@@ -1649,42 +1833,90 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         </div>
       )}
 
+      {/* ── Record Payment Modal ── */}
       <Modal open={payOpen} onClose={() => setPayOpen(false)} title="Record Membership Payment" size="sm">
-        <p className="text-xs text-gray-400 mb-4">
-          Outstanding balance: <span className="font-semibold text-amber-700">{formatCurrency(feeBalance)}</span>
-        </p>
-        <div className="space-y-4">
-          <input
-            type="number"
-            step="0.01"
-            min="0.01"
-            placeholder="Amount"
-            value={payAmount}
-            onChange={e => setPayAmount(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
-          />
-          <input
-            type="date"
-            value={payDate}
-            onChange={e => setPayDate(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
-          />
-          <input
-            type="text"
-            placeholder="Optional notes..."
-            value={payNotes}
-            onChange={e => setPayNotes(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
-          />
+        <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5">
+          <p className="text-xs text-amber-700">
+            Outstanding: <span className="font-bold">{formatCurrency(feeBalance)}</span>
+            {membershipFees && (
+              <span className="text-amber-600 ml-2">
+                (Entry ₱{membershipFees.entry.toLocaleString()} · CBU ₱{membershipFees.cbu.toLocaleString()} · Savings ₱{membershipFees.savings.toLocaleString()})
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Membership Entry <span className="text-gray-400">(optional)</span>
+            </label>
+            <input type="number" step="0.01" min="0"
+              placeholder={membershipFees ? `e.g. ₱${membershipFees.entry.toLocaleString()}` : '0.00'}
+              value={payEntry} onChange={e => setPayEntry(e.target.value)} className={fieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              CBU <span className="text-gray-400">(optional)</span>
+            </label>
+            <input type="number" step="0.01" min="0"
+              placeholder={membershipFees ? `e.g. ₱${membershipFees.cbu.toLocaleString()}` : '0.00'}
+              value={payCbu} onChange={e => setPayCbu(e.target.value)} className={fieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Savings <span className="text-gray-400">(optional)</span>
+            </label>
+            <input type="number" step="0.01" min="0"
+              placeholder={membershipFees ? `e.g. ₱${membershipFees.savings.toLocaleString()}` : '0.00'}
+              value={paySavings} onChange={e => setPaySavings(e.target.value)} className={fieldClass} />
+          </div>
+          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 flex justify-between text-sm">
+            <span className="text-gray-500">Total</span>
+            <span className="font-semibold text-gray-800">
+              {formatCurrency((parseFloat(payEntry) || 0) + (parseFloat(payCbu) || 0) + (parseFloat(paySavings) || 0))}
+            </span>
+          </div>
+          <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={fieldClass} />
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Mode of Payment <span className="text-red-400">*</span>
+            </label>
+            <select
+              value={payMode}
+              onChange={e => setPayMode(e.target.value)}
+              className={fieldClass + ' bg-white'}
+            >
+              {PAYMENT_MODE_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Reference / Account / Check No. <span className="text-gray-400">(optional)</span>
+            </label>
+            <input type="text" placeholder="e.g. GCash ref, account no., check no."
+              value={payReference} onChange={e => setPayReference(e.target.value)} className={fieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              SI# <span className="text-gray-400">(optional — recorded in Invoice)</span>
+            </label>
+            <input type="text" placeholder="Enter SI# manually"
+              value={paySiNo} onChange={e => setPaySiNo(e.target.value)} className={fieldClass} />
+          </div>
+          <input type="text" placeholder="Notes (optional)"
+            value={payNotes} onChange={e => setPayNotes(e.target.value)} className={fieldClass} />
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={() => setPayOpen(false)} disabled={paySaving}>Cancel</Button>
-          <Button variant="primary" loading={paySaving} onClick={handlePayment} icon={<DollarSign size={14} />}>
+          <Button variant="finance" loading={paySaving} onClick={handlePayment} icon={<DollarSign size={14} />}>
             Record Payment
           </Button>
         </div>
       </Modal>
 
+      {/* ── Upgrade Modal ── */}
       <Modal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} title="Upgrade to Regular Member" size="sm">
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 text-sm">
           <p className="font-medium text-blue-800">Upgrading from Associate → Regular</p>
@@ -1693,13 +1925,9 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
           </p>
         </div>
         <div className="mb-5">
-          <input
-            type="text"
-            placeholder="Reason for upgrade..."
-            value={upgradeNotes}
-            onChange={e => setUpgradeNotes(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
-          />
+          <input type="text" placeholder="Reason for upgrade..."
+            value={upgradeNotes} onChange={e => setUpgradeNotes(e.target.value)}
+            className={fieldClass} />
         </div>
         <div className="flex justify-end gap-3">
           <Button variant="outline" onClick={() => setUpgradeOpen(false)} disabled={upgrading}>Cancel</Button>
@@ -1707,6 +1935,372 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             Confirm Upgrade
           </Button>
         </div>
+      </Modal>
+    </div>
+  );
+}
+
+const TD_PAYMENT_MODES = ['Cash', 'GCash', 'Bank Transfer', 'Check', 'Others'];
+
+const EMPTY_TD_FORM = {
+  date_applied: new Date().toISOString().split('T')[0],
+  terms: '',
+  amount: '',
+  interest_rate: '',
+  si_number: '',
+  payment_mode: '',
+  termination_date: '',
+};
+
+function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, userId, onRefresh }) {
+  const [addOpen, setAddOpen]         = useState(false);
+  const [tdForm, setTdForm]           = useState(EMPTY_TD_FORM);
+  const [addSaving, setAddSaving]     = useState(false);
+
+  const [payTarget, setPayTarget]     = useState(null);
+  const [payAmount, setPayAmount]     = useState('');
+  const [payDate, setPayDate]         = useState(new Date().toISOString().split('T')[0]);
+  const [paySiNo, setPaySiNo]         = useState('');
+  const [payMode, setPayMode]         = useState('');
+  const [paying, setPaying]           = useState(false);
+
+  const tdFieldClass = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]';
+
+  function openAdd() {
+    setTdForm({ ...EMPTY_TD_FORM, date_applied: new Date().toISOString().split('T')[0] });
+    setAddOpen(true);
+  }
+
+  function openPay(td) {
+    setPayTarget(td);
+    setPayAmount('');
+    setPayDate(new Date().toISOString().split('T')[0]);
+    setPaySiNo('');
+    setPayMode('');
+  }
+
+  async function handleAdd() {
+    if (!tdForm.si_number.trim()) return toast.error('SI# is required.');
+    if (!tdForm.payment_mode) return toast.error('Mode of payment is required.');
+    if (!tdForm.terms || parseFloat(tdForm.terms) <= 0) return toast.error('Terms (months) is required.');
+    if (!tdForm.amount || parseFloat(tdForm.amount) <= 0) return toast.error('Amount is required.');
+    if (!tdForm.interest_rate && tdForm.interest_rate !== '0') return toast.error('Interest rate is required.');
+
+    setAddSaving(true);
+    try {
+      const amt = parseFloat(tdForm.amount);
+      const newTd = await createTimeDeposit({
+        ...tdForm,
+        name: memberName || 'Member',
+        member_id: memberId,
+      });
+
+      await createInvoice({
+        invoice_no:   tdForm.si_number.trim(),
+        date:         tdForm.date_applied,
+        payee:        memberName || 'Member',
+        purpose:      `New Time Deposit — ${memberName || 'Member'}`,
+        amount:       amt,
+        status:       'paid',
+        payment_type: 'time_deposit',
+        payment_mode: tdForm.payment_mode || null,
+        created_by:   userId ?? null,
+        member_id:    memberId,
+        ref_id:       newTd.id,
+        account_id:   null,
+        fund_added:   false,
+      });
+
+      await createTransaction({
+        category:         'time_deposit',
+        type:             'deposit',
+        amount:           amt,
+        transaction_date: tdForm.date_applied,
+        created_by:       userId ?? null,
+        reference:        tdForm.si_number.trim(),
+        notes:            `New Time Deposit — ${memberName || 'Member'}`,
+        payment_mode:     tdForm.payment_mode || null,
+        member_id:        memberId,
+      });
+
+      trackActivity({
+        userId,
+        module: 'time_deposit',
+        action: 'create',
+        description: `New time deposit for ${memberName} — SI# ${tdForm.si_number.trim()}, ${formatCurrency(amt)}`,
+      });
+
+      toast.success('Time Deposit added.');
+      setAddOpen(false);
+      await onRefresh();
+    } catch (err) {
+      toast.error(err.message || 'Failed to add time deposit.');
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  async function handlePay() {
+    const value = parseFloat(payAmount) || 0;
+    if (!paySiNo.trim()) return toast.error('SI# is required.');
+    if (value <= 0) return toast.error('Enter a valid amount.');
+    if (!payDate) return toast.error('Payment date is required.');
+    if (!payMode) return toast.error('Mode of payment is required.');
+
+    setPaying(true);
+    try {
+      await recordTimeDepositPayment({
+        time_deposit_id: payTarget.id,
+        amount:          value,
+        payment_date:    payDate,
+        si_number:       paySiNo.trim(),
+        created_by:      userId ?? null,
+      });
+
+      await createInvoice({
+        invoice_no:   paySiNo.trim(),
+        date:         payDate,
+        payee:        memberName || payTarget.name,
+        purpose:      `Time Deposit Payment — ${memberName || payTarget.name}`,
+        amount:       value,
+        status:       'paid',
+        payment_type: 'time_deposit',
+        payment_mode: payMode,
+        created_by:   userId ?? null,
+        member_id:    memberId,
+        ref_id:       payTarget.id,
+        account_id:   null,
+        fund_added:   false,
+      });
+
+      await createTransaction({
+        category:         'time_deposit',
+        type:             'deposit',
+        amount:           value,
+        transaction_date: payDate,
+        created_by:       userId ?? null,
+        reference:        paySiNo.trim(),
+        notes:            `Time Deposit Payment — ${memberName || payTarget.name}`,
+        payment_mode:     payMode,
+        member_id:        memberId,
+      });
+
+      trackActivity({
+        userId,
+        module: 'time_deposit',
+        action: 'create',
+        description: `Time deposit payment for ${memberName} — SI# ${paySiNo.trim()}, ${formatCurrency(value)}`,
+      });
+
+      toast.success(`Payment recorded. SI# ${paySiNo.trim()}`);
+      setPayTarget(null);
+      await onRefresh();
+    } catch (err) {
+      toast.error(err.message || 'Failed to record payment.');
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="flex justify-center py-16"><Spinner /></div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header with Add button */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">Time Deposit Accounts</h3>
+        <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={openAdd}>
+          Add Time Deposit
+        </Button>
+      </div>
+
+      {(!timeDeposits || timeDeposits.length === 0) ? (
+        <div className="bg-white rounded-xl border border-gray-200 py-16 text-center text-gray-400">
+          <Clock size={36} className="mx-auto mb-2 text-gray-200" />
+          <p className="text-sm font-medium text-gray-500">No Time Deposit</p>
+          <p className="text-xs text-gray-400 mt-1">Click "Add Time Deposit" to create the first record.</p>
+        </div>
+      ) : (
+        timeDeposits.map(td => {
+          const totalPaid = (td.time_deposit_payments || []).reduce((s, p) => s + (p.amount || 0), 0);
+          const isActive  = td.status === 'Active';
+          const maturityDate = td.termination_date
+            ? formatDate(td.termination_date)
+            : td.date_applied
+            ? (() => {
+                const d = new Date(td.date_applied);
+                d.setMonth(d.getMonth() + (td.terms || 0));
+                return formatDate(d.toISOString().slice(0, 10));
+              })()
+            : '—';
+
+          return (
+            <div key={td.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">{td.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Applied: {formatDate(td.date_applied)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={isActive ? 'success' : 'default'} dot>
+                    {td.status || 'Active'}
+                  </Badge>
+                  {isActive && (
+                    <Button variant="finance" size="sm" icon={<Plus size={12} />} onClick={() => openPay(td)}>
+                      Deposit
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-gray-50">
+                {[
+                  ['Amount', formatCurrency(td.amount || 0)],
+                  ['Terms', `${td.terms || 0} month${td.terms !== 1 ? 's' : ''}`],
+                  ['Interest Rate', `${td.interest_rate || 0}%`],
+                  ['Maturity Date', maturityDate],
+                ].map(([label, value]) => (
+                  <div key={label} className="px-4 py-3">
+                    <p className="text-xs text-gray-400">{label}</p>
+                    <p className="text-sm font-semibold text-gray-800 mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
+              {td.time_deposit_payments && td.time_deposit_payments.length > 0 && (
+                <div className="border-t border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-2 bg-gray-50">
+                    Payment History
+                  </p>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-50 bg-gray-50">
+                        {['SI#', 'Date', 'Amount'].map(h => (
+                          <th key={h} className="px-4 py-2 text-left font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {td.time_deposit_payments.map(p => (
+                        <tr key={p.id}>
+                          <td className="px-4 py-2 text-gray-500">{p.si_number || '—'}</td>
+                          <td className="px-4 py-2 text-gray-500">{formatDate(p.payment_date)}</td>
+                          <td className="px-4 py-2 font-medium text-gray-800">{formatCurrency(p.amount || 0)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-50">
+                        <td colSpan={2} className="px-4 py-2 font-semibold text-gray-600">Total Paid</td>
+                        <td className="px-4 py-2 font-bold text-emerald-700">{formatCurrency(totalPaid)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {/* Add Time Deposit Modal */}
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Time Deposit" size="sm">
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date Applied</label>
+            <input type="date" value={tdForm.date_applied}
+              onChange={e => setTdForm(f => ({ ...f, date_applied: e.target.value }))}
+              className={tdFieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Terms (months) <span className="text-red-400">*</span></label>
+            <input type="number" min="1" placeholder="12" value={tdForm.terms}
+              onChange={e => setTdForm(f => ({ ...f, terms: e.target.value }))}
+              className={tdFieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₱) <span className="text-red-400">*</span></label>
+            <input type="number" min="0" step="0.01" placeholder="0.00" value={tdForm.amount}
+              onChange={e => setTdForm(f => ({ ...f, amount: e.target.value }))}
+              className={tdFieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Interest Rate (%) <span className="text-red-400">*</span></label>
+            <input type="number" min="0" step="0.01" placeholder="5.00" value={tdForm.interest_rate}
+              onChange={e => setTdForm(f => ({ ...f, interest_rate: e.target.value }))}
+              className={tdFieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Termination Date <span className="text-gray-400">(optional)</span></label>
+            <input type="date" value={tdForm.termination_date}
+              onChange={e => setTdForm(f => ({ ...f, termination_date: e.target.value }))}
+              className={tdFieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">SI# <span className="text-red-400">*</span></label>
+            <input type="text" placeholder="e.g. TD-20260429-0001" value={tdForm.si_number}
+              onChange={e => setTdForm(f => ({ ...f, si_number: e.target.value }))}
+              className={tdFieldClass} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Mode of Payment <span className="text-red-400">*</span></label>
+            <select value={tdForm.payment_mode}
+              onChange={e => setTdForm(f => ({ ...f, payment_mode: e.target.value }))}
+              className={tdFieldClass + ' bg-white'}>
+              <option value="">Select mode of payment</option>
+              {TD_PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addSaving}>Cancel</Button>
+          <Button variant="primary" loading={addSaving} onClick={handleAdd} icon={<Plus size={14} />}>
+            Submit
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Record Deposit Payment Modal */}
+      <Modal open={!!payTarget} onClose={() => setPayTarget(null)} title="Record Time Deposit Payment" size="sm">
+        {payTarget && (
+          <>
+            <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100 text-sm">
+              <p className="font-semibold text-indigo-800">{payTarget.name}</p>
+              <p className="text-xs text-indigo-600 mt-0.5">
+                {formatCurrency(payTarget.amount)} · {payTarget.terms} months · {parseFloat(payTarget.interest_rate || 0).toFixed(2)}% interest
+              </p>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">SI# <span className="text-red-400">*</span></label>
+                <input type="text" placeholder="Enter SI# manually" value={paySiNo}
+                  onChange={e => setPaySiNo(e.target.value)} className={tdFieldClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (₱) <span className="text-red-400">*</span></label>
+                <input type="number" min="0" step="0.01" placeholder="0.00" value={payAmount}
+                  onChange={e => setPayAmount(e.target.value)} className={tdFieldClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Payment Date <span className="text-red-400">*</span></label>
+                <input type="date" value={payDate}
+                  onChange={e => setPayDate(e.target.value)} className={tdFieldClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Mode of Payment <span className="text-red-400">*</span></label>
+                <select value={payMode} onChange={e => setPayMode(e.target.value)}
+                  className={tdFieldClass + ' bg-white'}>
+                  <option value="">Select mode of payment</option>
+                  {TD_PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={() => setPayTarget(null)} disabled={paying}>Cancel</Button>
+              <Button variant="finance" loading={paying} onClick={handlePay} icon={<DollarSign size={14} />}>
+                Record Payment
+              </Button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   );
@@ -2065,7 +2659,7 @@ function LoanPaymentHistoryTable({ rows }) {
                 {row.payment_mode || '—'}
               </td>
               <td className="px-4 py-3 text-gray-500">
-                {row.created_by || 'System'}
+                {row.created_by_name || row.created_by || 'System'}
               </td>
             </tr>
           ))}
@@ -2191,7 +2785,7 @@ function TransactionsTab({ transactions }) {
                     <p className="text-xs text-gray-400">
                       {tx.category && <span className="capitalize mr-1">{tx.category} ·</span>}
                       {tx.payment_mode && <span>{tx.payment_mode} · </span>}
-                      {tx.reference && `Ref: ${tx.reference} · `}
+                      {tx.created_by_name && <span>By: {tx.created_by_name} · </span>}
                       {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : '—'}
                     </p>
                   </div>
@@ -2214,7 +2808,7 @@ function HistoryTable({ rows }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Date', 'Type', 'Amount', 'Reference'].map(h => (
+            {['Date', 'Type', 'Amount', 'Mode', 'Assisted By'].map(h => (
               <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 {h}
               </th>
@@ -2229,7 +2823,8 @@ function HistoryTable({ rows }) {
               <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
                 {formatCurrency(row.amount || 0)}
               </td>
-              <td className="px-4 py-3 text-gray-500">{row.reference || '—'}</td>
+              <td className="px-4 py-3 text-gray-500">{row.payment_mode || '—'}</td>
+              <td className="px-4 py-3 text-gray-500">{row.created_by_name || '—'}</td>
             </tr>
           ))}
         </tbody>

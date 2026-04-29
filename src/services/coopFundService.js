@@ -87,6 +87,7 @@ export async function computeCoopSummaryFromInvoices() {
     category: getInvoiceCategory(inv),
     amount: inv.amount,
     description: inv.purpose || inv.payee,
+    member_name: inv.payee || '—',
     ref_no: inv.invoice_no,
     created_at: inv.created_at,
   }));

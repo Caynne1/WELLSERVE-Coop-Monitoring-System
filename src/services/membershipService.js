@@ -228,6 +228,18 @@ export async function recordMembershipPayment(
   return updated;
 }
 
+export async function patchMembershipFeeRequired(memberMembershipId, newFeeRequired) {
+  const value = parseFloat(newFeeRequired) || 0;
+  if (value <= 0) throw new Error('Fee required must be greater than zero.');
+
+  const { error } = await supabase
+    .from('member_memberships')
+    .update({ fee_required: value })
+    .eq('id', memberMembershipId);
+
+  if (error) throw error;
+}
+
 export async function upgradeMembership(
   memberMembershipId,
   memberId,

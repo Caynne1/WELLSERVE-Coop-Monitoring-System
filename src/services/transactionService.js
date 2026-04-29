@@ -17,16 +17,28 @@ export async function getTransactions(filters = {}) {
   const { data: transactions, error } = await query;
   if (error) throw error;
 
-  const memberIds = [...new Set((transactions || []).map(t => t.member_id).filter(Boolean))];
-  if (memberIds.length === 0) return transactions || [];
+  const txList = transactions || [];
 
-  const { data: members } = await supabase
-    .from('members')
-    .select('id, first_name, last_name, middle_initial, member_no')
-    .in('id', memberIds);
+  const memberIds = [...new Set(txList.map(t => t.member_id).filter(Boolean))];
+  const createdByIds = [...new Set(txList.map(t => t.created_by).filter(Boolean))];
 
-  const memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
-  return (transactions || []).map(t => ({ ...t, members: memberMap[t.member_id] || null }));
+  const [membersResult, profilesResult] = await Promise.all([
+    memberIds.length > 0
+      ? supabase.from('members').select('id, first_name, last_name, middle_initial, member_no').in('id', memberIds)
+      : Promise.resolve({ data: [] }),
+    createdByIds.length > 0
+      ? supabase.from('profiles').select('id, full_name').in('id', createdByIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const memberMap = Object.fromEntries((membersResult.data || []).map(m => [m.id, m]));
+  const profileMap = Object.fromEntries((profilesResult.data || []).map(p => [p.id, p.full_name]));
+
+  return txList.map(t => ({
+    ...t,
+    members: memberMap[t.member_id] || null,
+    created_by_name: t.created_by ? (profileMap[t.created_by] || t.created_by) : 'System',
+  }));
 }
 
 export async function getTransactionsByMemberId(memberId) {
@@ -38,7 +50,23 @@ export async function getTransactionsByMemberId(memberId) {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  const txList = data || [];
+
+  // Resolve created_by UUIDs to user full names
+  const createdByIds = [...new Set(txList.map(t => t.created_by).filter(Boolean))];
+  if (createdByIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', createdByIds);
+    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p.full_name]));
+    return txList.map(t => ({
+      ...t,
+      created_by_name: t.created_by ? (profileMap[t.created_by] || t.created_by) : 'System',
+    }));
+  }
+
+  return txList.map(t => ({ ...t, created_by_name: 'System' }));
 }
 
 export async function createTransaction(payload) {

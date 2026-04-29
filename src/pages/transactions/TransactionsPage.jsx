@@ -8,7 +8,7 @@ import { getTransactions, subscribeToTransactions } from '../../services/transac
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 
-const INFLOW_TYPES = ['deposit', 'loan_release'];
+const INFLOW_TYPES = ['deposit', 'loan_release', 'membership_payment'];
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
@@ -117,9 +117,8 @@ export default function TransactionsPage() {
                     'Member',
                     'Amount',
                     'Mode',
-                    'Reference',
+                    'Assisted By',
                     'Notes',
-                    'Transaction Date',
                     'Created',
                   ].map(h => (
                     <th
@@ -135,7 +134,7 @@ export default function TransactionsPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-gray-400">
+                    <td colSpan={8} className="text-center py-12 text-gray-400">
                       {search ? 'No transactions match your search.' : 'No transactions yet.'}
                     </td>
                   </tr>
@@ -180,18 +179,14 @@ export default function TransactionsPage() {
                           {tx.payment_mode || '—'}
                         </td>
 
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">
-                          {tx.reference || '—'}
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          {tx.created_by_name || '—'}
                         </td>
 
                         <td className="px-4 py-3 text-xs text-gray-500 max-w-[280px]">
                           <div className="truncate" title={tx.notes || tx.payment_mode_note || ''}>
                             {tx.notes || tx.payment_mode_note || '—'}
                           </div>
-                        </td>
-
-                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                          {tx.transaction_date ? formatDate(tx.transaction_date) : '—'}
                         </td>
 
                         <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">

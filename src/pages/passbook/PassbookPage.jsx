@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   Printer,
@@ -85,8 +86,9 @@ export default function PassbookPage() {
   const [printStatusFilter, setPrintStatusFilter] = useState('');
 
   const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [statusUpdating, setStatusUpdating] = useState(null); // member id being updated
-  const [openStatusMenu, setOpenStatusMenu] = useState(null); // member id with open dropdown
+  const [statusUpdating, setStatusUpdating] = useState(null);
+  const [openStatusMenu, setOpenStatusMenu] = useState(null);
+  const [dropdownAnchor, setDropdownAnchor] = useState({ top: 0, right: 0 });
   const [selectedPassbookType, setSelectedPassbookType] = useState('savings');
   const [passbookSearch, setPassbookSearch] = useState('');
 
@@ -548,50 +550,53 @@ export default function PassbookPage() {
                         <td className="px-4 py-3">{row.first_name || '—'}</td>
                         <td className="px-4 py-3">{row.middle_initial || '—'}</td>
                         <td className="px-4 py-3 text-center">
-                          <div className="relative inline-block">
-                            <button
-                              disabled={isUpdating}
-                              onClick={() => setOpenStatusMenu(isOpen ? null : row.id)}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${meta.color} ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot} shrink-0`} />
-                              {isUpdating ? 'Saving…' : meta.label}
-                              {!isUpdating && <ChevronDown size={11} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
-                            </button>
+                          <button
+                            disabled={isUpdating}
+                            onClick={(e) => {
+                              if (isOpen) { setOpenStatusMenu(null); return; }
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setDropdownAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                              setOpenStatusMenu(row.id);
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${meta.color} ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot} shrink-0`} />
+                            {isUpdating ? 'Saving…' : meta.label}
+                            {!isUpdating && <ChevronDown size={11} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
+                          </button>
 
-                            {isOpen && (
-                              <>
-                                {/* Backdrop */}
-                                <div
-                                  className="fixed inset-0 z-10"
-                                  onClick={() => setOpenStatusMenu(null)}
-                                />
-                                <div className="absolute right-0 mt-1.5 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 min-w-[140px]">
-                                  <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Set Status</p>
-                                  {PASSBOOK_STATUS_CYCLE.map(s => {
-                                    const sm = STATUS_META[s];
-                                    const isCurrent = row.passbook_status === s;
-                                    return (
-                                      <button
-                                        key={s}
-                                        disabled={isCurrent}
-                                        onClick={() => handleUpdatePassbookStatus(row.id, s)}
-                                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${
-                                          isCurrent
-                                            ? 'text-gray-300 cursor-default'
-                                            : 'text-gray-700 hover:bg-gray-50 cursor-pointer'
-                                        }`}
-                                      >
-                                        <span className={`w-2 h-2 rounded-full ${sm.dot}`} />
-                                        {sm.label}
-                                        {isCurrent && <span className="ml-auto text-[10px] text-gray-300">current</span>}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            )}
-                          </div>
+                          {isOpen && createPortal(
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setOpenStatusMenu(null)} />
+                              <div
+                                style={{ position: 'fixed', top: dropdownAnchor.top, right: dropdownAnchor.right, zIndex: 50 }}
+                                className="bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 min-w-[140px]"
+                              >
+                                <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Set Status</p>
+                                {PASSBOOK_STATUS_CYCLE.map(s => {
+                                  const sm = STATUS_META[s];
+                                  const isCurrent = row.passbook_status === s;
+                                  return (
+                                    <button
+                                      key={s}
+                                      disabled={isCurrent}
+                                      onClick={() => handleUpdatePassbookStatus(row.id, s)}
+                                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${
+                                        isCurrent
+                                          ? 'text-gray-300 cursor-default'
+                                          : 'text-gray-700 hover:bg-gray-50 cursor-pointer'
+                                      }`}
+                                    >
+                                      <span className={`w-2 h-2 rounded-full ${sm.dot}`} />
+                                      {sm.label}
+                                      {isCurrent && <span className="ml-auto text-[10px] text-gray-300">current</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>,
+                            document.body
+                          )}
                         </td>
                       </tr>
                       );

@@ -38,6 +38,8 @@ const LOAN_COLUMNS = [
   'team_leader_account_no',
   'team_leader_mobile',
 
+  'deduction_payment_mode',
+
   'preview_summary_json',
   'preview_deductions_json',
   'preview_schedule_json',

@@ -41,7 +41,7 @@ export async function getDashboardStats() {
     return new Date(l.due_date) < now;
   });
 
-  const INFLOW_TYPES = ['deposit', 'loan_release', 'payment', 'interest'];
+  const INFLOW_TYPES  = ['deposit', 'loan_release', 'payment', 'interest', 'membership_payment', 'membership'];
   const OUTFLOW_TYPES = ['withdrawal', 'expense', 'disbursement'];
 
   const totalCashIn = txData
@@ -81,15 +81,15 @@ export async function getDashboardStats() {
     return { label, cashIn, cashOut };
   });
 
-  // Member Growth per Month (last 6 months)
+  // Member Growth per Month (last 6 months) — count members who registered in each month
   const memberGrowthChart = months.map(({ label, start, end }) => {
-    const startTs = new Date(start).getTime();
-    const endTs = new Date(end).getTime();
+    const startDate = start.slice(0, 10); // 'YYYY-MM-DD'
+    const endDate = end.slice(0, 10);
     const count = memberData.filter(m => {
       const raw = m.date_joined || m.created_at;
       if (!raw) return false;
-      const ts = new Date(raw).getTime();
-      return ts >= startTs && ts <= endTs;
+      const day = String(raw).slice(0, 10); // normalise to 'YYYY-MM-DD'
+      return day >= startDate && day <= endDate;
     }).length;
     return { label, count };
   });

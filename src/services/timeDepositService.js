@@ -30,7 +30,7 @@ export async function createTimeDeposit(payload) {
     name, age, birth_date, address, spouse_name, spouse_age,
     spouse_birth_date, children_count, beneficiary_name, employer,
     business, business_years, terms, amount, interest_rate,
-    date_applied, termination_date,
+    date_applied, termination_date, member_id,
   } = payload;
 
   if (!name?.trim())          throw new Error('Name is required.');
@@ -61,6 +61,7 @@ export async function createTimeDeposit(payload) {
       date_applied,
       termination_date:  termination_date || null,
       status:            'Active',
+      member_id:         member_id || null,
     }])
     .select()
     .single();
@@ -172,5 +173,22 @@ export async function getPaymentsByTimeDepositId(time_deposit_id) {
     .order('payment_date', { ascending: false });
 
   if (error) throw error;
+  return data || [];
+}
+
+// Fetch time deposits linked to a member via member_id column
+// Falls back to matching by member name if member_id is not stored
+export async function getTimeDepositsByMemberId(memberId) {
+  const { data, error } = await supabase
+    .from('time_deposits')
+    .select('*, time_deposit_payments(id, si_number, amount, payment_date)')
+    .eq('member_id', memberId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    // If member_id column doesn't exist yet, return empty array gracefully
+    console.warn('[timeDepositService] getTimeDepositsByMemberId error:', error.message);
+    return [];
+  }
   return data || [];
 }

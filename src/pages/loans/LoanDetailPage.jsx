@@ -452,7 +452,7 @@ export default function LoanDetailPage() {
             ${kvRow(`CBU Retention (${loan.cbu_retention_percent ?? 2.5}%)`, formatCurrency(previewDeductions?.cbu_retention ?? 0))}
             ${kvRow('Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0))}
             ${kvRow(`Insurance (${titleCase(loan.insurance_mode || 'fixed')})`, formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0))}
-            ${kvRow('Share Capital', formatCurrency(loan.share_capital ?? 0))}
+            ${kvRow('CBU', formatCurrency(loan.share_capital ?? 0))}
             ${kvRow('Regular Savings', formatCurrency(loan.regular_savings ?? 0))}
             ${kvRow('Total Deductions', formatCurrency(previewDeductions?.total_deductions ?? 0))}
           </div>
@@ -749,7 +749,7 @@ export default function LoanDetailPage() {
         ['Notarial Fee', previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0],
         ['Insurance Mode', titleCase(loan.insurance_mode || 'fixed')],
         ['Insurance', previewDeductions?.insurance ?? loan.loan_insurance ?? 0],
-        ['Share Capital', loan.share_capital ?? 0],
+        ['CBU', loan.share_capital ?? 0],
         ['Regular Savings', loan.regular_savings ?? 0],
         ['Total Deductions', previewDeductions?.total_deductions ?? 0],
         ['Net Proceeds', previewDeductions?.net_proceeds ?? (loan.amount || 0)],
@@ -846,7 +846,6 @@ export default function LoanDetailPage() {
               ['Loan Method', titleCase(loan.loan_method || 'diminishing')],
               ['Payment / Period', formatCurrency(loan.monthly_amortization)],
               ['Release Date', formatDate(loan.release_date)],
-              ['Due Date', formatDate(loan.due_date)],
               ['Status', <Badge key="status" variant={statusVariant[loan.status] || 'default'}>{loan.status}</Badge>],
               ['Purpose', loan.purpose || '—'],
               ['Notes', loan.notes || '—'],
@@ -883,8 +882,9 @@ export default function LoanDetailPage() {
                   ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
                   ['Insurance Mode', titleCase(loan.insurance_mode || 'fixed')],
                   ['Insurance', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
-                  ['Share Capital', formatCurrency(loan.share_capital ?? 0)],
+                  ['CBU', formatCurrency(loan.share_capital ?? 0)],
                   ['Regular Savings', formatCurrency(loan.regular_savings ?? 0)],
+                  ['Mode of Payment', loan.deduction_payment_mode || '—'],
                   ['Total Deductions', formatCurrency(previewDeductions?.total_deductions ?? 0)],
                   ['Net Proceeds', formatCurrency(previewDeductions?.net_proceeds ?? (loan.amount || 0))],
                 ].map(([label, value]) => (

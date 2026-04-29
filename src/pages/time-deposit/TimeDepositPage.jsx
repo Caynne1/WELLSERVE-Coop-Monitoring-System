@@ -10,6 +10,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
+import MemberSearchInput from '../../components/shared/MemberSearchInput';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { trackActivity } from '../../services/logService';
@@ -48,6 +49,8 @@ const EMPTY_FORM = {
   amount:            '',
   interest_rate:     '',
   si_number:         '',
+  payment_mode:      '',
+  member_id:         null,
 };
 
 const STATUS_STYLES = {
@@ -161,6 +164,26 @@ function TimeDepositForm({ form, onChange, showSiNumber }) {
         <input type="date" value={form.termination_date} onChange={set('termination_date')} className={inputCls} />
       </Field>
 
+      <SectionHeading>Link to Member (optional)</SectionHeading>
+      <div className="col-span-full">
+        <MemberSearchInput
+          value={form.member_id || null}
+          onChange={(member) =>
+            onChange({
+              ...form,
+              member_id: member?.id || null,
+              name: form.name || (member ? `${member.first_name || ''} ${member.last_name || ''}`.trim() : ''),
+            })
+          }
+          placeholder="Search member to link this deposit…"
+        />
+        {form.member_id && (
+          <p className="text-xs text-emerald-600 mt-1">
+            ✓ This deposit will appear in the linked member's Time Deposit tab.
+          </p>
+        )}
+      </div>
+
       <SectionHeading>Personal Info</SectionHeading>
       <Field label="Full Name" required>
         <input type="text" value={form.name} onChange={set('name')} placeholder="Your Full Name" className={inputCls} />
@@ -206,15 +229,27 @@ function TimeDepositForm({ form, onChange, showSiNumber }) {
       <SectionHeading>Deposit Terms</SectionHeading>
 
       {showSiNumber && (
-        <Field label="SI#" required>
-          <input
-            type="text"
-            value={form.si_number}
-            onChange={set('si_number')}
-            placeholder="e.g. TD-20260424-0001"
-            className={inputCls}
-          />
-        </Field>
+        <>
+          <Field label="SI#" required>
+            <input
+              type="text"
+              value={form.si_number}
+              onChange={set('si_number')}
+              placeholder="e.g. TD-20260424-0001"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Mode of Payment" required>
+            <select value={form.payment_mode} onChange={set('payment_mode')} className={inputCls}>
+              <option value="">Select mode of payment</option>
+              <option value="Cash">Cash</option>
+              <option value="GCash">GCash</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Check">Check</option>
+              <option value="Others">Others</option>
+            </select>
+          </Field>
+        </>
       )}
 
       <Field label="Terms (months)" required>
@@ -436,6 +471,9 @@ export default function TimeDepositPage() {
     if (!editTarget && !form.si_number?.trim()) {
       return toast.error('SI# is required for new applications.');
     }
+    if (!editTarget && !form.payment_mode) {
+      return toast.error('Mode of payment is required for new applications.');
+    }
 
     setSaving(true);
     try {
@@ -468,6 +506,7 @@ export default function TimeDepositPage() {
             amount:       amt,
             status:       'paid',
             payment_type: 'time_deposit',
+            payment_mode: form.payment_mode || null,
             created_by:   user?.id ?? null,
             member_id:    null,
             ref_id:       newTD.id,
