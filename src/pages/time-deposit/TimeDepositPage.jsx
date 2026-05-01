@@ -3,7 +3,7 @@ import {
   Landmark, Plus, Search, Pencil, Trash2, CreditCard,
   ChevronLeft, ChevronRight, RefreshCw, X, Receipt,
   Calendar, TrendingUp, Users, DollarSign, ChevronUp,
-  ChevronDown, Ban, Printer, FileDown,
+  ChevronDown, Ban, Printer, FileDown, TrendingDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -23,6 +23,7 @@ import {
   deleteTimeDeposit,
   recordTimeDepositPayment,
 } from '../../services/timeDepositService';
+import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -352,6 +353,13 @@ export default function TimeDepositPage() {
 
   // ── History Modal ─────────────────────────────────────────────────────────
   const [historyTarget, setHistoryTarget] = useState(null);
+
+  // ── Withdrawal Modal ──────────────────────────────────────────────────────
+  const [withdrawTarget,    setWithdrawTarget]    = useState(null);
+  const [withdrawVouchers,  setWithdrawVouchers]  = useState([]);
+  const [withdrawLoading,   setWithdrawLoading]   = useState(false);
+  const [withdrawVoucherId, setWithdrawVoucherId] = useState('');
+  const [withdrawPosting,   setWithdrawPosting]   = useState(false);
 
   // ── Table controls ────────────────────────────────────────────────────────
   const [search,       setSearch]       = useState('');
@@ -686,6 +694,64 @@ export default function TimeDepositPage() {
     }
   }
 
+  // ── Withdrawal handlers ───────────────────────────────────────────────────
+  async function openWithdraw(record) {
+    setWithdrawTarget(record);
+    setWithdrawVoucherId('');
+    setWithdrawLoading(true);
+    try {
+      const filters = { account_type: 'time_deposit' };
+      if (record.member_id) filters.member_id = record.member_id;
+      const vouchers = await getApprovedWithdrawalVouchers(filters);
+      setWithdrawVouchers(vouchers || []);
+    } catch (err) {
+      toast.error('Failed to load withdrawal vouchers.');
+      setWithdrawVouchers([]);
+    } finally {
+      setWithdrawLoading(false);
+    }
+  }
+
+  async function handleWithdraw() {
+    const voucher = withdrawVouchers.find(v => v.id === withdrawVoucherId);
+    if (!voucher) return toast.error('Select an approved withdrawal voucher first.');
+    const value = parseFloat(voucher.amount) || 0;
+    if (value <= 0) return toast.error('Voucher amount must be greater than zero.');
+
+    setWithdrawPosting(true);
+    try {
+      await createTransaction({
+        category:         'time_deposit',
+        type:             'withdrawal',
+        amount:           value,
+        transaction_date: voucher.date || new Date().toISOString().split('T')[0],
+        created_by:       user?.id ?? null,
+        reference:        voucher.voucher_no,
+        notes:            [
+          `Voucher: ${voucher.voucher_no}`,
+          voucher.purpose ? `Purpose: ${voucher.purpose}` : null,
+        ].filter(Boolean).join(' | '),
+        payment_mode:     voucher.payment_mode || null,
+        ...(withdrawTarget.member_id ? { member_id: withdrawTarget.member_id } : {}),
+      });
+
+      trackActivity({
+        userId: user?.id,
+        module: 'time_deposit',
+        action: 'withdrawal',
+        description: `Time Deposit withdrawal of ${formatCurrency(value)} via voucher ${voucher.voucher_no} for ${withdrawTarget.name}`,
+      });
+
+      toast.success(`Time Deposit withdrawal posted from voucher ${voucher.voucher_no}.`);
+      setWithdrawTarget(null);
+      await fetchData(true);
+    } catch (err) {
+      toast.error(err.message || 'Failed to post withdrawal.');
+    } finally {
+      setWithdrawPosting(false);
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -928,6 +994,12 @@ export default function TimeDepositPage() {
                                 color="indigo"
                                 onClick={() => openPay(record)}
                                 disabled={!isActive}
+                              />
+                              <ActionBtn
+                                icon={<TrendingDown size={13} />}
+                                title="Withdraw"
+                                color="red"
+                                onClick={() => openWithdraw(record)}
                               />
                               <ActionBtn
                                 icon={<Receipt size={13} />}
@@ -1320,6 +1392,103 @@ export default function TimeDepositPage() {
             <div className="flex justify-end mt-4">
               <Button variant="outline" onClick={() => setHistoryTarget(null)}>
                 Close
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* Withdrawal Modal                                                   */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <Modal
+        open={!!withdrawTarget}
+        onClose={() => setWithdrawTarget(null)}
+        title="Time Deposit Withdrawal from Approved Voucher"
+        size="sm"
+      >
+        {withdrawTarget && (
+          <>
+            <div className="mb-4 flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
+              <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Landmark size={16} className="text-red-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800 text-sm">{withdrawTarget.name}</p>
+                <p className="text-xs text-gray-500">
+                  {formatCurrency(withdrawTarget.amount)} · {withdrawTarget.terms} month{withdrawTarget.terms !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 mb-3">
+              Create a <span className="font-semibold">Time Deposit withdrawal voucher</span> in the Vouchers page and get it approved first before posting here.
+            </p>
+
+            {withdrawLoading ? (
+              <div className="flex justify-center py-8"><Spinner /></div>
+            ) : withdrawVouchers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                No approved Time Deposit withdrawal vouchers found. Create and approve one in the Vouchers page first.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Approved Voucher</label>
+                  <select
+                    value={withdrawVoucherId}
+                    onChange={e => setWithdrawVoucherId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="">Select approved voucher</option>
+                    {withdrawVouchers.map(v => (
+                      <option key={v.id} value={v.id}>
+                        {v.voucher_no} · {formatCurrency(v.amount)} · {v.purpose}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {withdrawVoucherId && (() => {
+                  const v = withdrawVouchers.find(x => x.id === withdrawVoucherId);
+                  if (!v) return null;
+                  return (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                        <p className="text-gray-400 mb-0.5">Amount</p>
+                        <p className="font-semibold text-gray-800">{formatCurrency(v.amount)}</p>
+                      </div>
+                      <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                        <p className="text-gray-400 mb-0.5">Date</p>
+                        <p className="font-semibold text-gray-800">{formatDate(v.date)}</p>
+                      </div>
+                      <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                        <p className="text-gray-400 mb-0.5">Mode</p>
+                        <p className="font-semibold text-gray-800">{v.payment_mode || '—'}</p>
+                      </div>
+                      <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                        <p className="text-gray-400 mb-0.5">Reference</p>
+                        <p className="font-semibold text-gray-800 break-all">{v.reference || '—'}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-5">
+              <Button variant="outline" className="flex-1" onClick={() => setWithdrawTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                className="flex-1"
+                loading={withdrawPosting}
+                onClick={handleWithdraw}
+                disabled={!withdrawVoucherId || withdrawLoading || withdrawVouchers.length === 0}
+                icon={<TrendingDown size={14} />}
+              >
+                Post Withdrawal
               </Button>
             </div>
           </>

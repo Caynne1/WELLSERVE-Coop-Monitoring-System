@@ -1133,7 +1133,7 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
 
   useEffect(() => {
     async function loadVouchers() {
-      if (!open || !account) return;
+      if (!open) return;
 
       setSelectedVoucherId('');
       setAmount('');
@@ -1146,7 +1146,7 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
         setLoadingVouchers(true);
         const vouchers = await getApprovedWithdrawalVouchers({
           member_id: memberId,
-          account_id: account.id,
+          ...(account ? { account_id: account.id } : {}),
           account_type: accountType,
         });
         setWithdrawVouchers(vouchers || []);
@@ -1159,7 +1159,7 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
     }
 
     loadVouchers();
-  }, [open, account, memberId, accountType]);
+  }, [open, memberId, accountType, account]);
 
   function handleVoucherSelect(voucherId) {
     setSelectedVoucherId(voucherId);
@@ -1185,11 +1185,10 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
     const voucher = withdrawVouchers.find(v => v.id === selectedVoucherId);
     const value = parseFloat(amount) || 0;
 
-    if (!account) return toast.error(`No ${label} account found for this member.`);
     if (!voucher) return toast.error('Select an approved withdrawal voucher first.');
     if (value <= 0) return toast.error('Voucher amount must be greater than zero.');
     if (!paymentDate) return toast.error('Withdrawal date is required.');
-    if (value > (parseFloat(account.balance) || 0)) {
+    if (account && value > (parseFloat(account.balance) || 0)) {
       return toast.error(`Withdrawal exceeds current balance of ${formatCurrency(account.balance || 0)}.`);
     }
 
@@ -1200,11 +1199,11 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
 
       await createTransaction({
         member_id: memberId,
-        account_id: account.id,
+        ...(account ? { account_id: account.id } : {}),
         category: accountType,
         type: 'withdrawal',
         amount: value,
-        reference: voucher.voucher_no || paymentReference.trim() || account.account_no || null,
+        reference: voucher.voucher_no || paymentReference.trim() || (account ? account.account_no : null) || null,
         notes: [
           `Voucher: ${voucher.voucher_no}`,
           voucher.purpose ? `Purpose: ${voucher.purpose}` : null,
@@ -1964,6 +1963,8 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
   const [payMode, setPayMode]         = useState('');
   const [paying, setPaying]           = useState(false);
 
+  const [withdrawOpen, setWithdrawOpen]   = useState(false);
+
   const tdFieldClass = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]';
 
   function openAdd() {
@@ -2152,6 +2153,9 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                       Deposit
                     </Button>
                   )}
+                  <Button variant="danger" size="sm" icon={<TrendingDown size={12} />} onClick={() => setWithdrawOpen(true)}>
+                    Withdraw
+                  </Button>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-gray-50">
@@ -2257,6 +2261,18 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
           </Button>
         </div>
       </Modal>
+
+      {/* Time Deposit Withdrawal Modal */}
+      <WithdrawalVoucherModal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        accountType="time_deposit"
+        label="Time Deposit"
+        account={null}
+        memberId={memberId}
+        userId={userId}
+        onSuccess={async () => { setWithdrawOpen(false); await onRefresh(); }}
+      />
 
       {/* Record Deposit Payment Modal */}
       <Modal open={!!payTarget} onClose={() => setPayTarget(null)} title="Record Time Deposit Payment" size="sm">

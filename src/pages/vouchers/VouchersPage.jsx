@@ -325,7 +325,7 @@ export default function VouchersPage() {
     if (form.voucher_kind === 'member_withdrawal') {
       if (!form.member_id) errs.member_id = 'Member is required.';
       if (!form.account_type) errs.account_type = 'Account type is required.';
-      if (!form.account_id) errs.account_id = 'Account is required.';
+      if (form.account_type !== 'time_deposit' && !form.account_id) errs.account_id = 'Account is required.';
       if (!form.payee.trim()) errs.payee = 'Payee is required.';
       if (!form.purpose.trim()) errs.purpose = 'Purpose is required.';
       if (!form.payment_mode) errs.payment_mode = 'Mode of payment is required.';
@@ -809,29 +809,32 @@ export default function VouchersPage() {
                     <option value="">Select account type</option>
                     <option value="cbu">CBU</option>
                     <option value="savings">Savings</option>
+                    <option value="time_deposit">Time Deposit</option>
                   </select>
                   {formErr.account_type && <p className="text-xs text-red-500">{formErr.account_type}</p>}
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-gray-700">Account</label>
-                <select
-                  value={form.account_id}
-                  onChange={e => setField('account_id', e.target.value)}
-                  disabled={!form.member_id}
-                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-                    focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition disabled:bg-gray-50"
-                >
-                  <option value="">Select account</option>
-                  {filteredMemberAccounts.map(acc => (
-                    <option key={acc.id} value={acc.id}>
-                      {(acc.account_type || '').toUpperCase()} · {acc.account_no || acc.id} · Bal {formatCurrency(acc.balance || 0)}
-                    </option>
-                  ))}
-                </select>
-                {formErr.account_id && <p className="text-xs text-red-500">{formErr.account_id}</p>}
-              </div>
+              {form.account_type !== 'time_deposit' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-gray-700">Account</label>
+                  <select
+                    value={form.account_id}
+                    onChange={e => setField('account_id', e.target.value)}
+                    disabled={!form.member_id}
+                    className="px-3 py-2 text-sm border border-gray-200 rounded-lg
+                      focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition disabled:bg-gray-50"
+                  >
+                    <option value="">Select account</option>
+                    {filteredMemberAccounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>
+                        {(acc.account_type || '').toUpperCase()} · {acc.account_no || acc.id} · Bal {formatCurrency(acc.balance || 0)}
+                      </option>
+                    ))}
+                  </select>
+                  {formErr.account_id && <p className="text-xs text-red-500">{formErr.account_id}</p>}
+                </div>
+              )}
 
               <Input
                 label="Payee"
