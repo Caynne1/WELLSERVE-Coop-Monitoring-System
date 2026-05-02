@@ -687,6 +687,11 @@ export default function MembersPage() {
                                       {member.membership_type}
                                     </span>
                                   )}
+                                  {member.record_type === 'old_member' && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                                      Historical
+                                    </span>
+                                  )}
                                 </div>
                                 {member.email && (
                                   <p className="text-xs text-gray-400 mt-0.5">{member.email}</p>

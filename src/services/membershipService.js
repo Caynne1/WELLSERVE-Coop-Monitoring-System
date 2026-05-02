@@ -99,6 +99,7 @@ export async function createMembership({
   fee_paid_now = 0,
   notes,
   created_by,
+  is_historical = false,  // true → mark fully paid, skip payment record (old member import)
 }) {
   assertCreatedBy(created_by);
   assertMembershipType(membership_type);
@@ -110,11 +111,12 @@ export async function createMembership({
     throw new Error('Membership fee required must be greater than zero.');
   }
 
-  if (feePaid < 0) {
+  if (!is_historical && feePaid < 0) {
     throw new Error('Initial membership payment cannot be negative.');
   }
 
-  const safePaid = Math.min(feePaid, feeReq);
+  // Historical records are always fully paid; no payment record is created.
+  const safePaid = is_historical ? feeReq : Math.min(feePaid, feeReq);
 
   const membershipPayload = sanitize(
     {
@@ -137,7 +139,8 @@ export async function createMembership({
 
   if (membershipError) throw membershipError;
 
-  if (safePaid > 0) {
+  // Skip payment record for historical imports — the money moved before the system existed.
+  if (!is_historical && safePaid > 0) {
     const paymentPayload = sanitize(
       {
         member_membership_id: membership.id,

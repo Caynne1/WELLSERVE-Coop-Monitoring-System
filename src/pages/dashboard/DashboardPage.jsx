@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Users,
   CreditCard,
@@ -156,71 +156,256 @@ function BarChart({ data, valueKey, color = '#2563EB', height = 100, formatValue
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GroupedBarChart — with hover tooltip + click per group
+// CashFlowChart — diverging bar chart: Cash In rises UP, Cash Out falls DOWN
+// from a bold center zero-line. Dashed indigo net line floats across both halves.
+// Uses ResizeObserver for pixel-perfect sizing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GroupedBarChart({ data, height = 100, onBarClick }) {
+function CashFlowChart({ data, height = 152, onBarClick }) {
   const { tooltip, show, move, hide } = useTooltip();
-  const [hovered, setHovered] = useState(null); // { idx, key }
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const containerRef = useRef(null);
+  const [W, setW] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (el.clientWidth > 0) setW(el.clientWidth);
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      if (w > 0) setW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   if (!data || data.length === 0)
     return <div className="text-xs text-gray-400 py-4 text-center">No data available</div>;
 
-  const max = Math.max(...data.flatMap(d => [d.cashIn || 0, d.cashOut || 0]), 1);
-  const innerH = height - 20; // reserve 20px for label
+  const H      = height;
+  const PAD    = { t: 26, b: 22, l: 4, r: 10 };
+  const iW     = W - PAD.l - PAD.r;
+  const iH     = H - PAD.t - PAD.b;
+  const midY   = PAD.t + iH / 2;   // zero / center line
+  const halfH  = iH / 2;
+
+  const n      = data.length;
+  const groupW = iW / n;
+  const margin = Math.max(groupW * 0.14, 3);
+  const barW   = groupW - margin * 2;
+
+  const maxVal = Math.max(...data.flatMap(d => [d.cashIn || 0, d.cashOut || 0]), 1);
+  const sh     = v => (v / maxVal) * halfH;
+  const barX   = i => PAD.l + i * groupW + margin;
+  const mX     = i => PAD.l + i * groupW + groupW / 2;
+
+  // Net line: mapped proportionally across full iH, clamped to chart bounds
+  const netPts = data.map((d, i) => {
+    const net = (d.cashIn || 0) - (d.cashOut || 0);
+    const y   = midY - (net / maxVal) * halfH;
+    return { x: mX(i), y: Math.max(PAD.t + 1, Math.min(PAD.t + iH - 1, y)), net };
+  });
+
+  const curve = pts => {
+    if (pts.length < 2) return '';
+    let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i - 1], c = pts[i];
+      const cx = ((p.x + c.x) / 2).toFixed(1);
+      d += ` C${cx},${p.y.toFixed(1)} ${cx},${c.y.toFixed(1)} ${c.x.toFixed(1)},${c.y.toFixed(1)}`;
+    }
+    return d;
+  };
+
+  const linePath = curve(netPts);
+
+  const fmtShort = v => {
+    const abs = Math.abs(v);
+    if (abs >= 1_000_000) return `${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000)     return `${(abs / 1_000).toFixed(1)}K`;
+    return abs.toLocaleString();
+  };
+
+  const fmtNet = v => {
+    const sign = v >= 0 ? '+' : '-';
+    return `${sign}₱${fmtShort(v)}`;
+  };
 
   return (
     <>
       <Tooltip {...tooltip} />
-      <div className="flex items-end gap-2 w-full" style={{ height }}>
-        {data.map((d, i) => {
-          const inH  = Math.max(((d.cashIn  || 0) / max) * innerH, 2);
-          const outH = Math.max(((d.cashOut || 0) / max) * innerH, 2);
-          const isGroupHovered = hovered?.idx === i;
+      <div ref={containerRef} className="w-full">
+        {W > 0 && (
+          <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+            <defs>
+              {/* Cash In: dark green at top → light near center */}
+              <linearGradient id="cf-div-green" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#047857" stopOpacity="1" />
+                <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.45" />
+              </linearGradient>
+              {/* Cash Out: light near center → dark red at bottom */}
+              <linearGradient id="cf-div-red" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#FCA5A5" stopOpacity="0.45" />
+                <stop offset="100%" stopColor="#B91C1C" stopOpacity="1" />
+              </linearGradient>
+            </defs>
 
-          return (
-            <div key={i} className="flex flex-col items-center gap-1 flex-1">
-              <div className="flex items-end gap-0.5 w-full">
-                {/* Cash In bar */}
-                <div
-                  className="flex-1 rounded-t-sm cursor-pointer transition-all duration-300"
-                  style={{
-                    height: `${inH}px`,
-                    background: '#059669',
-                    opacity: hovered === null ? 0.8 : (hovered?.idx === i && hovered?.key === 'in') ? 1 : 0.3,
-                    transform: (hovered?.idx === i && hovered?.key === 'in') ? 'scaleX(1.1)' : 'scaleX(1)',
-                    transformOrigin: 'bottom',
+            {/* Upper half background — subtle green tint */}
+            <rect x={PAD.l} y={PAD.t} width={iW} height={halfH}
+              fill="#F0FDF4" opacity={0.65} />
+            {/* Lower half background — subtle red tint */}
+            <rect x={PAD.l} y={midY} width={iW} height={halfH}
+              fill="#FFF5F5" opacity={0.65} />
+
+            {/* Upper quarter dashed guide */}
+            <line
+              x1={PAD.l} y1={PAD.t + halfH * 0.5} x2={W - PAD.r} y2={PAD.t + halfH * 0.5}
+              stroke="#D1FAE5" strokeWidth={1} strokeDasharray="4 5"
+            />
+            {/* Lower quarter dashed guide */}
+            <line
+              x1={PAD.l} y1={midY + halfH * 0.5} x2={W - PAD.r} y2={midY + halfH * 0.5}
+              stroke="#FEE2E2" strokeWidth={1} strokeDasharray="4 5"
+            />
+
+            {/* Bold center / zero line */}
+            <line x1={PAD.l} y1={midY} x2={W - PAD.r} y2={midY}
+              stroke="#94A3B8" strokeWidth={1.5} />
+            <text x={W - PAD.r + 2} y={midY + 3.5} fontSize={7} fill="#94A3B8" textAnchor="start">0</text>
+
+            {/* Axis corner labels */}
+            <text x={PAD.l + 2} y={PAD.t + 9} fontSize={7} fill="#059669" fontWeight="700">↑ In</text>
+            <text x={PAD.l + 2} y={PAD.t + iH - 3} fontSize={7} fill="#DC2626" fontWeight="700">↓ Out</text>
+
+            {/* Bars per month */}
+            {data.map((d, i) => {
+              const ciH    = Math.max(sh(d.cashIn  || 0), (d.cashIn  || 0) > 0 ? 3 : 0);
+              const coH    = Math.max(sh(d.cashOut || 0), (d.cashOut || 0) > 0 ? 3 : 0);
+              const bx     = barX(i);
+              const bw     = barW;
+              const isHov  = hoveredIdx === i;
+              const dimmed = hoveredIdx !== null && !isHov;
+              const op     = dimmed ? 0.18 : 1;
+
+              return (
+                <g key={i} style={{ cursor: 'pointer' }}
+                  onMouseEnter={e => {
+                    setHoveredIdx(i);
+                    const net = (d.cashIn || 0) - (d.cashOut || 0);
+                    show(e,
+                      `${d.label}  ·  In: ${formatCurrency(d.cashIn || 0)}  ·  Out: ${formatCurrency(d.cashOut || 0)}  ·  Net: ${net >= 0 ? '+' : ''}${formatCurrency(net)}`
+                    );
                   }}
-                  onMouseEnter={(e) => { setHovered({ idx: i, key: 'in' }); show(e, `${d.label} Cash In: ${formatCurrency(d.cashIn || 0)}`); }}
                   onMouseMove={move}
-                  onMouseLeave={() => { setHovered(null); hide(); }}
-                  onClick={() => onBarClick?.({ ...d, focusKey: 'cashIn' })}
-                />
-                {/* Cash Out bar */}
-                <div
-                  className="flex-1 rounded-t-sm cursor-pointer transition-all duration-300"
-                  style={{
-                    height: `${outH}px`,
-                    background: '#DC2626',
-                    opacity: hovered === null ? 0.7 : (hovered?.idx === i && hovered?.key === 'out') ? 1 : 0.3,
-                    transform: (hovered?.idx === i && hovered?.key === 'out') ? 'scaleX(1.1)' : 'scaleX(1)',
-                    transformOrigin: 'bottom',
-                  }}
-                  onMouseEnter={(e) => { setHovered({ idx: i, key: 'out' }); show(e, `${d.label} Cash Out: ${formatCurrency(d.cashOut || 0)}`); }}
-                  onMouseMove={move}
-                  onMouseLeave={() => { setHovered(null); hide(); }}
-                  onClick={() => onBarClick?.({ ...d, focusKey: 'cashOut' })}
-                />
-              </div>
-              <span
-                className="text-[9px] leading-none transition-colors duration-150"
-                style={{ color: isGroupHovered ? '#111827' : '#9ca3af' }}
-              >
-                {d.label}
-              </span>
-            </div>
-          );
-        })}
+                  onMouseLeave={() => { setHoveredIdx(null); hide(); }}
+                  onClick={() => onBarClick?.(d)}
+                >
+                  {/* Column hover tint */}
+                  {isHov && (
+                    <rect x={bx - 2} y={PAD.t} width={bw + 4} height={iH}
+                      fill="#6366F1" opacity={0.05} rx={3} />
+                  )}
+
+                  {/* Cash In bar — rises upward from center line */}
+                  {ciH > 0 && (
+                    <>
+                      <rect
+                        x={bx} y={midY - ciH}
+                        width={bw} height={ciH}
+                        fill="url(#cf-div-green)" opacity={op} rx={2.5}
+                      />
+                      {/* Value label above bar on hover */}
+                      {isHov && (
+                        <text
+                          x={bx + bw / 2} y={midY - ciH - 4}
+                          textAnchor="middle" fontSize={7} fontWeight="700" fill="#065F46"
+                        >
+                          {fmtShort(d.cashIn || 0)}
+                        </text>
+                      )}
+                    </>
+                  )}
+
+                  {/* Cash Out bar — drops downward from center line */}
+                  {coH > 0 && (
+                    <>
+                      <rect
+                        x={bx} y={midY}
+                        width={bw} height={coH}
+                        fill="url(#cf-div-red)" opacity={op} rx={2.5}
+                      />
+                      {/* Value label below bar on hover */}
+                      {isHov && (
+                        <text
+                          x={bx + bw / 2} y={midY + coH + 9}
+                          textAnchor="middle" fontSize={7} fontWeight="700" fill="#7F1D1D"
+                        >
+                          {fmtShort(d.cashOut || 0)}
+                        </text>
+                      )}
+                    </>
+                  )}
+
+                  {/* Month label */}
+                  <text x={mX(i)} y={H - 6} textAnchor="middle" fontSize={9}
+                    fill={isHov ? '#374151' : '#9CA3AF'}
+                    fontWeight={isHov ? '600' : '400'}>
+                    {d.label}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Dashed net line with glow */}
+            {netPts.length > 1 && (
+              <g style={{ pointerEvents: 'none' }}>
+                {/* Glow */}
+                <path d={linePath} fill="none" stroke="#818CF8"
+                  strokeWidth={5} strokeLinejoin="round" strokeLinecap="round" opacity={0.18} />
+                {/* Dashed line */}
+                <path d={linePath} fill="none" stroke="#6366F1"
+                  strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round"
+                  strokeDasharray="5 3" />
+
+                {/* Dots + hover net label */}
+                {netPts.map((p, i) => {
+                  const isHov    = hoveredIdx === i;
+                  const neg      = p.net < 0;
+                  const dotColor = neg ? '#F59E0B' : '#6366F1';
+                  const ringR    = isHov ? 5 : 3;
+                  const dotR     = isHov ? 3 : 1.75;
+                  const lw       = 58;
+                  // Place label above dot if dot is in lower half, below if in upper half
+                  const showAbove = p.y > midY;
+                  const rectY    = showAbove ? p.y - 21 : p.y + 6;
+                  const textY    = showAbove ? p.y - 9   : p.y + 17;
+
+                  return (
+                    <g key={i}>
+                      <circle cx={p.x} cy={p.y} r={ringR}
+                        fill="white" stroke={dotColor} strokeWidth={isHov ? 2 : 1.5} />
+                      <circle cx={p.x} cy={p.y} r={dotR} fill={dotColor} />
+                      {isHov && (
+                        <g>
+                          <rect
+                            x={p.x - lw / 2} y={rectY} width={lw} height={14} rx={4}
+                            fill={neg ? '#FEF3C7' : '#EEF2FF'}
+                            stroke={neg ? '#FCD34D' : '#C7D2FE'} strokeWidth={0.75}
+                          />
+                          <text x={p.x} y={textY} textAnchor="middle"
+                            fontSize={7.5} fontWeight="700"
+                            fill={neg ? '#B45309' : '#4338CA'}>
+                            {fmtNet(p.net)}
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+          </svg>
+        )}
       </div>
     </>
   );
@@ -716,25 +901,30 @@ export default function DashboardPage() {
             />
           </ChartCard>
 
-          {/* Cash Flow Grouped Bar */}
+          {/* Cash Flow Bar + Net Line */}
           <ChartCard
             title="Cash Flow"
-            subtitle="Click a bar to see monthly breakdown"
-            footerNote="Click any bar to view that month's transaction details."
+            subtitle="Last 6 months · hover for details"
+            footerNote="Click any month to view its transaction breakdown."
             action={
-              <div className="flex items-center gap-3 text-[10px] text-gray-400">
+              <div className="flex items-center gap-2.5 text-[10px] text-gray-400">
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />In
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" />
+                  In
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-sm bg-red-500" />Out
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" />
+                  Out
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 border-t-2 border-dashed border-indigo-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
+                  Net
                 </span>
               </div>
             }
           >
-            <GroupedBarChart
+            <CashFlowChart
               data={stats?.cashFlowChart ?? []}
-              height={100}
               onBarClick={(item) => setDrillItem(item)}
             />
           </ChartCard>

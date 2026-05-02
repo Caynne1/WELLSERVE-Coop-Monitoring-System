@@ -23,7 +23,7 @@ const MEMBER_COLUMNS = [
   'beneficiary_name',
   'beneficiary_address',
   'beneficiary_tel',
-];
++];
 
 function sanitizeMemberPayload(payload) {
   return Object.fromEntries(
@@ -37,7 +37,7 @@ export async function getMembers() {
   const { data, error } = await supabase
     .from('members')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: true });
 
   if (error) throw error;
   return data || [];

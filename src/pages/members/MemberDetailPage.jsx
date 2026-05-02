@@ -371,6 +371,11 @@ export default function MemberDetailPage() {
                     {displayMembershipType}
                   </Badge>
                 )}
+                {member.record_type === 'old_member' && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                    Historical Record
+                  </span>
+                )}
               </div>
 
               <div className="mt-3 space-y-1 text-xs text-gray-500">

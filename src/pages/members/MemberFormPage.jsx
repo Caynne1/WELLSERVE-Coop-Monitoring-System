@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Save, UserPlus, DollarSign } from 'lucide-react';
+import { ArrowLeft, Save, UserPlus, DollarSign, Archive, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -21,6 +21,7 @@ import { getAccountsByMemberId, updateAccount } from '../../services/accountServ
 import { createTransaction } from '../../services/transactionService';
 import { createMembership } from '../../services/membershipService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
+import { createTimeDeposit } from '../../services/timeDepositService';
 
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
@@ -102,6 +103,7 @@ export function MemberFormContent({
     formState: { errors, isDirty },
   } = useForm({
     defaultValues: {
+      record_type: 'new_member',
       first_name: '',
       last_name: '',
       middle_initial: '',
@@ -121,6 +123,7 @@ export function MemberFormContent({
       membership_type: 'associate',
       notes: '',
       date_joined: '',
+      // New member payment fields
       payment_option: 'none',
       membership_paid: '',
       cbu_paid: '',
@@ -130,18 +133,33 @@ export function MemberFormContent({
       payment_mode: '',
       payment_reference: '',
       payment_notes: '',
+      // Account numbers
       cbu_account_no: '',
       savings_account_no: '',
+      // Old member historical balance fields (not saved to members table)
+      old_cbu_balance: '',
+      old_savings_balance: '',
+      // Old member time deposit fields
+      has_time_deposit: false,
+      td_date_applied: '',
+      td_terms: '',
+      td_amount: '',
+      td_interest_rate: '',
+      td_termination_date: '',
     },
   });
 
+  const recordType     = watch('record_type');
   const membershipType = watch('membership_type');
-  const paymentOption = watch('payment_option');
-  const paymentMode = watch('payment_mode');
+  const paymentOption  = watch('payment_option');
+  const paymentMode    = watch('payment_mode');
   const paymentReference = watch('payment_reference');
   const membershipPaid = parseFloat(watch('membership_paid')) || 0;
-  const cbuPaid = parseFloat(watch('cbu_paid')) || 0;
-  const savingsPaid = parseFloat(watch('savings_paid')) || 0;
+  const cbuPaid        = parseFloat(watch('cbu_paid')) || 0;
+  const savingsPaid    = parseFloat(watch('savings_paid')) || 0;
+  const hasTimeDep     = watch('has_time_deposit');
+
+  const isOldMember = recordType === 'old_member';
 
   const breakdown = MEMBERSHIP_BREAKDOWN[membershipType];
   const total =
@@ -156,7 +174,7 @@ export function MemberFormContent({
   }, [memberId]);
 
   useEffect(() => {
-    if (!breakdown || isEdit) return;
+    if (!breakdown || isEdit || isOldMember) return;
 
     if (paymentOption === 'full') {
       setValue('membership_paid', String(breakdown.membership_fee));
@@ -176,7 +194,7 @@ export function MemberFormContent({
       setValue('payment_reference', '');
       setValue('payment_notes', '');
     }
-  }, [paymentOption, membershipType, isEdit, breakdown, setValue, watch]);
+  }, [paymentOption, membershipType, isEdit, isOldMember, breakdown, setValue, watch]);
 
   async function loadMember() {
     try {
@@ -187,6 +205,7 @@ export function MemberFormContent({
       const savings = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
 
       reset({
+        record_type: data.record_type || 'new_member',
         first_name: data.first_name || '',
         last_name: data.last_name || '',
         middle_initial: data.middle_initial || '',
@@ -217,6 +236,14 @@ export function MemberFormContent({
         payment_notes: '',
         cbu_account_no: cbu?.account_no || '',
         savings_account_no: savings?.account_no || '',
+        old_cbu_balance: '',
+        old_savings_balance: '',
+        has_time_deposit: false,
+        td_date_applied: '',
+        td_terms: '',
+        td_amount: '',
+        td_interest_rate: '',
+        td_termination_date: '',
       });
     } catch {
       toast.error('Failed to load member');
@@ -255,8 +282,10 @@ export function MemberFormContent({
         membership_type: values.membership_type,
         notes: values.notes,
         date_joined: values.date_joined || new Date().toISOString().split('T')[0],
+        record_type: values.record_type || 'new_member',
       };
 
+      // ── EDIT FLOW ────────────────────────────────────────────────────────────
       if (isEdit) {
         await updateMember(memberId, payload);
 
@@ -265,15 +294,10 @@ export function MemberFormContent({
         const savingsAccount = (existingAccounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
 
         if (cbuAccount) {
-          await updateAccount(cbuAccount.id, {
-            account_no: values.cbu_account_no || null,
-          });
+          await updateAccount(cbuAccount.id, { account_no: values.cbu_account_no || null });
         }
-
         if (savingsAccount) {
-          await updateAccount(savingsAccount.id, {
-            account_no: values.savings_account_no || null,
-          });
+          await updateAccount(savingsAccount.id, { account_no: values.savings_account_no || null });
         }
 
         toast.success('Member updated successfully');
@@ -289,6 +313,79 @@ export function MemberFormContent({
       }
 
       const selectedBreakdown = MEMBERSHIP_BREAKDOWN[values.membership_type];
+
+      // ── OLD MEMBER FLOW ──────────────────────────────────────────────────────
+      if (values.record_type === 'old_member') {
+        if (!values.date_joined) {
+          toast.error('Original membership date is required for historical records.');
+          return;
+        }
+
+        if (values.has_time_deposit) {
+          if (!values.td_date_applied || !values.td_terms || !values.td_amount || values.td_interest_rate === '') {
+            toast.error('Please fill in all required Time Deposit fields (Date Applied, Terms, Amount, Interest Rate).');
+            return;
+          }
+        }
+
+        const newMember = await createMember({ ...payload, record_type: 'old_member' });
+        const newMemberId = newMember.id;
+        const memberName = `${newMember.first_name || ''} ${newMember.last_name || ''}`.trim();
+
+        await initializeMemberAccounts(newMemberId);
+        const accounts = await getAccountsByMemberId(newMemberId);
+        const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
+        const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
+
+        if (cbuAccount) {
+          await updateAccount(cbuAccount.id, {
+            account_no: values.cbu_account_no || null,
+            balance: parseFloat(values.old_cbu_balance) || 0,
+          });
+        }
+        if (savingsAccount) {
+          await updateAccount(savingsAccount.id, {
+            account_no: values.savings_account_no || null,
+            balance: parseFloat(values.old_savings_balance) || 0,
+          });
+        }
+
+        // Mark membership as fully paid — no payment record, no invoice, no fund movement
+        await createMembership({
+          member_id: newMemberId,
+          membership_type: values.membership_type,
+          fee_required: selectedBreakdown.membership_fee,
+          fee_paid_now: selectedBreakdown.membership_fee,
+          notes: 'Historical record — membership fully paid before system was in use.',
+          created_by: user.id,
+          is_historical: true,
+        });
+
+        if (values.has_time_deposit) {
+          await createTimeDeposit({
+            name: memberName,
+            terms: parseInt(values.td_terms, 10),
+            amount: parseFloat(values.td_amount),
+            interest_rate: parseFloat(values.td_interest_rate) || 0,
+            date_applied: values.td_date_applied,
+            termination_date: values.td_termination_date || null,
+            member_id: newMemberId,
+          });
+        }
+
+        toast.success('Old member record created successfully.');
+        trackActivity({ userId: user?.id, module: 'member', action: 'create', description: `Encoded old member record: ${values.first_name} ${values.last_name}` });
+
+        if (inModal) {
+          onCreated?.(newMemberId);
+          onClose?.();
+        } else {
+          navigate(`/members/${newMemberId}`);
+        }
+        return;
+      }
+
+      // ── NEW MEMBER FLOW ──────────────────────────────────────────────────────
       const paymentDate = values.payment_date || new Date().toISOString().split('T')[0];
 
       let postedMembershipPaid = 0;
@@ -309,17 +406,14 @@ export function MemberFormContent({
         toast.error('Paid amounts cannot be negative.');
         return;
       }
-
       if (postedMembershipPaid > selectedBreakdown.membership_fee) {
         toast.error(`Membership payment cannot exceed ₱${selectedBreakdown.membership_fee.toLocaleString()}.`);
         return;
       }
-
       if (postedCbuPaid > selectedBreakdown.cbu) {
         toast.error(`Initial CBU payment cannot exceed ₱${selectedBreakdown.cbu.toLocaleString()}.`);
         return;
       }
-
       if (postedSavingsPaid > selectedBreakdown.savings) {
         toast.error(`Initial Savings payment cannot exceed ₱${selectedBreakdown.savings.toLocaleString()}.`);
         return;
@@ -333,52 +427,35 @@ export function MemberFormContent({
       }
 
       if (totalPaid > 0) {
-        if (!paymentDate) {
-          toast.error('Payment date is required.');
-          return;
-        }
-
-        if (!values.invoice_no?.trim()) {
-          toast.error('SI# is required when there is onboarding payment.');
-          return;
-        }
-
-        if (!values.payment_mode) {
-          toast.error('Mode of payment is required when there is onboarding payment.');
-          return;
-        }
-
+        if (!paymentDate) { toast.error('Payment date is required.'); return; }
+        if (!values.invoice_no?.trim()) { toast.error('SI# is required when there is onboarding payment.'); return; }
+        if (!values.payment_mode) { toast.error('Mode of payment is required when there is onboarding payment.'); return; }
         if (referenceRequired && !values.payment_reference?.trim()) {
           toast.error('Reference / Account / Check No. is required for the selected payment mode.');
           return;
         }
       }
 
-      const newMember = await createMember(payload);
+      const newMember = await createMember({ ...payload, record_type: 'new_member' });
       const newMemberId = newMember.id;
       const memberName = `${newMember.first_name || ''} ${newMember.last_name || ''}`.trim();
 
       await initializeMemberAccounts(newMemberId);
 
       const accounts = await getAccountsByMemberId(newMemberId);
-      const cbuAccount = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
-      const savingsAccount = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+      const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
+      const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
       if (cbuAccount && values.cbu_account_no) {
-        await updateAccount(cbuAccount.id, {
-          account_no: values.cbu_account_no,
-        });
+        await updateAccount(cbuAccount.id, { account_no: values.cbu_account_no });
       }
-
       if (savingsAccount && values.savings_account_no) {
-        await updateAccount(savingsAccount.id, {
-          account_no: values.savings_account_no,
-        });
+        await updateAccount(savingsAccount.id, { account_no: values.savings_account_no });
       }
 
       const refreshedAccounts = await getAccountsByMemberId(newMemberId);
-      const refreshedCbuAccount = (refreshedAccounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
-      const refreshedSavingsAccount = (refreshedAccounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+      const refreshedCbuAccount = refreshedAccounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
+      const refreshedSavingsAccount = refreshedAccounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
       const paymentModeNote =
         [values.payment_reference?.trim(), values.payment_notes?.trim()].filter(Boolean).join(' | ') || null;
@@ -408,7 +485,6 @@ export function MemberFormContent({
 
       if (postedCbuPaid > 0) {
         if (!refreshedCbuAccount) throw new Error('CBU account not found after member initialization.');
-
         await createTransaction({
           member_id: newMemberId,
           account_id: refreshedCbuAccount.id,
@@ -426,7 +502,6 @@ export function MemberFormContent({
 
       if (postedSavingsPaid > 0) {
         if (!refreshedSavingsAccount) throw new Error('Savings account not found after member initialization.');
-
         await createTransaction({
           member_id: newMemberId,
           account_id: refreshedSavingsAccount.id,
@@ -497,15 +572,105 @@ export function MemberFormContent({
 
   const content = (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+
+      {/* ── Record Type selector (new registrations only) ── */}
       {!isEdit && (
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-start gap-2">
-          <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
-          <span>
-            You may register a member only, or register and post initial onboarding payments at the same time.
-          </span>
+        <section>
+          <p className="text-sm font-semibold text-gray-700 mb-3">Member Record Type</p>
+          <div className="grid grid-cols-2 gap-3">
+            {/* New Member */}
+            <label
+              className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                !isOldMember
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                value="new_member"
+                className="mt-0.5 accent-blue-600"
+                {...register('record_type')}
+              />
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <UserPlus size={14} className={!isOldMember ? 'text-blue-600' : 'text-gray-400'} />
+                  <span className={`text-sm font-semibold ${!isOldMember ? 'text-blue-700' : 'text-gray-600'}`}>
+                    New Member
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 leading-snug">
+                  Joining now. Follows normal registration and payment flow.
+                </p>
+              </div>
+            </label>
+
+            {/* Old Member */}
+            <label
+              className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                isOldMember
+                  ? 'border-amber-500 bg-amber-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                value="old_member"
+                className="mt-0.5 accent-amber-600"
+                {...register('record_type')}
+              />
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Archive size={14} className={isOldMember ? 'text-amber-600' : 'text-gray-400'} />
+                  <span className={`text-sm font-semibold ${isOldMember ? 'text-amber-700' : 'text-gray-600'}`}>
+                    Old Member
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 leading-snug">
+                  Encoding from existing Excel / printed records. No fund movement.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* Old Member explanation banner */}
+          {isOldMember && (
+            <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <Archive size={14} /> Historical Record — Old Member
+              </p>
+              <ul className="list-disc list-inside space-y-0.5 text-xs text-amber-700 mt-1">
+                <li>Membership is automatically marked as <strong>Fully Paid</strong>.</li>
+                <li>No invoice or receipt will be generated.</li>
+                <li>No fund movement will be recorded in the cooperative fund.</li>
+                <li>This member will be recognized as eligible for loans and other services.</li>
+                <li>You may enter the member's existing CBU, Savings, and Time Deposit balances below.</li>
+              </ul>
+            </div>
+          )}
+
+          {/* New Member info banner */}
+          {!isOldMember && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-start gap-2">
+              <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
+              <span>
+                You may register a member only, or register and post initial onboarding payments at the same time.
+              </span>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Old member read-only badge in edit mode */}
+      {isEdit && recordType === 'old_member' && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+          <Archive size={14} />
+          <span className="font-medium">Historical Record — Old Member</span>
+          <span className="text-amber-600 text-xs">· Encoded from pre-system records</span>
         </div>
       )}
 
+      {/* ── Personal Information ── */}
       <section className={inModal ? 'bg-gray-50 border border-gray-100 rounded-xl p-4' : ''}>
         <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
           Personal Information
@@ -529,7 +694,17 @@ export function MemberFormContent({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
           <Input label="Member Number" placeholder="e.g. MBR-2024-001" {...register('member_no')} />
-          <Input label="Date Joined" type="date" {...register('date_joined')} />
+
+          <Input
+            label={isOldMember ? 'Original Membership Date *' : 'Date Joined'}
+            type="date"
+            required={isOldMember}
+            error={errors.date_joined?.message}
+            {...register('date_joined', {
+              required: isOldMember ? 'Original membership date is required.' : false,
+            })}
+          />
+
           <Input label="Date of Birth" type="date" {...register('date_of_birth')} />
 
           <Select
@@ -560,6 +735,7 @@ export function MemberFormContent({
         </div>
       </section>
 
+      {/* ── Contact & Membership ── */}
       <section className={inModal ? 'bg-gray-50 border border-gray-100 rounded-xl p-4' : ''}>
         <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
           Contact Information
@@ -571,10 +747,7 @@ export function MemberFormContent({
             type="email"
             error={errors.email?.message}
             {...register('email', {
-              pattern: {
-                value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                message: 'Invalid email',
-              },
+              pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'Invalid email' },
             })}
           />
           <Input label="Mobile No." placeholder="+63 9XX XXX XXXX" {...register('phone')} />
@@ -594,32 +767,36 @@ export function MemberFormContent({
             {...register('membership_type', { required: 'Membership type is required' })}
           />
 
+          {/* Membership Breakdown */}
           {breakdown && (
             <div className="sm:col-span-2 mt-2">
-              <div className="p-4 rounded-xl border bg-blue-50/40 border-blue-100">
-                <h4 className="text-sm font-semibold text-blue-800 mb-3">
-                  Membership Breakdown
-                </h4>
+              <div className={`p-4 rounded-xl border ${isOldMember ? 'bg-amber-50/40 border-amber-100' : 'bg-blue-50/40 border-blue-100'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className={`text-sm font-semibold ${isOldMember ? 'text-amber-800' : 'text-blue-800'}`}>
+                    Membership Breakdown
+                  </h4>
+                  {isOldMember && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                      <CheckCircle size={11} /> Fully Paid — Historical
+                    </span>
+                  )}
+                </div>
 
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span>Membership Entry</span>
                     <span>₱{breakdown.membership_fee.toLocaleString()}</span>
                   </div>
-
                   <div className="flex justify-between">
                     <span>Initial CBU</span>
                     <span>₱{breakdown.cbu.toLocaleString()}</span>
                   </div>
-
                   <div className="flex justify-between">
                     <span>Initial Savings</span>
                     <span>₱{breakdown.savings.toLocaleString()}</span>
                   </div>
-
-                  <div className="border-t my-2 border-blue-100"></div>
-
-                  <div className="flex justify-between font-semibold text-base text-blue-900">
+                  <div className={`border-t my-2 ${isOldMember ? 'border-amber-100' : 'border-blue-100'}`} />
+                  <div className={`flex justify-between font-semibold text-base ${isOldMember ? 'text-amber-900' : 'text-blue-900'}`}>
                     <span>Total Amount</span>
                     <span>₱{total.toLocaleString()}</span>
                   </div>
@@ -628,7 +805,8 @@ export function MemberFormContent({
             </div>
           )}
 
-          {!isEdit && breakdown && (
+          {/* ── NEW MEMBER: Onboarding Payment ── */}
+          {!isEdit && !isOldMember && breakdown && (
             <div className="sm:col-span-2 mt-2">
               <div className="p-4 rounded-xl border bg-green-50/40 border-green-100">
                 <div className="flex items-center gap-2 mb-3 text-green-800">
@@ -642,13 +820,8 @@ export function MemberFormContent({
                     options={PAYMENT_OPTION_OPTIONS}
                     {...register('payment_option')}
                   />
-
                   {paymentOption !== 'none' && (
-                    <Input
-                      label="Payment Date"
-                      type="date"
-                      {...register('payment_date')}
-                    />
+                    <Input label="Payment Date" type="date" {...register('payment_date')} />
                   )}
                 </div>
 
@@ -656,27 +829,19 @@ export function MemberFormContent({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
                     <Input
                       label={`Membership Entry Paid (max ₱${breakdown.membership_fee.toLocaleString()})`}
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="number" step="0.01" min="0"
                       disabled={paymentOption === 'full'}
                       {...register('membership_paid')}
                     />
-
                     <Input
                       label={`Initial CBU Paid (max ₱${breakdown.cbu.toLocaleString()})`}
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="number" step="0.01" min="0"
                       disabled={paymentOption === 'full'}
                       {...register('cbu_paid')}
                     />
-
                     <Input
                       label={`Initial Savings Paid (max ₱${breakdown.savings.toLocaleString()})`}
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="number" step="0.01" min="0"
                       disabled={paymentOption === 'full'}
                       {...register('savings_paid')}
                     />
@@ -686,31 +851,16 @@ export function MemberFormContent({
                 {paymentOption !== 'none' && (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                      <Input
-                        label="SI#"
-                        placeholder="Enter SI# manually"
-                        {...register('invoice_no')}
-                      />
-
-                      <Select
-                        label="Mode of Payment"
-                        options={PAYMENT_MODE_OPTIONS}
-                        {...register('payment_mode')}
-                      />
+                      <Input label="SI#" placeholder="Enter SI# manually" {...register('invoice_no')} />
+                      <Select label="Mode of Payment" options={PAYMENT_MODE_OPTIONS} {...register('payment_mode')} />
                     </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                       <Input
                         label="Reference / Account / Check No."
                         placeholder="Optional for Cash, required for GCash/Bank/Check"
                         {...register('payment_reference')}
                       />
-
-                      <Input
-                        label="Payment Notes"
-                        placeholder="Optional notes"
-                        {...register('payment_notes')}
-                      />
+                      <Input label="Payment Notes" placeholder="Optional notes" {...register('payment_notes')} />
                     </div>
                   </>
                 )}
@@ -735,27 +885,114 @@ export function MemberFormContent({
             </div>
           )}
 
-          <div className="sm:col-span-2 mt-2">
-            <div className="p-4 rounded-xl border bg-purple-50/40 border-purple-100">
-              <h4 className="text-sm font-semibold text-purple-800 mb-3">
-                Account Details
-              </h4>
+          {/* ── OLD MEMBER: Historical Account Balances ── */}
+          {!isEdit && isOldMember && (
+            <div className="sm:col-span-2 mt-2 space-y-4">
+              {/* CBU & Savings historical balances */}
+              <div className="p-4 rounded-xl border bg-amber-50/30 border-amber-100">
+                <h4 className="text-sm font-semibold text-amber-800 mb-1">
+                  Historical Account Balances
+                  <span className="ml-2 text-xs font-normal text-amber-600">(Optional)</span>
+                </h4>
+                <p className="text-xs text-amber-700 mb-4">
+                  Enter the member's existing account balances from your records. These will be set directly — no transaction will be recorded since these pre-date the system.
+                </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="CBU Account No."
-                  placeholder="Enter CBU account number"
-                  {...register('cbu_account_no')}
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="CBU Account No."
+                    placeholder="Enter CBU account number"
+                    {...register('cbu_account_no')}
+                  />
+                  <Input
+                    label="CBU Balance"
+                    type="number" step="0.01" min="0"
+                    placeholder="0.00"
+                    {...register('old_cbu_balance')}
+                  />
+                  <Input
+                    label="Savings Account No."
+                    placeholder="Enter Savings account number"
+                    {...register('savings_account_no')}
+                  />
+                  <Input
+                    label="Savings Balance"
+                    type="number" step="0.01" min="0"
+                    placeholder="0.00"
+                    {...register('old_savings_balance')}
+                  />
+                </div>
+              </div>
 
-                <Input
-                  label="Savings Account No."
-                  placeholder="Enter Savings account number"
-                  {...register('savings_account_no')}
-                />
+              {/* Time Deposit toggle */}
+              <div className="p-4 rounded-xl border bg-violet-50/30 border-violet-100">
+                <label className="flex items-center gap-3 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 accent-violet-600"
+                    {...register('has_time_deposit')}
+                  />
+                  <span className="text-sm font-semibold text-violet-800">
+                    This member had a Time Deposit
+                  </span>
+                </label>
+
+                {hasTimeDep && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                    <Input
+                      label="Date Applied *"
+                      type="date"
+                      {...register('td_date_applied')}
+                    />
+                    <Input
+                      label="Terms (months) *"
+                      type="number" min="1"
+                      placeholder="e.g. 12"
+                      {...register('td_terms')}
+                    />
+                    <Input
+                      label="Amount *"
+                      type="number" step="0.01" min="0.01"
+                      placeholder="0.00"
+                      {...register('td_amount')}
+                    />
+                    <Input
+                      label="Interest Rate (%) *"
+                      type="number" step="0.01" min="0"
+                      placeholder="e.g. 5.00"
+                      {...register('td_interest_rate')}
+                    />
+                    <Input
+                      label="Termination / Maturity Date"
+                      type="date"
+                      {...register('td_termination_date')}
+                    />
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* ── Account Details (new member edit / new member create) ── */}
+          {(isEdit || !isOldMember) && (
+            <div className="sm:col-span-2 mt-2">
+              <div className="p-4 rounded-xl border bg-purple-50/40 border-purple-100">
+                <h4 className="text-sm font-semibold text-purple-800 mb-3">Account Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="CBU Account No."
+                    placeholder="Enter CBU account number"
+                    {...register('cbu_account_no')}
+                  />
+                  <Input
+                    label="Savings Account No."
+                    placeholder="Enter Savings account number"
+                    {...register('savings_account_no')}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="sm:col-span-2">
             <Input
@@ -789,7 +1026,7 @@ export function MemberFormContent({
           Cancel
         </Button>
         <Button type="submit" loading={loading} disabled={isEdit && !isDirty} icon={<Save size={15} />}>
-          {isEdit ? 'Save Changes' : 'Add Member'}
+          {isEdit ? 'Save Changes' : isOldMember ? 'Save Historical Record' : 'Add Member'}
         </Button>
       </div>
     </form>

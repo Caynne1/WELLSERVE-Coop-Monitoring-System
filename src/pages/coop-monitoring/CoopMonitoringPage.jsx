@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign,
   RefreshCw, ArrowUpRight, ArrowDownRight,
   LayoutDashboard, Plus, AlertTriangle, Calendar,
-  BarChart2, X, Printer, Download,
+  X, Printer, Download,
 } from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
@@ -52,145 +52,666 @@ function CategoryBadge({ category }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stat Card
+// Tooltip + hooks
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StatCard({ icon, label, value, sub, bg, textColor, accent }) {
+function Tooltip({ text, x, y, visible }) {
+  if (!visible || !text) return null;
   return (
-    <div className={`bg-white rounded-xl border ${accent || 'border-gray-200'} p-5 flex items-center gap-4`}>
-      <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
+    <div
+      className="pointer-events-none fixed z-50 rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg whitespace-nowrap"
+      style={{ left: x + 12, top: y - 8 }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function useTooltip() {
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
+  const show = useCallback((e, text) => {
+    setTooltip({ visible: true, text, x: e.clientX, y: e.clientY });
+  }, []);
+  const move = useCallback((e) => {
+    setTooltip(t => t.visible ? { ...t, x: e.clientX, y: e.clientY } : t);
+  }, []);
+  const hide = useCallback(() => {
+    setTooltip(t => ({ ...t, visible: false }));
+  }, []);
+  return { tooltip, show, move, hide };
+}
+
+function useChartWidth() {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.clientWidth > 0) setWidth(el.clientWidth);
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      if (w > 0) setWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stat Card — enhanced with hover accent
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StatCard({ icon, label, value, sub, bg, textColor, accentColor, border }) {
+  return (
+    <div className={`bg-white rounded-xl border ${border || 'border-gray-100'} p-5 flex items-center gap-4 group hover:shadow-md transition-all duration-200 relative overflow-hidden`}>
+      <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-110`}>
         {icon}
       </div>
-      <div>
-        <p className="text-xs text-gray-400">{label}</p>
-        <p className={`text-xl font-bold ${textColor}`}>{value}</p>
+      <div className="min-w-0">
+        <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+        <p className={`text-xl font-bold tabular-nums leading-tight ${textColor}`}>{value}</p>
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      </div>
+      <div className={`absolute bottom-0 left-0 h-0.5 w-0 group-hover:w-full transition-all duration-300 rounded-full ${accentColor || 'bg-emerald-400'}`} />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cash Flow Area-Line Chart
+// ResizeObserver + smooth bezier curves + gradient area fills + hover
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
+  const { tooltip, show, move, hide } = useTooltip();
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const [containerRef, W] = useChartWidth();
+
+  const n = labels.length;
+  const H = height;
+  const PAD = { t: 16, b: 26, l: 6, r: 6 };
+  const iW = W - PAD.l - PAD.r;
+  const iH = H - PAD.t - PAD.b;
+
+  const maxVal = Math.max(...cashInData, ...cashOutData, 1);
+  const px = i => PAD.l + (n <= 1 ? iW / 2 : (i / (n - 1)) * iW);
+  const py = v => PAD.t + iH - (v / maxVal) * iH;
+
+  const fmtShort = v => {
+    const abs = Math.abs(v);
+    if (abs >= 1_000_000) return `${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000)     return `${(abs / 1_000).toFixed(1)}K`;
+    return abs.toLocaleString();
+  };
+
+  const makeBezier = (data) => {
+    if (data.length < 2) return `M${px(0).toFixed(1)},${py(data[0] || 0).toFixed(1)}`;
+    let d = `M${px(0).toFixed(1)},${py(data[0]).toFixed(1)}`;
+    for (let i = 1; i < data.length; i++) {
+      const cx = ((px(i - 1) + px(i)) / 2).toFixed(1);
+      d += ` C${cx},${py(data[i-1]).toFixed(1)} ${cx},${py(data[i]).toFixed(1)} ${px(i).toFixed(1)},${py(data[i]).toFixed(1)}`;
+    }
+    return d;
+  };
+
+  const makeArea = (data, path) => {
+    const BL = PAD.t + iH;
+    return `${path} L${px(n - 1).toFixed(1)},${BL.toFixed(1)} L${px(0).toFixed(1)},${BL.toFixed(1)} Z`;
+  };
+
+  const gridYs = [0.25, 0.5, 0.75, 1].map(f => py(maxVal * f));
+  const inPath  = makeBezier(cashInData);
+  const outPath = makeBezier(cashOutData);
+
+  return (
+    <>
+      <Tooltip {...tooltip} />
+      <div ref={containerRef} className="w-full">
+        {W > 0 && n >= 2 && (
+          <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+            <defs>
+              <linearGradient id="cm-area-in" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#22c55e" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
+              </linearGradient>
+              <linearGradient id="cm-area-out" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#ef4444" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
+
+            {/* Dashed grid lines */}
+            {gridYs.map((y, i) => (
+              <line key={i} x1={PAD.l} y1={y} x2={W - PAD.r} y2={y}
+                stroke="#F3F4F6" strokeWidth={1} strokeDasharray="3 4" />
+            ))}
+
+            {/* Hover vertical guide */}
+            {hoveredIdx !== null && (
+              <line
+                x1={px(hoveredIdx)} y1={PAD.t}
+                x2={px(hoveredIdx)} y2={PAD.t + iH}
+                stroke="#CBD5E1" strokeWidth={1} strokeDasharray="3 3"
+              />
+            )}
+
+            {/* Gradient area fills */}
+            <path d={makeArea(cashInData, inPath)}   fill="url(#cm-area-in)"  />
+            <path d={makeArea(cashOutData, outPath)} fill="url(#cm-area-out)" />
+
+            {/* Line glows */}
+            <path d={inPath}  fill="none" stroke="#22c55e" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} />
+            <path d={outPath} fill="none" stroke="#ef4444" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} />
+
+            {/* Lines */}
+            <path d={inPath}  fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+            <path d={outPath} fill="none" stroke="#dc2626" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+
+            {/* Per-column interaction zones + dots */}
+            {labels.map((lbl, i) => {
+              const isHov = hoveredIdx === i;
+              const inV   = cashInData[i]  || 0;
+              const outV  = cashOutData[i] || 0;
+
+              const zoneX = i === 0 ? PAD.l
+                : (px(i - 1) + px(i)) / 2;
+              const zoneW = i === n - 1
+                ? (W - PAD.r) - (px(n - 2) + px(n - 1)) / 2
+                : i === 0
+                ? (px(0) + px(1)) / 2 - PAD.l
+                : (px(i) + px(i + 1)) / 2 - (px(i - 1) + px(i)) / 2;
+
+              return (
+                <g key={i}>
+                  <rect
+                    x={zoneX} y={PAD.t} width={zoneW} height={iH}
+                    fill="transparent" style={{ cursor: 'crosshair' }}
+                    onMouseEnter={e => {
+                      setHoveredIdx(i);
+                      show(e, `${lbl}  ·  In: ${formatCurrency(inV)}  ·  Out: ${formatCurrency(outV)}`);
+                    }}
+                    onMouseMove={move}
+                    onMouseLeave={() => { setHoveredIdx(null); hide(); }}
+                  />
+
+                  {/* Cash In dot */}
+                  <circle cx={px(i)} cy={py(inV)} r={isHov ? 5 : 3}
+                    fill="white" stroke="#16a34a" strokeWidth={isHov ? 2.5 : 1.5} />
+                  {/* Cash Out dot */}
+                  <circle cx={px(i)} cy={py(outV)} r={isHov ? 5 : 3}
+                    fill="white" stroke="#dc2626" strokeWidth={isHov ? 2.5 : 1.5} />
+
+                  {/* Hover value labels */}
+                  {isHov && inV > 0 && (
+                    <text x={px(i)} y={py(inV) - 9} textAnchor="middle" fontSize={8} fontWeight="700" fill="#15803d">
+                      {fmtShort(inV)}
+                    </text>
+                  )}
+                  {isHov && outV > 0 && (
+                    <text x={px(i)} y={py(outV) - 9} textAnchor="middle" fontSize={8} fontWeight="700" fill="#dc2626">
+                      {fmtShort(outV)}
+                    </text>
+                  )}
+
+                  {/* X-axis label */}
+                  <text x={px(i)} y={H - 6} textAnchor="middle" fontSize={9}
+                    fill={isHov ? '#374151' : '#9CA3AF'}
+                    fontWeight={isHov ? '600' : '400'}>
+                    {lbl}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monthly Diverging Bar Chart — Cash In ↑, Cash Out ↓ from center zero-line
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MonthlyDivergingChart({ cashInData, cashOutData, labels, height = 136 }) {
+  const { tooltip, show, move, hide } = useTooltip();
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const [containerRef, W] = useChartWidth();
+
+  const H      = height;
+  const PAD    = { t: 22, b: 22, l: 4, r: 10 };
+  const iW     = W - PAD.l - PAD.r;
+  const iH     = H - PAD.t - PAD.b;
+  const midY   = PAD.t + iH / 2;
+  const halfH  = iH / 2;
+  const n      = labels.length;
+  const groupW = iW / n;
+  const margin = Math.max(groupW * 0.15, 2);
+  const barW   = groupW - margin * 2;
+
+  const maxVal = Math.max(...cashInData, ...cashOutData, 1);
+  const sh     = v => (v / maxVal) * halfH;
+  const bx     = i => PAD.l + i * groupW + margin;
+  const mX     = i => PAD.l + i * groupW + groupW / 2;
+
+  const fmtShort = v => {
+    const abs = Math.abs(v);
+    if (abs >= 1_000_000) return `${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000)     return `${(abs / 1_000).toFixed(1)}K`;
+    return abs.toLocaleString();
+  };
+
+  return (
+    <>
+      <Tooltip {...tooltip} />
+      <div ref={containerRef} className="w-full">
+        {W > 0 && (
+          <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+            <defs>
+              <linearGradient id="mdiv-green" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#047857" stopOpacity="1" />
+                <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.45" />
+              </linearGradient>
+              <linearGradient id="mdiv-red" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#FCA5A5" stopOpacity="0.45" />
+                <stop offset="100%" stopColor="#B91C1C" stopOpacity="1" />
+              </linearGradient>
+            </defs>
+
+            {/* Half-backgrounds */}
+            <rect x={PAD.l} y={PAD.t}  width={iW} height={halfH} fill="#F0FDF4" opacity={0.65} />
+            <rect x={PAD.l} y={midY}   width={iW} height={halfH} fill="#FFF5F5" opacity={0.65} />
+
+            {/* Quarter guide lines */}
+            <line x1={PAD.l} y1={PAD.t + halfH * 0.5} x2={W - PAD.r} y2={PAD.t + halfH * 0.5}
+              stroke="#D1FAE5" strokeWidth={1} strokeDasharray="4 5" />
+            <line x1={PAD.l} y1={midY  + halfH * 0.5} x2={W - PAD.r} y2={midY  + halfH * 0.5}
+              stroke="#FEE2E2" strokeWidth={1} strokeDasharray="4 5" />
+
+            {/* Center zero line */}
+            <line x1={PAD.l} y1={midY} x2={W - PAD.r} y2={midY} stroke="#94A3B8" strokeWidth={1.5} />
+            <text x={W - PAD.r + 2} y={midY + 3.5} fontSize={7} fill="#94A3B8" textAnchor="start">0</text>
+
+            {/* Corner axis labels */}
+            <text x={PAD.l + 2} y={PAD.t + 9}     fontSize={7} fill="#059669" fontWeight="700">↑ In</text>
+            <text x={PAD.l + 2} y={PAD.t + iH - 3} fontSize={7} fill="#DC2626" fontWeight="700">↓ Out</text>
+
+            {labels.map((lbl, i) => {
+              const ciH    = Math.max(sh(cashInData[i]  || 0), cashInData[i]  > 0 ? 3 : 0);
+              const coH    = Math.max(sh(cashOutData[i] || 0), cashOutData[i] > 0 ? 3 : 0);
+              const isHov  = hoveredIdx === i;
+              const dimmed = hoveredIdx !== null && !isHov;
+              const op     = dimmed ? 0.18 : 1;
+
+              return (
+                <g key={i} style={{ cursor: 'pointer' }}
+                  onMouseEnter={e => {
+                    setHoveredIdx(i);
+                    show(e, `${lbl}  ·  In: ${formatCurrency(cashInData[i] || 0)}  ·  Out: ${formatCurrency(cashOutData[i] || 0)}`);
+                  }}
+                  onMouseMove={move}
+                  onMouseLeave={() => { setHoveredIdx(null); hide(); }}
+                >
+                  {/* Column hover highlight */}
+                  {isHov && (
+                    <rect x={bx(i) - 2} y={PAD.t} width={barW + 4} height={iH}
+                      fill="#6366F1" opacity={0.05} rx={3} />
+                  )}
+
+                  {/* Cash In bar — rises upward */}
+                  {ciH > 0 && (
+                    <>
+                      <rect x={bx(i)} y={midY - ciH} width={barW} height={ciH}
+                        fill="url(#mdiv-green)" opacity={op} rx={2.5} />
+                      {isHov && (
+                        <text x={bx(i) + barW / 2} y={midY - ciH - 4}
+                          textAnchor="middle" fontSize={7} fontWeight="700" fill="#065F46">
+                          {fmtShort(cashInData[i] || 0)}
+                        </text>
+                      )}
+                    </>
+                  )}
+
+                  {/* Cash Out bar — drops downward */}
+                  {coH > 0 && (
+                    <>
+                      <rect x={bx(i)} y={midY} width={barW} height={coH}
+                        fill="url(#mdiv-red)" opacity={op} rx={2.5} />
+                      {isHov && (
+                        <text x={bx(i) + barW / 2} y={midY + coH + 9}
+                          textAnchor="middle" fontSize={7} fontWeight="700" fill="#7F1D1D">
+                          {fmtShort(cashOutData[i] || 0)}
+                        </text>
+                      )}
+                    </>
+                  )}
+
+                  {/* Month label */}
+                  <text x={mX(i)} y={H - 6} textAnchor="middle" fontSize={9}
+                    fill={isHov ? '#374151' : '#9CA3AF'}
+                    fontWeight={isHov ? '600' : '400'}>
+                    {lbl}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enhanced Donut Chart — hover with animated center label
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EnhancedDonut({ slices, size = 100 }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  const total = slices.reduce((s, sl) => s + sl.value, 0);
+  if (total === 0) return <div className="text-xs text-gray-400 py-4 text-center">No data</div>;
+
+  const cx = size / 2, cy = size / 2;
+  const r = size * 0.4, innerR = size * 0.265;
+  let angle = -Math.PI / 2;
+
+  const arc = (startA, endA, outerR) => {
+    const x1 = cx + outerR * Math.cos(startA), y1 = cy + outerR * Math.sin(startA);
+    const x2 = cx + outerR * Math.cos(endA),   y2 = cy + outerR * Math.sin(endA);
+    const xi1 = cx + innerR * Math.cos(endA),   yi1 = cy + innerR * Math.sin(endA);
+    const xi2 = cx + innerR * Math.cos(startA), yi2 = cy + innerR * Math.sin(startA);
+    const large = endA - startA > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} A ${outerR} ${outerR} 0 ${large} 1 ${x2} ${y2} L ${xi1} ${yi1} A ${innerR} ${innerR} 0 ${large} 0 ${xi2} ${yi2} Z`;
+  };
+
+  const segments = slices.map(sl => {
+    const sweep = (sl.value / total) * 2 * Math.PI;
+    const startA = angle;
+    angle += sweep;
+    return { ...sl, startA, endA: angle };
+  });
+
+  const hovered = hoveredIdx !== null ? segments[hoveredIdx] : null;
+
+  const fmtCenter = v => {
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K`;
+    return String(Math.round(v));
+  };
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size, overflow: 'visible' }}>
+      {/* Background track */}
+      <circle cx={cx} cy={cy} r={(r + innerR) / 2}
+        fill="none" stroke="#F3F4F6" strokeWidth={r - innerR} />
+
+      {segments.map((seg, i) => {
+        const isHov  = hoveredIdx === i;
+        const outerR = isHov ? r + 4 : r;
+        return (
+          <path
+            key={i}
+            d={arc(seg.startA, seg.endA, outerR)}
+            fill={seg.color}
+            opacity={hoveredIdx === null ? 0.88 : isHov ? 1 : 0.28}
+            style={{ cursor: 'pointer', transition: 'opacity 0.15s, d 0.1s' }}
+            onMouseEnter={() => setHoveredIdx(i)}
+            onMouseLeave={() => setHoveredIdx(null)}
+          />
+        );
+      })}
+
+      {/* Center label */}
+      {hovered ? (
+        <>
+          <text x={cx} y={cy - 5} textAnchor="middle" fontSize={size * 0.08} fill="#6B7280" fontWeight="500">
+            {hovered.label.length > 8 ? hovered.label.slice(0, 8) + '…' : hovered.label}
+          </text>
+          <text x={cx} y={cy + 9} textAnchor="middle" fontSize={size * 0.115} fontWeight="700" fill={hovered.color}>
+            {Math.round((hovered.value / total) * 100)}%
+          </text>
+        </>
+      ) : (
+        <>
+          <text x={cx} y={cy - 4} textAnchor="middle" fontSize={size * 0.08} fill="#6B7280" fontWeight="500">Total</text>
+          <text x={cx} y={cy + 9} textAnchor="middle" fontSize={size * 0.105} fontWeight="700" fill="#111827">
+            {fmtCenter(total)}
+          </text>
+        </>
+      )}
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cash-In Breakdown horizontal bars
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CashInBreakdown({ transactions }) {
+  const cashInTx = transactions.filter(tx => tx.type === 'cash_in');
+
+  const groups = [
+    { key: 'loan_payment', label: 'Loan Payments',       color: '#f97316', bg: 'bg-orange-400' },
+    { key: 'cbu',          label: 'CBU Deposits',         color: '#22c55e', bg: 'bg-green-400'  },
+    { key: 'savings',      label: 'Savings Deposits',     color: '#3b82f6', bg: 'bg-blue-400'   },
+    { key: 'membership',   label: 'Membership Fees',      color: '#a855f7', bg: 'bg-purple-400' },
+    { key: 'capital',      label: 'Capital / Fund',       color: '#6366f1', bg: 'bg-indigo-400' },
+    { key: 'penalty',      label: 'Penalty Income',       color: '#ef4444', bg: 'bg-red-400'    },
+    { key: 'time_deposit', label: 'Time Deposits',        color: '#8b5cf6', bg: 'bg-violet-400' },
+    { key: 'invoice',      label: 'Other Invoices',       color: '#9ca3af', bg: 'bg-gray-400'   },
+  ].map(g => ({
+    ...g,
+    total: cashInTx.filter(tx => tx.category === g.key).reduce((s, tx) => s + tx.amount, 0),
+    count: cashInTx.filter(tx => tx.category === g.key).length,
+  })).filter(g => g.total > 0);
+
+  if (groups.length === 0) return null;
+
+  const grandTotal = groups.reduce((s, g) => s + g.total, 0);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800">Cash In — Breakdown by Type</h3>
+          <p className="text-xs text-gray-400 mt-0.5">All-time totals by category</p>
+        </div>
+        <span className="text-xs font-semibold text-gray-700 tabular-nums">
+          {formatCurrency(grandTotal)}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {groups.map(g => {
+          const pct = grandTotal > 0 ? (g.total / grandTotal) * 100 : 0;
+          return (
+            <div key={g.key} className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: g.color }} />
+                <p className="text-xs text-gray-500 truncate">{g.label}</p>
+              </div>
+              <p className="text-sm font-bold text-gray-800 tabular-nums pl-3.5">{formatCurrency(g.total)}</p>
+              <p className="text-xs text-gray-400 pl-3.5">{g.count} tx · {pct.toFixed(1)}%</p>
+              <div className="w-full bg-gray-100 rounded-full h-1.5 mt-0.5">
+                <div
+                  className={`h-1.5 rounded-full ${g.bg} transition-all duration-500`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mini Bar Chart (SVG, no external lib)
+// Dashboard Charts Panel — enhanced 2-row layout
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BarChart({ data, color, height = 80 }) {
-  if (!data || data.length === 0) return null;
-  const max = Math.max(...data.map(d => d.value), 1);
-  const w = 100 / data.length;
-  return (
-    <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
-      {data.map((d, i) => {
-        const barH = (d.value / max) * (height - 4);
-        const x = i * w + w * 0.15;
-        const barW = w * 0.7;
-        return (
-          <g key={i}>
-            <rect
-              x={x} y={height - barH} width={barW} height={barH}
-              fill={color} rx="2" opacity="0.85"
-            />
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
+function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
+  const now = new Date();
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+    return { year: d.getFullYear(), month: d.getMonth(), label: MONTH_NAMES[d.getMonth()] };
+  });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Line Chart (SVG)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function LineChart({ series, height = 120, labels }) {
-  // series: [{ color, data: number[] }]
-  if (!series || series.length === 0) return null;
-  const allVals = series.flatMap(s => s.data);
-  const max = Math.max(...allVals, 1);
-  const n = series[0].data.length;
-  if (n < 2) return null;
-
-  const W = 600;
-  const H = 180;
-  const pad = { t: 12, b: 30, l: 8, r: 8 };
-  const innerW = W - pad.l - pad.r;
-  const innerH = H - pad.t - pad.b;
-
-  const px = i => pad.l + (i / (n - 1)) * innerW;
-  const py = v => pad.t + innerH - (v / max) * innerH;
-
-  const makePath = (data) =>
-    data.map((v, i) => `${i === 0 ? 'M' : 'L'} ${px(i).toFixed(1)} ${py(v).toFixed(1)}`).join(' ');
-
-  const makeArea = (data) => {
-    const line = makePath(data);
-    return `${line} L ${px(n - 1).toFixed(1)} ${(pad.t + innerH).toFixed(1)} L ${px(0).toFixed(1)} ${(pad.t + innerH).toFixed(1)} Z`;
+  const bucket = (tx) => {
+    const d = new Date(tx.created_at);
+    return months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
   };
 
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="w-full" style={{ height }}>
-      {/* Grid lines */}
-      {[0, 0.5, 1].map((pct, i) => (
-        <line
-          key={i}
-          x1={pad.l} y1={pad.t + innerH * (1 - pct)}
-          x2={W - pad.r} y2={pad.t + innerH * (1 - pct)}
-          stroke="#f0f0f0" strokeWidth="1.5"
-        />
-      ))}
-      {/* Area fills */}
-      {series.map((s, si) => (
-        <path key={`area-${si}`} d={makeArea(s.data)} fill={s.color} opacity="0.08" />
-      ))}
-      {/* Lines */}
-      {series.map((s, si) => (
-        <path key={`line-${si}`} d={makePath(s.data)} fill="none" stroke={s.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      ))}
-      {/* Dots */}
-      {series.map((s, si) =>
-        s.data.map((v, i) => (
-          <circle key={`dot-${si}-${i}`} cx={px(i)} cy={py(v)} r="5" fill={s.color} />
-        ))
-      )}
-      {/* X Labels */}
-      {labels && labels.map((lbl, i) => (
-        <text key={i} x={px(i)} y={H - 4} textAnchor="middle" fontSize="16" fill="#9ca3af">
-          {lbl}
-        </text>
-      ))}
-    </svg>
-  );
-}
+  const cashInByMonth  = Array(6).fill(0);
+  const cashOutByMonth = Array(6).fill(0);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Donut Chart (SVG)
-// ─────────────────────────────────────────────────────────────────────────────
+  transactions.forEach(tx => {
+    const idx = bucket(tx);
+    if (idx < 0) return;
+    if (tx.type === 'cash_in') cashInByMonth[idx]  += tx.amount;
+    else                       cashOutByMonth[idx] += tx.amount;
+  });
 
-function DonutChart({ slices, size = 100 }) {
-  // slices: [{ value, color, label }]
-  const total = slices.reduce((s, sl) => s + sl.value, 0);
-  if (total === 0) return null;
+  const labels = months.map(m => m.label);
 
-  const cx = size / 2, cy = size / 2, r = size * 0.38, innerR = size * 0.25;
-  let angle = -Math.PI / 2;
+  const breakdownDefs = [
+    { key: 'loan_payment', label: 'Loan Payments', color: '#f97316' },
+    { key: 'cbu',          label: 'CBU Deposits',  color: '#22c55e' },
+    { key: 'savings',      label: 'Savings',        color: '#3b82f6' },
+    { key: 'membership',   label: 'Membership',     color: '#a855f7' },
+    { key: 'capital',      label: 'Capital',        color: '#6366f1' },
+    { key: 'penalty',      label: 'Penalties',      color: '#ef4444' },
+    { key: 'time_deposit', label: 'Time Deposits',  color: '#8b5cf6' },
+    { key: 'invoice',      label: 'Other',          color: '#9ca3af' },
+  ];
 
-  const arc = (startA, endA) => {
-    const x1 = cx + r * Math.cos(startA), y1 = cy + r * Math.sin(startA);
-    const x2 = cx + r * Math.cos(endA), y2 = cy + r * Math.sin(endA);
-    const xi1 = cx + innerR * Math.cos(endA), yi1 = cy + innerR * Math.sin(endA);
-    const xi2 = cx + innerR * Math.cos(startA), yi2 = cy + innerR * Math.sin(startA);
-    const large = endA - startA > Math.PI ? 1 : 0;
-    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${xi1} ${yi1} A ${innerR} ${innerR} 0 ${large} 0 ${xi2} ${yi2} Z`;
-  };
+  const cashInTx   = transactions.filter(tx => tx.type === 'cash_in');
+  const donutSlices = breakdownDefs.map(d => ({
+    ...d,
+    value: cashInTx.filter(tx => tx.category === d.key).reduce((s, tx) => s + tx.amount, 0),
+  })).filter(d => d.value > 0);
+  const grandCashIn = donutSlices.reduce((s, d) => s + d.value, 0);
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size }}>
-      {slices.map((sl, i) => {
-        const sweep = (sl.value / total) * 2 * Math.PI;
-        const path = arc(angle, angle + sweep);
-        angle += sweep;
-        return <path key={i} d={path} fill={sl.color} opacity="0.9" />;
-      })}
-    </svg>
+    <div className="space-y-4 mb-6">
+
+      {/* ── Row 1: Cash Flow Line + Cash-In Donut ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+        {/* Cash Flow Area-Line Chart */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Cash Flow — Last 6 Months</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Monthly inflow vs. outflow trend · hover to inspect</p>
+            </div>
+            <div className="flex items-center gap-4 text-[11px]">
+              <span className="flex items-center gap-1.5 text-green-700">
+                <span className="w-5 h-0.5 bg-green-500 inline-block rounded-full" />
+                Cash In
+              </span>
+              <span className="flex items-center gap-1.5 text-red-600">
+                <span className="w-5 h-0.5 bg-red-400 inline-block rounded-full" />
+                Cash Out
+              </span>
+            </div>
+          </div>
+          <CashFlowLineChart
+            cashInData={cashInByMonth}
+            cashOutData={cashOutByMonth}
+            labels={labels}
+            height={180}
+          />
+        </div>
+
+        {/* Cash-In Donut */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+          <h3 className="text-sm font-semibold text-gray-800 mb-0.5">Cash In — Breakdown</h3>
+          <p className="text-xs text-gray-400 mb-3">By category · hover to inspect</p>
+          {donutSlices.length === 0 ? (
+            <div className="flex items-center justify-center h-24 text-xs text-gray-400">No data</div>
+          ) : (
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 w-24">
+                <EnhancedDonut slices={donutSlices} size={96} />
+              </div>
+              <div className="flex flex-col gap-1.5 min-w-0 flex-1 mt-1">
+                {donutSlices.map(d => (
+                  <div key={d.key} className="flex items-center gap-1.5 min-w-0">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
+                    <span className="text-xs text-gray-500 truncate flex-1">{d.label}</span>
+                    <span className="text-xs font-semibold text-gray-700 tabular-nums flex-shrink-0">
+                      {grandCashIn > 0 ? `${((d.value / grandCashIn) * 100).toFixed(0)}%` : '0%'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Row 2: Monthly Diverging Bars + Penalty Card ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+        {/* Diverging monthly comparison */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Monthly Comparison</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Cash In ↑ rises · Cash Out ↓ falls from center line</p>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-gray-500">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" /> In
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" /> Out
+              </span>
+            </div>
+          </div>
+          <MonthlyDivergingChart
+            cashInData={cashInByMonth}
+            cashOutData={cashOutByMonth}
+            labels={labels}
+            height={136}
+          />
+        </div>
+
+        {/* Penalty Income Card */}
+        <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={16} className="text-amber-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Penalty Income</h3>
+              <p className="text-xs text-gray-400">Collected penalty charges</p>
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-amber-600 tabular-nums mb-1">
+            {formatCurrency(penaltyTotal)}
+          </p>
+          <p className="text-xs text-gray-400">
+            {penaltyCount} penalt{penaltyCount !== 1 ? 'ies' : 'y'} recorded
+          </p>
+          {penaltyCount > 0 && (
+            <div className="mt-3 pt-3 border-t border-amber-100">
+              <p className="text-xs text-gray-500">
+                Avg. per penalty:{' '}
+                <span className="font-semibold text-gray-700">
+                  {formatCurrency(penaltyTotal / penaltyCount)}
+                </span>
+              </p>
+            </div>
+          )}
+          <div className="mt-4 h-1 w-full bg-amber-100 rounded-full overflow-hidden">
+            <div className="h-full bg-amber-400 rounded-full w-full" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -251,7 +772,7 @@ function TxRow({ tx }) {
       <td className="px-4 py-3 text-sm text-gray-700">
         {tx.description || '—'}
       </td>
-      <td className="px-4 py-3 text-xs text-gray-600">
+      <td className="px-4 py-3 text-xs text-gray-500">
         {tx.member_name || tx.ref_no || '—'}
       </td>
       <td className="px-4 py-3 text-right">
@@ -276,231 +797,19 @@ function TxRow({ tx }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dashboard Charts Panel
-// ─────────────────────────────────────────────────────────────────────────────
-
-function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
-  // Build last 6 months buckets
-  const now = new Date();
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    return { year: d.getFullYear(), month: d.getMonth(), label: MONTH_NAMES[d.getMonth()] };
-  });
-
-  const bucket = (tx) => {
-    const d = new Date(tx.created_at);
-    return months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-  };
-
-  const cashInByMonth = Array(6).fill(0);
-  const cashOutByMonth = Array(6).fill(0);
-
-  transactions.forEach(tx => {
-    const idx = bucket(tx);
-    if (idx < 0) return;
-    if (tx.type === 'cash_in') cashInByMonth[idx] += tx.amount;
-    else cashOutByMonth[idx] += tx.amount;
-  });
-
-  const labels = months.map(m => m.label);
-
-  // Cash-in breakdown for donut
-  const breakdownDefs = [
-    { key: 'loan_payment', label: 'Loan Payments', color: '#f97316' },
-    { key: 'cbu', label: 'CBU Deposits', color: '#22c55e' },
-    { key: 'savings', label: 'Savings', color: '#3b82f6' },
-    { key: 'membership', label: 'Membership', color: '#a855f7' },
-    { key: 'capital', label: 'Capital', color: '#6366f1' },
-    { key: 'penalty', label: 'Penalties', color: '#ef4444' },
-    { key: 'time_deposit', label: 'Time Deposits', color: '#8b5cf6' },
-    { key: 'invoice', label: 'Other', color: '#9ca3af' },
-  ];
-
-  const cashInTx = transactions.filter(tx => tx.type === 'cash_in');
-  const donutSlices = breakdownDefs.map(d => ({
-    ...d,
-    value: cashInTx.filter(tx => tx.category === d.key).reduce((s, tx) => s + tx.amount, 0),
-  })).filter(d => d.value > 0);
-
-  const grandCashIn = donutSlices.reduce((s, d) => s + d.value, 0);
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-      {/* Cash Flow Line Chart */}
-      <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700">Cash Flow — Last 6 Months</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Monthly cash in vs. cash out</p>
-          </div>
-          <div className="flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5 text-green-600">
-              <span className="w-3 h-0.5 bg-green-500 inline-block rounded" /> Cash In
-            </span>
-            <span className="flex items-center gap-1.5 text-red-500">
-              <span className="w-3 h-0.5 bg-red-400 inline-block rounded" /> Cash Out
-            </span>
-          </div>
-        </div>
-        <LineChart
-          series={[
-            { color: '#22c55e', data: cashInByMonth },
-            { color: '#ef4444', data: cashOutByMonth },
-          ]}
-          labels={labels}
-          height={220}
-        />
-      </div>
-
-      {/* Cash-In Donut */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">Cash In Breakdown</h3>
-        <p className="text-xs text-gray-400 mb-3">By category</p>
-        {donutSlices.length === 0 ? (
-          <div className="flex items-center justify-center h-24 text-xs text-gray-400">No data</div>
-        ) : (
-          <div className="flex items-start gap-4">
-            <div className="flex-shrink-0 w-20">
-              <DonutChart slices={donutSlices} size={80} />
-            </div>
-            <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-              {donutSlices.map(d => (
-                <div key={d.key} className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                  <span className="text-xs text-gray-500 truncate flex-1">{d.label}</span>
-                  <span className="text-xs font-semibold text-gray-700 flex-shrink-0">
-                    {grandCashIn > 0 ? `${((d.value / grandCashIn) * 100).toFixed(0)}%` : '0%'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Monthly Bar Charts row */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <BarChart2 size={14} className="text-green-500" />
-          <h3 className="text-sm font-semibold text-gray-700">Monthly Cash In</h3>
-        </div>
-        <BarChart data={cashInByMonth.map((v, i) => ({ label: labels[i], value: v }))} color="#22c55e" height={70} />
-        <div className="flex justify-between mt-1">
-          {labels.map(l => (
-            <span key={l} className="text-[9px] text-gray-400">{l}</span>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <BarChart2 size={14} className="text-red-400" />
-          <h3 className="text-sm font-semibold text-gray-700">Monthly Cash Out</h3>
-        </div>
-        <BarChart data={cashOutByMonth.map((v, i) => ({ label: labels[i], value: v }))} color="#f87171" height={70} />
-        <div className="flex justify-between mt-1">
-          {labels.map(l => (
-            <span key={l} className="text-[9px] text-gray-400">{l}</span>
-          ))}
-        </div>
-      </div>
-
-      {/* Penalty Income Summary */}
-      <div className="bg-white rounded-xl border border-amber-200 p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle size={15} className="text-amber-500" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700">Penalty Income</h3>
-            <p className="text-xs text-gray-400">All penalty charges collected</p>
-          </div>
-        </div>
-        <p className="text-2xl font-bold text-amber-600 mb-1">{formatCurrency(penaltyTotal)}</p>
-        <p className="text-xs text-gray-400">
-          {penaltyCount} penalt{penaltyCount !== 1 ? 'ies' : 'y'} recorded
-        </p>
-        {penaltyCount > 0 && (
-          <div className="mt-3 pt-3 border-t border-amber-100">
-            <p className="text-xs text-gray-500">
-              Avg. per penalty: <span className="font-semibold text-gray-700">{formatCurrency(penaltyTotal / penaltyCount)}</span>
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cash-In Breakdown Bar
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CashInBreakdown({ transactions }) {
-  const cashInTx = transactions.filter(tx => tx.type === 'cash_in');
-
-  const groups = [
-    { key: 'loan_payment', label: 'Loan Payments', color: 'bg-orange-400' },
-    { key: 'cbu', label: 'CBU Deposits', color: 'bg-green-400' },
-    { key: 'savings', label: 'Savings Deposits', color: 'bg-blue-400' },
-    { key: 'membership', label: 'Membership Fees', color: 'bg-purple-400' },
-    { key: 'capital', label: 'Capital / Fund Deposit', color: 'bg-indigo-400' },
-    { key: 'penalty', label: 'Penalty Income', color: 'bg-amber-400' },
-    { key: 'time_deposit', label: 'Time Deposits', color: 'bg-violet-400' },
-    { key: 'invoice', label: 'Other Invoices', color: 'bg-gray-400' },
-  ].map(g => ({
-    ...g,
-    total: cashInTx.filter(tx => tx.category === g.key).reduce((s, tx) => s + tx.amount, 0),
-    count: cashInTx.filter(tx => tx.category === g.key).length,
-  })).filter(g => g.total > 0);
-
-  if (groups.length === 0) return null;
-
-  const grandTotal = groups.reduce((s, g) => s + g.total, 0);
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-      <h3 className="text-sm font-semibold text-gray-700 mb-4">Cash In — Breakdown by Type</h3>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {groups.map(g => (
-          <div key={g.key} className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${g.color} flex-shrink-0`} />
-              <p className="text-xs text-gray-500 truncate">{g.label}</p>
-            </div>
-            <p className="text-base font-bold text-gray-800 pl-4">{formatCurrency(g.total)}</p>
-            <p className="text-xs text-gray-400 pl-4">{g.count} transaction{g.count !== 1 ? 's' : ''}</p>
-            <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
-              <div
-                className={`h-1.5 rounded-full ${g.color}`}
-                style={{ width: grandTotal > 0 ? `${(g.total / grandTotal) * 100}%` : '0%' }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Penalty Income Table
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PenaltyIncomeTable({ penalties, loading }) {
   if (loading) {
-    return (
-      <div className="flex justify-center py-10">
-        <Spinner />
-      </div>
-    );
+    return <div className="flex justify-center py-10"><Spinner /></div>;
   }
 
   return (
-    <div className="bg-white rounded-xl border border-amber-200 overflow-hidden mb-6">
+    <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden mb-6">
       <div className="px-5 py-3 border-b border-amber-100 flex items-center gap-2 bg-amber-50/40">
         <AlertTriangle size={14} className="text-amber-500" />
-        <h3 className="text-sm font-semibold text-amber-800">Penalty Income</h3>
+        <h3 className="text-sm font-semibold text-amber-800">Penalty Income Records</h3>
         <span className="ml-auto text-xs text-amber-600 font-medium">
           {penalties.length} record{penalties.length !== 1 ? 's' : ''}
         </span>
@@ -541,7 +850,7 @@ function PenaltyIncomeTable({ penalties, loading }) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{p.description || '—'}</td>
                   <td className="px-4 py-3 text-right">
-                    <span className="text-sm font-semibold text-amber-600">
+                    <span className="text-sm font-semibold text-amber-600 tabular-nums">
                       {formatCurrency(p.amount)}
                     </span>
                   </td>
@@ -553,7 +862,7 @@ function PenaltyIncomeTable({ penalties, loading }) {
                 <td colSpan={3} className="px-4 py-3 text-xs font-semibold text-amber-700">
                   Total Penalty Income
                 </td>
-                <td className="px-4 py-3 text-right text-sm font-bold text-amber-700">
+                <td className="px-4 py-3 text-right text-sm font-bold text-amber-700 tabular-nums">
                   {formatCurrency(penalties.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0))}
                 </td>
               </tr>
@@ -572,31 +881,27 @@ function PenaltyIncomeTable({ penalties, loading }) {
 export default function CoopMonitoringPage() {
   const { user } = useAuth();
 
-  // ── Core data state ───────────────────────────────────────────────────────
-  const [loading, setLoading] = useState(true);
-  const [fund, setFund] = useState({ balance: 0, cash_in: 0, cash_out: 0 });
-  const [transactions, setTransactions] = useState([]);
-  const [penalties, setPenalties] = useState([]);
+  const [loading, setLoading]               = useState(true);
+  const [fund, setFund]                     = useState({ balance: 0, cash_in: 0, cash_out: 0 });
+  const [transactions, setTransactions]     = useState([]);
+  const [penalties, setPenalties]           = useState([]);
   const [penaltiesLoading, setPenaltiesLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing]         = useState(false);
 
-  // ── Filters ───────────────────────────────────────────────────────────────
-  const [typeFilter, setTypeFilter] = useState('');
-  const [catFilter, setCatFilter] = useState('');
-  const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [typeFilter, setTypeFilter]   = useState('');
+  const [catFilter, setCatFilter]     = useState('');
+  const [dateRange, setDateRange]     = useState({ from: '', to: '' });
 
-  // ── Add Fund modal state ──────────────────────────────────────────────────
-  const [fundModalOpen, setFundModalOpen] = useState(false);
-  const [fundAmount, setFundAmount] = useState('');
-  const [fundDate, setFundDate] = useState(new Date().toISOString().split('T')[0]);
-  const [fundDescription, setFundDescription] = useState('');
-  const [siNo, setSiNo] = useState('');
-  const [paymentMode, setPaymentMode] = useState('');
+  const [fundModalOpen, setFundModalOpen]       = useState(false);
+  const [fundAmount, setFundAmount]             = useState('');
+  const [fundDate, setFundDate]                 = useState(new Date().toISOString().split('T')[0]);
+  const [fundDescription, setFundDescription]   = useState('');
+  const [siNo, setSiNo]                         = useState('');
+  const [paymentMode, setPaymentMode]           = useState('');
   const [paymentReference, setPaymentReference] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [savingFund, setSavingFund] = useState(false);
+  const [paymentNotes, setPaymentNotes]         = useState('');
+  const [savingFund, setSavingFund]             = useState(false);
 
-  // ── Fetch penalties ───────────────────────────────────────────────────────
   const fetchPenalties = useCallback(async () => {
     try {
       setPenaltiesLoading(true);
@@ -613,12 +918,10 @@ export default function CoopMonitoringPage() {
     }
   }, []);
 
-  // ── Fetch main data ───────────────────────────────────────────────────────
   const fetchData = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       else setRefreshing(true);
-
       const { fund: f, transactions: txs } = await computeCoopSummaryFromInvoices();
       setFund(f);
       setTransactions(txs);
@@ -636,40 +939,33 @@ export default function CoopMonitoringPage() {
     fetchPenalties();
   }, [fetchData, fetchPenalties]);
 
-  // ── Add Fund handler ──────────────────────────────────────────────────────
   async function handleAddFund() {
     const value = parseFloat(fundAmount) || 0;
     const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
-    if (!siNo.trim()) return toast.error('SI# is required.');
-    if (!paymentMode) return toast.error('Mode of payment is required.');
+    if (!siNo.trim())          return toast.error('SI# is required.');
+    if (!paymentMode)          return toast.error('Mode of payment is required.');
     if (referenceRequired && !paymentReference.trim())
       return toast.error('Reference is required for selected payment mode.');
-    if (value <= 0) return toast.error('Enter a valid amount.');
-    if (!fundDate) return toast.error('Date is required.');
+    if (value <= 0)            return toast.error('Enter a valid amount.');
+    if (!fundDate)             return toast.error('Date is required.');
 
     setSavingFund(true);
     try {
       await recordManualFundDeposit({
-        invoice_no: siNo.trim(),
-        amount: value,
-        date: fundDate,
-        description: fundDescription,
-        created_by: user?.id ?? null,
-        payment_mode: paymentMode,
-        payment_mode_note:
-          [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null,
+        invoice_no:        siNo.trim(),
+        amount:            value,
+        date:              fundDate,
+        description:       fundDescription,
+        created_by:        user?.id ?? null,
+        payment_mode:      paymentMode,
+        payment_mode_note: [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null,
       });
-
       toast.success('Fund added successfully.');
       setFundModalOpen(false);
-      setFundAmount('');
-      setFundDescription('');
+      setFundAmount(''); setFundDescription(''); setSiNo('');
+      setPaymentMode(''); setPaymentReference(''); setPaymentNotes('');
       setFundDate(new Date().toISOString().split('T')[0]);
-      setSiNo('');
-      setPaymentMode('');
-      setPaymentReference('');
-      setPaymentNotes('');
       await fetchData(true);
     } catch (err) {
       console.error('[CoopMonitoringPage] add fund error:', err);
@@ -679,11 +975,10 @@ export default function CoopMonitoringPage() {
     }
   }
 
-  // ── Client-side filtering ─────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return transactions.filter(tx => {
       if (typeFilter && tx.type !== typeFilter) return false;
-      if (catFilter && tx.category !== catFilter) return false;
+      if (catFilter  && tx.category !== catFilter) return false;
       if (dateRange.from) {
         const txDate = new Date(tx.created_at);
         if (txDate < new Date(dateRange.from)) return false;
@@ -701,15 +996,14 @@ export default function CoopMonitoringPage() {
   const filteredPenalties = useMemo(() => {
     return penalties.filter(p => {
       if (dateRange.from && p.penalty_date < dateRange.from) return false;
-      if (dateRange.to && p.penalty_date > dateRange.to) return false;
+      if (dateRange.to   && p.penalty_date > dateRange.to)   return false;
       return true;
     });
   }, [penalties, dateRange]);
 
   const penaltyTotal = filteredPenalties.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-
-  const categories = [...new Set(transactions.map(tx => tx.category).filter(Boolean))];
-  const hasFilters = typeFilter || catFilter || dateRange.from || dateRange.to;
+  const categories   = [...new Set(transactions.map(tx => tx.category).filter(Boolean))];
+  const hasFilters   = typeFilter || catFilter || dateRange.from || dateRange.to;
 
   function handlePrint() { window.print(); }
 
@@ -717,12 +1011,12 @@ export default function CoopMonitoringPage() {
     try {
       if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
       const rows = filtered.map(tx => ({
-        date: tx.created_at ? formatDate(tx.created_at) : '',
-        category: CATEGORY_LABEL[tx.category] || tx.category || '',
+        date:        tx.created_at ? formatDate(tx.created_at) : '',
+        category:    CATEGORY_LABEL[tx.category] || tx.category || '',
         description: tx.description || '',
-        reference: tx.ref_no || '',
-        amount: tx.amount || 0,
-        flow: tx.type === 'cash_in' ? 'Cash In' : 'Cash Out',
+        reference:   tx.ref_no || '',
+        amount:      tx.amount || 0,
+        flow:        tx.type === 'cash_in' ? 'Cash In' : 'Cash Out',
       }));
       exportToCSV('coop_monitoring_transactions.csv', rows);
       toast.success('CSV exported successfully');
@@ -731,8 +1025,6 @@ export default function CoopMonitoringPage() {
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="p-6">
       <PageHeader
@@ -740,11 +1032,7 @@ export default function CoopMonitoringPage() {
         subtitle="Cooperative fund — cash inflow and outflow overview"
         action={
           <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              icon={<Plus size={14} />}
-              onClick={() => setFundModalOpen(true)}
-            >
+            <Button variant="primary" icon={<Plus size={14} />} onClick={() => setFundModalOpen(true)}>
               Add Fund
             </Button>
             <Button
@@ -763,7 +1051,7 @@ export default function CoopMonitoringPage() {
         <div className="flex justify-center py-24"><Spinner /></div>
       ) : (
         <>
-          {/* ── Stat Cards ─────────────────────────────────────────────────── */}
+          {/* ── Stat Cards ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 mb-6">
             <StatCard
               icon={<DollarSign size={22} className="text-emerald-600" />}
@@ -772,6 +1060,7 @@ export default function CoopMonitoringPage() {
               sub="Cash In minus Cash Out"
               bg="bg-emerald-50"
               textColor={fund.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}
+              accentColor={fund.balance >= 0 ? 'bg-emerald-400' : 'bg-red-400'}
             />
             <StatCard
               icon={<TrendingUp size={22} className="text-green-600" />}
@@ -780,6 +1069,7 @@ export default function CoopMonitoringPage() {
               sub="All paid invoices"
               bg="bg-green-50"
               textColor="text-green-700"
+              accentColor="bg-green-400"
             />
             <StatCard
               icon={<TrendingDown size={22} className="text-red-500" />}
@@ -788,6 +1078,7 @@ export default function CoopMonitoringPage() {
               sub="Approved vouchers"
               bg="bg-red-50"
               textColor="text-red-600"
+              accentColor="bg-red-400"
             />
             <StatCard
               icon={<AlertTriangle size={22} className="text-amber-500" />}
@@ -796,29 +1087,26 @@ export default function CoopMonitoringPage() {
               sub={`${filteredPenalties.length} penalt${filteredPenalties.length !== 1 ? 'ies' : 'y'} recorded`}
               bg="bg-amber-50"
               textColor="text-amber-600"
-              accent="border-amber-200"
+              accentColor="bg-amber-400"
+              border="border-amber-200"
             />
           </div>
 
-          {/* ── Dashboard Charts ───────────────────────────────────────────── */}
+          {/* ── Dashboard Charts ── */}
           <DashboardCharts
             transactions={transactions}
             penaltyTotal={penaltyTotal}
             penaltyCount={filteredPenalties.length}
           />
 
-          {/* ── Cash-In Breakdown ──────────────────────────────────────────── */}
+          {/* ── Cash-In Breakdown ── */}
           <CashInBreakdown transactions={transactions} />
 
-          {/* ── Penalty Income Table ───────────────────────────────────────── */}
-          <PenaltyIncomeTable
-            penalties={filteredPenalties}
-            loading={penaltiesLoading}
-          />
+          {/* ── Penalty Income Table ── */}
+          <PenaltyIncomeTable penalties={filteredPenalties} loading={penaltiesLoading} />
 
-          {/* ── Filters Row ────────────────────────────────────────────────── */}
+          {/* ── Filters Row ── */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            {/* Type filter */}
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value)}
@@ -829,7 +1117,6 @@ export default function CoopMonitoringPage() {
               <option value="cash_out">Cash Out</option>
             </select>
 
-            {/* Category filter */}
             <select
               value={catFilter}
               onChange={e => setCatFilter(e.target.value)}
@@ -841,14 +1128,8 @@ export default function CoopMonitoringPage() {
               ))}
             </select>
 
-            {/* Date Range Picker */}
-            <DateRangePicker
-              from={dateRange.from}
-              to={dateRange.to}
-              onChange={setDateRange}
-            />
+            <DateRangePicker from={dateRange.from} to={dateRange.to} onChange={setDateRange} />
 
-            {/* Clear all */}
             {hasFilters && (
               <button
                 onClick={() => { setTypeFilter(''); setCatFilter(''); setDateRange({ from: '', to: '' }); }}
@@ -862,15 +1143,13 @@ export default function CoopMonitoringPage() {
               onClick={handlePrint}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
-              <Printer size={14} />
-              Print
+              <Printer size={14} /> Print
             </button>
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
-              <Download size={14} />
-              Export CSV
+              <Download size={14} /> Export CSV
             </button>
 
             <p className="ml-auto self-center text-xs text-gray-400">
@@ -878,8 +1157,8 @@ export default function CoopMonitoringPage() {
             </p>
           </div>
 
-          {/* ── Transactions Table ─────────────────────────────────────────── */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {/* ── Transactions Table ── */}
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
               <LayoutDashboard size={15} className="text-gray-400" />
               <h3 className="text-sm font-semibold text-gray-700">All Fund Transactions</h3>
@@ -935,12 +1214,12 @@ export default function CoopMonitoringPage() {
                   <span className="font-medium text-gray-600">{transactions.length}</span> transactions
                 </p>
                 <div className="flex items-center gap-4 text-xs">
-                  <span className="text-green-700 font-medium">
+                  <span className="text-green-700 font-medium tabular-nums">
                     In: {formatCurrency(
                       filtered.filter(tx => tx.type === 'cash_in').reduce((s, tx) => s + tx.amount, 0)
                     )}
                   </span>
-                  <span className="text-red-600 font-medium">
+                  <span className="text-red-600 font-medium tabular-nums">
                     Out: {formatCurrency(
                       filtered.filter(tx => tx.type === 'cash_out').reduce((s, tx) => s + tx.amount, 0)
                     )}
@@ -952,43 +1231,28 @@ export default function CoopMonitoringPage() {
         </>
       )}
 
-      {/* ── Add Fund Modal ──────────────────────────────────────────────────── */}
-      <Modal
-        open={fundModalOpen}
-        onClose={() => setFundModalOpen(false)}
-        title="Add Fund"
-        size="sm"
-      >
+      {/* ── Add Fund Modal ── */}
+      <Modal open={fundModalOpen} onClose={() => setFundModalOpen(false)} title="Add Fund" size="sm">
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">SI#</label>
-            <input
-              type="text"
-              value={siNo}
-              onChange={e => setSiNo(e.target.value)}
-              placeholder="Enter SI#"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-            <input
-              type="number" step="0.01" min="0"
-              value={fundAmount}
-              onChange={e => setFundAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-            <input
-              type="date"
-              value={fundDate}
-              onChange={e => setFundDate(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-            />
-          </div>
+          {[
+            { label: 'SI#', value: siNo, set: setSiNo, placeholder: 'Enter SI#', type: 'text' },
+            { label: 'Amount', value: fundAmount, set: setFundAmount, placeholder: '0.00', type: 'number' },
+            { label: 'Date', value: fundDate, set: setFundDate, placeholder: '', type: 'date' },
+          ].map(({ label, value, set, placeholder, type }) => (
+            <div key={label}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+              <input
+                type={type}
+                step={type === 'number' ? '0.01' : undefined}
+                min={type === 'number' ? '0' : undefined}
+                value={value}
+                onChange={e => set(e.target.value)}
+                placeholder={placeholder}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+              />
+            </div>
+          ))}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
             <select
@@ -1001,6 +1265,7 @@ export default function CoopMonitoringPage() {
               ))}
             </select>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Reference / Account / Check No.
@@ -1013,6 +1278,7 @@ export default function CoopMonitoringPage() {
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
             />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes</label>
             <textarea
@@ -1023,6 +1289,7 @@ export default function CoopMonitoringPage() {
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
             />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <input
@@ -1036,9 +1303,7 @@ export default function CoopMonitoringPage() {
         </div>
 
         <div className="flex justify-end gap-3 mt-5">
-          <Button variant="outline" onClick={() => setFundModalOpen(false)}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={() => setFundModalOpen(false)}>Cancel</Button>
           <Button loading={savingFund} onClick={handleAddFund} icon={<Plus size={14} />}>
             Add Fund
           </Button>
