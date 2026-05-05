@@ -23,7 +23,7 @@ const MEMBER_COLUMNS = [
   'beneficiary_name',
   'beneficiary_address',
   'beneficiary_tel',
-+];
+];
 
 function sanitizeMemberPayload(payload) {
   return Object.fromEntries(
