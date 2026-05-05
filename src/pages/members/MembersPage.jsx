@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  Upload,
   Eye,
   Search,
   UserPlus,
@@ -29,6 +30,8 @@ import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import AddMemberModal from '../../components/members/AddMemberModal';
+import ImportMembersModal from '../../components/members/ImportMembersModal';
+import ImportFinancialModal from '../../components/members/ImportFinancialModal';
 import { getMembers, deleteMember, updateMember } from '../../services/memberService';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
@@ -200,6 +203,8 @@ export default function MembersPage() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmBulkStatus, setConfirmBulkStatus] = useState(null);  // 'active' | 'inactive'
   const [addMemberOpen, setAddMemberOpen]         = useState(false);
+  const [importOpen, setImportOpen]               = useState(false);
+  const [importFinancialOpen, setImportFinancialOpen] = useState(false);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -451,9 +456,17 @@ export default function MembersPage() {
           title="Members"
           subtitle="Manage cooperative members and their financial accounts"
           action={
-            <Button onClick={() => setAddMemberOpen(true)} icon={<UserPlus size={16} />}>
-              Add Member
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setImportFinancialOpen(true)} icon={<Upload size={16} />}>
+                Import Financial
+              </Button>
+              <Button variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={16} />}>
+                Import Members
+              </Button>
+              <Button onClick={() => setAddMemberOpen(true)} icon={<UserPlus size={16} />}>
+                Add Member
+              </Button>
+            </div>
           }
         />
       </div>
@@ -865,6 +878,22 @@ export default function MembersPage() {
         onClose={() => setAddMemberOpen(false)}
         onCreated={() => { setAddMemberOpen(false); fetchMembers(); }}
       />
+
+      {/* ── Import Members Modal ── */}
+      {importOpen && (
+        <ImportMembersModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => { fetchMembers(); }}
+        />
+      )}
+
+      {/* ── Import Financial Modal ── */}
+      {importFinancialOpen && (
+        <ImportFinancialModal
+          onClose={() => setImportFinancialOpen(false)}
+          onImported={() => { fetchMembers(); }}
+        />
+      )}
     </div>
   );
 }
