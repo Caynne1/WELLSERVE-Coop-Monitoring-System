@@ -98,6 +98,7 @@ export async function createMembership({
   fee_required,
   fee_paid_now = 0,
   notes,
+  payment_notes,          // JSON breakdown for the initial payment record, e.g. {entry,cbu,savings}
   created_by,
   is_historical = false,  // true → mark fully paid, skip payment record (old member import)
 }) {
@@ -147,7 +148,7 @@ export async function createMembership({
         member_id,
         amount: safePaid,
         payment_date: new Date().toISOString().split('T')[0],
-        notes: 'Initial payment at onboarding',
+        notes: payment_notes || 'Initial payment at onboarding',
         created_by,
       },
       PAYMENT_COLUMNS

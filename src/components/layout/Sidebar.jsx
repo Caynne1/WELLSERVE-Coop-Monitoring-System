@@ -31,12 +31,12 @@ const navGroups = [
     ],
   },
   {
-    label: 'Financial',
+    label: 'Products',
     items: [
       { to: '/loans', icon: CreditCard, label: 'Loans', permKey: 'loans' },
       { to: '/cbu', icon: PiggyBank, label: 'CBU', permKey: 'cbu' },
       { to: '/savings', icon: Wallet, label: 'Savings', permKey: 'savings' },
-      { to: '/time-deposit', icon: Landmark, label: 'Time Deposit' },
+      { to: '/time-deposit', icon: Landmark, label: 'Time Deposit', permKey: 'time_deposit' },
     ],
   },
   {
@@ -47,7 +47,7 @@ const navGroups = [
       { to: '/invoices', icon: Receipt, label: 'Invoices', permKey: 'invoices' },
       { to: '/vouchers', icon: FileText, label: 'Vouchers', permKey: 'vouchers' },
       { to: '/expenses', icon: TrendingUp, label: 'Expenses', permKey: 'expenses' },
-      { to: '/coop-monitoring', icon: LayoutDashboard, label: 'Account Monitoring' },
+      { to: '/coop-monitoring', icon: LayoutDashboard, label: 'Account Monitoring', permKey: 'account_monitoring' },
     ],
   },
   {

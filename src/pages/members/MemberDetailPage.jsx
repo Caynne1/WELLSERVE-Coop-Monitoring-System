@@ -4,7 +4,7 @@ import {
   ArrowLeft, User, CreditCard, PiggyBank, Wallet, ArrowLeftRight,
   Edit, Phone, Mail, MapPin, Calendar, Hash, Plus, TrendingUp,
   TrendingDown, Clock, AlertCircle, DollarSign, Shield, Download, BadgeAlert,
-  Printer,
+  Printer, Upload,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -12,6 +12,8 @@ import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
+import LoanImportModal from '../../components/shared/LoanImportModal';
+import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
 import { useAuth } from '../../context/AuthContext';
 
 import { getMemberById, initializeMemberAccounts } from '../../services/memberService';
@@ -482,9 +484,12 @@ export default function MemberDetailPage() {
               loanTransactions={loanTransactions}
               paymentCount={loanPaymentCount}
               memberId={id}
+              memberName={memberFullName}
+              userId={user?.id}
               navigate={navigate}
               onPayLoan={loan => setPayModal({ open: true, loan })}
               paymentHistoryRows={paymentHistoryRows}
+              onRefresh={refreshEverything}
             />
           )}
 
@@ -520,6 +525,7 @@ export default function MemberDetailPage() {
               cbuAccount={cbuAccount}
               savingsAccount={savingsAccount}
               onRefresh={refreshEverything}
+              memberRecordType={member?.record_type}
             />
           )}
 
@@ -1331,17 +1337,57 @@ const MEMBERSHIP_TYPE_OPTS = [
   { value: 'regular', label: 'Regular' },
 ];
 
-const MEMBERSHIP_FEES = {
-  associate: { entry: 300, cbu: 1000, savings: 500, total: 1800 },
-  regular:   { entry: 1800, cbu: 4000, savings: 1000, total: 6800 },
+// Maps per-item breakdown keys to their transaction category
+const NEW_ITEM_CATEGORIES = {
+  membership_fee:  'membership',
+  vip_card:        'membership',
+  cbu:             'cbu',
+  cbu_assoc:       'cbu',
+  admin_fees:      'membership',
+  savings_deposit: 'savings',
+  min_cbu:         'cbu',
 };
 
-function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, cbuAccount, savingsAccount, onRefresh }) {
+const MEMBERSHIP_FEES = {
+  // Old members — historical fee structure (2023–2025)
+  associate: {
+    entry: 300, cbu: 1000, savings: 500, total: 1800,
+    rows: [['Membership Entry', 300, 'entry'], ['Initial CBU', 1000, 'cbu'], ['Initial Savings', 500, 'savings']],
+  },
+  regular: {
+    entry: 1800, cbu: 4000, savings: 1000, total: 6800,
+    rows: [['Membership Entry', 1800, 'entry'], ['Initial CBU', 4000, 'cbu'], ['Initial Savings', 1000, 'savings']],
+  },
+  // New members — current fee structure (2026+); rows use exact item keys from NEW_MEMBER_BREAKDOWN
+  // entry/cbu/savings = aggregated category totals (used by Record Payment modal placeholders)
+  new_associate: {
+    entry: 400, cbu: 500, savings: 0, total: 900,
+    rows: [
+      ['Membership Fee',   100, 'membership_fee'],
+      ['WELLife VIP Card', 300, 'vip_card'],
+      ['Initial CBU',      500, 'cbu'],
+    ],
+  },
+  new_regular: {
+    entry: 1400, cbu: 4000, savings: 500, total: 5900,
+    rows: [
+      ['Membership Fee',          100,  'membership_fee'],
+      ['WELLife VIP Card',        300,  'vip_card'],
+      ['Initial CBU',             500,  'cbu_assoc'],
+      ['Admin & Regulatory Fees', 1000, 'admin_fees'],
+      ['Initial Savings Deposit', 500,  'savings_deposit'],
+      ['Minimum CBU',             3500, 'min_cbu'],
+    ],
+  },
+};
+
+function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, cbuAccount, savingsAccount, onRefresh, memberRecordType }) {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupType, setSetupType] = useState('associate');
   const [setupSaving, setSetupSaving] = useState(false);
 
   const [payOpen, setPayOpen] = useState(false);
+  const [payTotalAmount, setPayTotalAmount] = useState('');
   const [payEntry, setPayEntry] = useState('');
   const [payCbu, setPayCbu] = useState('');
   const [paySavings, setPaySavings] = useState('');
@@ -1356,8 +1402,13 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   const [upgradeNotes, setUpgradeNotes] = useState('');
   const [upgrading, setUpgrading] = useState(false);
 
+  const isNewMember = memberRecordType === 'new_member';
+
   // Hooks must run before any early return
-  const membershipFees = MEMBERSHIP_FEES[membership?.membership_type] || null;
+  const feeKey = memberRecordType === 'new_member'
+    ? `new_${membership?.membership_type}`   // 'new_associate' | 'new_regular'
+    : (membership?.membership_type ?? '');   // 'associate' | 'regular'
+  const membershipFees = MEMBERSHIP_FEES[feeKey] || null;
   const storedFeeRequired = parseFloat(membership?.fee_required) || 0;
   const feePaid = parseFloat(membership?.fee_paid) || 0;
   const effectiveFeeRequired = membershipFees
@@ -1367,32 +1418,75 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   const isFullyPaid = membership != null && feeBalance <= 0;
   const setupFees = MEMBERSHIP_FEES[setupType] || MEMBERSHIP_FEES.associate;
 
-  // Parse per-component totals from JSON stored in payment notes
+  // Parse per-component totals from JSON stored in payment notes.
+  // Old format:  { entry, cbu, savings }          — discriminated by presence of 'entry' key
+  // New format:  { membership_fee, vip_card, cbu, ... } — all other object shapes
+  //
+  // IMPORTANT: 'cbu' and 'savings' also appear in new-format payloads, so they cannot
+  // be used as discriminators.  'entry' is exclusively an old-format key.
   const perComponentTotals = useMemo(() => {
     return (payments || []).reduce((acc, p) => {
       try {
         const data = JSON.parse(p.notes || '{}');
-        if (typeof data === 'object' && ('entry' in data || 'cbu' in data || 'savings' in data)) {
-          acc.entry += Number(data.entry || 0);
-          acc.cbu += Number(data.cbu || 0);
-          acc.savings += Number(data.savings || 0);
+        if (typeof data !== 'object' || data === null) return acc;
+        if ('entry' in data) {
+          // Old format — aggregate into known keys
+          acc.entry   = (acc.entry   || 0) + Number(data.entry   || 0);
+          acc.cbu     = (acc.cbu     || 0) + Number(data.cbu     || 0);
+          acc.savings = (acc.savings || 0) + Number(data.savings || 0);
+        } else {
+          // New per-item format — accumulate each item key directly
+          Object.entries(data).forEach(([key, val]) => {
+            if (key !== 'text') acc[key] = (acc[key] || 0) + Number(val || 0);
+          });
         }
-      } catch { /* old-format plain text notes */ }
+      } catch { /* plain text notes — skip */ }
       return acc;
-    }, { entry: 0, cbu: 0, savings: 0 });
+    }, {});
   }, [payments]);
+
+  // Sequential allocation of payTotalAmount across fee items for new members
+  const allocationPreview = useMemo(() => {
+    if (!isNewMember || !membershipFees?.rows) return [];
+    const amount = parseFloat(payTotalAmount) || 0;
+    if (amount <= 0) return [];
+    let remaining = amount;
+    return membershipFees.rows.map(([label, itemAmount, key]) => {
+      const alreadyPaid = perComponentTotals[key] || 0;
+      const itemRemaining = Math.max(0, itemAmount - alreadyPaid);
+      const allocate = Math.min(remaining, itemRemaining);
+      if (allocate > 0) remaining -= allocate;
+      return { key, label, itemAmount, alreadyPaid, allocate };
+    });
+  }, [isNewMember, membershipFees, payTotalAmount, perComponentTotals]);
+
+  const ITEM_LABELS = {
+    membership_fee:  'Membership Fee',
+    vip_card:        'WELLife VIP Card',
+    cbu:             'Initial CBU',
+    cbu_assoc:       'Initial CBU',
+    admin_fees:      'Admin & Reg. Fees',
+    savings_deposit: 'Savings Deposit',
+    min_cbu:         'Minimum CBU',
+  };
 
   function parsePaymentNotes(notes) {
     try {
       const data = JSON.parse(notes || '{}');
-      if (typeof data === 'object' && ('entry' in data || 'cbu' in data || 'savings' in data)) {
+      if (typeof data !== 'object' || data === null) return notes || '—';
+      if ('entry' in data) {
+        // Old format — discriminated by 'entry' key only
         const parts = [];
-        if (data.entry > 0) parts.push(`Entry ₱${Number(data.entry).toLocaleString()}`);
-        if (data.cbu > 0) parts.push(`CBU ₱${Number(data.cbu).toLocaleString()}`);
+        if (data.entry   > 0) parts.push(`Entry ₱${Number(data.entry).toLocaleString()}`);
+        if (data.cbu     > 0) parts.push(`CBU ₱${Number(data.cbu).toLocaleString()}`);
         if (data.savings > 0) parts.push(`Savings ₱${Number(data.savings).toLocaleString()}`);
         return [parts.join(' · '), data.text].filter(Boolean).join(' | ') || '—';
       }
-      return notes || '—';
+      // New per-item format
+      const parts = Object.entries(data)
+        .filter(([key, val]) => key !== 'text' && Number(val) > 0)
+        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ')}: ₱${Number(val).toLocaleString()}`);
+      return [parts.join(' · '), data.text].filter(Boolean).join(' | ') || '—';
     } catch {
       return notes || '—';
     }
@@ -1427,43 +1521,108 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
   async function handlePayment() {
     if (!userId) return toast.error('User not authenticated');
-
-    const entry = parseFloat(payEntry) || 0;
-    const cbu = parseFloat(payCbu) || 0;
-    const savings = parseFloat(paySavings) || 0;
-    const total = entry + cbu + savings;
-
-    if (total <= 0) return toast.error('Enter at least one amount greater than zero.');
     if (!payDate) return toast.error('Payment date is required.');
     if (!payMode) return toast.error('Mode of payment is required.');
     if (isFullyPaid) return toast.error('Membership fee is already fully paid.');
 
+    let total, breakdownNote, membershipAmt, cbuAmt, savingsAmt, parts;
+    let membershipItems = [], cbuParts = [], savingsParts = [];
+
+    if (isNewMember && membershipFees?.rows) {
+      // ── New member: auto-allocate total across items in order ──────────────
+      const amount = parseFloat(payTotalAmount) || 0;
+      if (amount <= 0) return toast.error('Enter an amount greater than zero.');
+
+      let remaining = amount;
+      const allocation = {};
+      for (const [, itemAmount, key] of membershipFees.rows) {
+        if (remaining <= 0) break;
+        const alreadyPaid = perComponentTotals[key] || 0;
+        const itemRemaining = Math.max(0, itemAmount - alreadyPaid);
+        const allocate = Math.min(remaining, itemRemaining);
+        if (allocate > 0) {
+          allocation[key] = allocate;
+          remaining -= allocate;
+        }
+      }
+
+      if (Object.keys(allocation).length === 0) {
+        return toast.error('No remaining balance to pay for any item.');
+      }
+
+      total = Object.values(allocation).reduce((s, v) => s + v, 0);
+      breakdownNote = JSON.stringify({
+        ...allocation,
+        ...(payNotes.trim() ? { text: payNotes.trim() } : {}),
+      });
+
+      membershipAmt = Object.entries(allocation)
+        .filter(([k]) => NEW_ITEM_CATEGORIES[k] === 'membership')
+        .reduce((s, [, v]) => s + v, 0);
+      cbuAmt = Object.entries(allocation)
+        .filter(([k]) => NEW_ITEM_CATEGORIES[k] === 'cbu')
+        .reduce((s, [, v]) => s + v, 0);
+      savingsAmt = Object.entries(allocation)
+        .filter(([k]) => NEW_ITEM_CATEGORIES[k] === 'savings')
+        .reduce((s, [, v]) => s + v, 0);
+
+      // Per-category breakdown labels used for transaction notes
+      membershipItems = Object.entries(allocation)
+        .filter(([k]) => NEW_ITEM_CATEGORIES[k] === 'membership')
+        .map(([k, v]) => ({ amount: v, label: ITEM_LABELS[k] || k }));
+      cbuParts = Object.entries(allocation)
+        .filter(([k]) => NEW_ITEM_CATEGORIES[k] === 'cbu')
+        .map(([k, v]) => `${ITEM_LABELS[k] || k}: ${formatCurrency(v)}`);
+      savingsParts = Object.entries(allocation)
+        .filter(([k]) => NEW_ITEM_CATEGORIES[k] === 'savings')
+        .map(([k, v]) => `${ITEM_LABELS[k] || k}: ${formatCurrency(v)}`);
+
+      parts = Object.entries(allocation)
+        .map(([k, v]) => `${ITEM_LABELS[k] || k}: ${formatCurrency(v)}`);
+    } else {
+      // ── Old member: manual entry / cbu / savings inputs ───────────────────
+      const entry = parseFloat(payEntry) || 0;
+      const cbu = parseFloat(payCbu) || 0;
+      const savings = parseFloat(paySavings) || 0;
+      total = entry + cbu + savings;
+      if (total <= 0) return toast.error('Enter at least one amount greater than zero.');
+
+      membershipAmt = entry;
+      cbuAmt = cbu;
+      savingsAmt = savings;
+      // Per-category breakdown labels used for transaction notes
+      if (entry > 0) membershipItems = [{ amount: entry, label: 'Membership Entry' }];
+      if (cbu > 0) cbuParts = [`CBU: ${formatCurrency(cbu)}`];
+      if (savings > 0) savingsParts = [`Savings: ${formatCurrency(savings)}`];
+      breakdownNote = JSON.stringify({
+        entry, cbu, savings,
+        ...(payNotes.trim() ? { text: payNotes.trim() } : {}),
+      });
+      parts = [];
+      if (entry > 0) parts.push(`Entry ${formatCurrency(entry)}`);
+      if (cbu > 0) parts.push(`CBU ${formatCurrency(cbu)}`);
+      if (savings > 0) parts.push(`Savings ${formatCurrency(savings)}`);
+    }
+
     setPaySaving(true);
     try {
-      // Fix legacy records where fee_required was stored as entry-only (e.g. ₱300 instead of ₱1,800)
+      // Fix legacy records where fee_required was stored below the package total
       if (storedFeeRequired < effectiveFeeRequired) {
         await patchMembershipFeeRequired(membership.id, effectiveFeeRequired);
       }
-
-      // Store breakdown as JSON in notes so per-component balance can be shown
-      const breakdownNote = JSON.stringify({
-        entry,
-        cbu,
-        savings,
-        ...(payNotes.trim() ? { text: payNotes.trim() } : {}),
-      });
 
       await recordMembershipPayment(membership.id, memberId, total, payDate, breakdownNote, userId);
 
       const payModeNote = [payReference.trim(), payNotes.trim()].filter(Boolean).join(' | ') || null;
 
-      if (entry > 0) {
+      // Create one transaction per membership fee item so each is individually monitored
+      for (const item of membershipItems) {
         await createTransaction({
           member_id: memberId,
           category: 'membership',
           type: 'membership_payment',
-          amount: entry,
-          notes: `Membership Entry${payNotes ? ' — ' + payNotes : ''}`,
+          amount: item.amount,
+          notes: [item.label, payNotes.trim()].filter(Boolean).join(' — '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -1471,15 +1630,15 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         });
       }
 
-      if (cbu > 0 && cbuAccount) {
+      if (cbuAmt > 0 && cbuAccount) {
         await createTransaction({
           member_id: memberId,
           account_id: cbuAccount.id,
           category: 'cbu',
           type: 'deposit',
-          amount: cbu,
+          amount: cbuAmt,
           reference: cbuAccount.account_no || null,
-          notes: `Initial CBU (Membership)${payNotes ? ' — ' + payNotes : ''}`,
+          notes: [cbuParts.join(' · ') || 'Initial CBU (Membership)', payNotes.trim()].filter(Boolean).join(' — '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -1487,15 +1646,15 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         });
       }
 
-      if (savings > 0 && savingsAccount) {
+      if (savingsAmt > 0 && savingsAccount) {
         await createTransaction({
           member_id: memberId,
           account_id: savingsAccount.id,
           category: 'savings',
           type: 'deposit',
-          amount: savings,
+          amount: savingsAmt,
           reference: savingsAccount.account_no || null,
-          notes: `Initial Savings (Membership)${payNotes ? ' — ' + payNotes : ''}`,
+          notes: [savingsParts.join(' · ') || 'Initial Savings (Membership)', payNotes.trim()].filter(Boolean).join(' — '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -1504,10 +1663,6 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
       }
 
       if (paySiNo.trim()) {
-        const breakdown = [];
-        if (entry > 0) breakdown.push(`Entry: ${formatCurrency(entry)}`);
-        if (cbu > 0) breakdown.push(`CBU: ${formatCurrency(cbu)}`);
-        if (savings > 0) breakdown.push(`Savings: ${formatCurrency(savings)}`);
         await createInvoiceStrict(
           {
             invoice_no: paySiNo.trim(),
@@ -1515,20 +1670,15 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             member_id: memberId,
             member_name: memberName || 'Member',
             amount: total,
-            purpose: breakdown.length > 1 ? 'Membership Payment' : (breakdown[0] || 'Membership Payment'),
+            purpose: parts.length > 1 ? 'Membership Payment' : (parts[0] || 'Membership Payment'),
             ref_id: membership.id,
             date: payDate,
-            notes: [...breakdown, payNotes.trim()].filter(Boolean).join(' | '),
+            notes: [...parts, payNotes.trim()].filter(Boolean).join(' | '),
             created_by: userId,
           },
           'Membership payment'
         );
       }
-
-      const parts = [];
-      if (entry > 0) parts.push(`Entry ${formatCurrency(entry)}`);
-      if (cbu > 0) parts.push(`CBU ${formatCurrency(cbu)}`);
-      if (savings > 0) parts.push(`Savings ${formatCurrency(savings)}`);
 
       trackActivity({
         userId,
@@ -1539,6 +1689,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
       toast.success('Membership payment recorded.');
       setPayOpen(false);
+      setPayTotalAmount('');
       setPayEntry('');
       setPayCbu('');
       setPaySavings('');
@@ -1705,11 +1856,12 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             Payment Breakdown — {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
           </p>
           <div className="divide-y divide-gray-50">
-            {[
-              ['Membership Entry', membershipFees.entry, perComponentTotals.entry],
-              ['Initial CBU',      membershipFees.cbu,   perComponentTotals.cbu],
-              ['Initial Savings',  membershipFees.savings, perComponentTotals.savings],
-            ].map(([label, target, paid]) => {
+            {(membershipFees.rows || [
+              ['Membership Entry', membershipFees.entry,   'entry'],
+              ['Initial CBU',      membershipFees.cbu,     'cbu'],
+              ['Initial Savings',  membershipFees.savings, 'savings'],
+            ]).map(([label, target, componentKey]) => {
+              const paid = perComponentTotals[componentKey] ?? 0;
               const remaining = Math.max(0, target - paid);
               const pct = target > 0 ? Math.min(100, (paid / target) * 100) : 0;
               return (
@@ -1842,44 +1994,85 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5">
           <p className="text-xs text-amber-700">
             Outstanding: <span className="font-bold">{formatCurrency(feeBalance)}</span>
-            {membershipFees && (
+            {membershipFees?.rows && (
               <span className="text-amber-600 ml-2">
-                (Entry ₱{membershipFees.entry.toLocaleString()} · CBU ₱{membershipFees.cbu.toLocaleString()} · Savings ₱{membershipFees.savings.toLocaleString()})
+                ({membershipFees.rows.map(([label, amount]) => `${label} ₱${amount.toLocaleString()}`).join(' · ')})
               </span>
             )}
           </p>
         </div>
         <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Membership Entry <span className="text-gray-400">(optional)</span>
-            </label>
-            <input type="number" step="0.01" min="0"
-              placeholder={membershipFees ? `e.g. ₱${membershipFees.entry.toLocaleString()}` : '0.00'}
-              value={payEntry} onChange={e => setPayEntry(e.target.value)} className={fieldClass} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              CBU <span className="text-gray-400">(optional)</span>
-            </label>
-            <input type="number" step="0.01" min="0"
-              placeholder={membershipFees ? `e.g. ₱${membershipFees.cbu.toLocaleString()}` : '0.00'}
-              value={payCbu} onChange={e => setPayCbu(e.target.value)} className={fieldClass} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Savings <span className="text-gray-400">(optional)</span>
-            </label>
-            <input type="number" step="0.01" min="0"
-              placeholder={membershipFees ? `e.g. ₱${membershipFees.savings.toLocaleString()}` : '0.00'}
-              value={paySavings} onChange={e => setPaySavings(e.target.value)} className={fieldClass} />
-          </div>
-          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 flex justify-between text-sm">
-            <span className="text-gray-500">Total</span>
-            <span className="font-semibold text-gray-800">
-              {formatCurrency((parseFloat(payEntry) || 0) + (parseFloat(payCbu) || 0) + (parseFloat(paySavings) || 0))}
-            </span>
-          </div>
+          {isNewMember && membershipFees?.rows ? (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Payment Amount <span className="text-red-400">*</span>
+                </label>
+                <input type="number" step="0.01" min="0" placeholder="0.00"
+                  value={payTotalAmount} onChange={e => setPayTotalAmount(e.target.value)} className={fieldClass} />
+                {allocationPreview.length > 0 && (
+                  <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 space-y-1">
+                    <p className="text-xs font-semibold text-blue-700 mb-1.5">Allocation Preview</p>
+                    {allocationPreview.map(({ key, label, itemAmount, alreadyPaid, allocate }) => {
+                      const isComplete = alreadyPaid >= itemAmount;
+                      return (
+                        <div key={key} className="flex justify-between text-xs">
+                          <span className="text-gray-600">
+                            {label}
+                            <span className="text-gray-400 ml-1">(₱{itemAmount.toLocaleString()})</span>
+                          </span>
+                          <span className={
+                            isComplete ? 'text-green-600 font-medium'
+                            : allocate > 0 ? 'text-blue-700 font-semibold'
+                            : 'text-gray-400'
+                          }>
+                            {isComplete ? '✓ Fully paid' : allocate > 0 ? `+${formatCurrency(allocate)}` : '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 flex justify-between text-sm">
+                <span className="text-gray-500">Total</span>
+                <span className="font-semibold text-gray-800">{formatCurrency(parseFloat(payTotalAmount) || 0)}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Membership Entry <span className="text-gray-400">(optional)</span>
+                </label>
+                <input type="number" step="0.01" min="0"
+                  placeholder={membershipFees ? `e.g. ₱${membershipFees.entry.toLocaleString()}` : '0.00'}
+                  value={payEntry} onChange={e => setPayEntry(e.target.value)} className={fieldClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  CBU <span className="text-gray-400">(optional)</span>
+                </label>
+                <input type="number" step="0.01" min="0"
+                  placeholder={membershipFees ? `e.g. ₱${membershipFees.cbu.toLocaleString()}` : '0.00'}
+                  value={payCbu} onChange={e => setPayCbu(e.target.value)} className={fieldClass} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Savings <span className="text-gray-400">(optional)</span>
+                </label>
+                <input type="number" step="0.01" min="0"
+                  placeholder={membershipFees ? `e.g. ₱${membershipFees.savings.toLocaleString()}` : '0.00'}
+                  value={paySavings} onChange={e => setPaySavings(e.target.value)} className={fieldClass} />
+              </div>
+              <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 flex justify-between text-sm">
+                <span className="text-gray-500">Total</span>
+                <span className="font-semibold text-gray-800">
+                  {formatCurrency((parseFloat(payEntry) || 0) + (parseFloat(payCbu) || 0) + (parseFloat(paySavings) || 0))}
+                </span>
+              </div>
+            </>
+          )}
           <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={fieldClass} />
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -2538,7 +2731,9 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
   );
 }
 
-function LoanTab({ loans, loanTransactions, paymentCount, memberId, navigate, onPayLoan, paymentHistoryRows }) {
+function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, userId, navigate, onPayLoan, paymentHistoryRows, onRefresh }) {
+  const [importOpen, setImportOpen] = useState(false);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -2546,9 +2741,14 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, navigate, on
           <h3 className="text-sm font-semibold text-gray-700">Loan Records</h3>
           <p className="text-xs text-gray-400 mt-1">Loan payment count: {paymentCount}</p>
         </div>
-        <Button size="sm" variant="green" onClick={() => navigate(`/loans/new?member=${memberId}`)} icon={<Plus size={14} />}>
-          Add Loan
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={14} />}>
+            Import Excel
+          </Button>
+          <Button size="sm" variant="green" onClick={() => navigate(`/loans/new?member=${memberId}`)} icon={<Plus size={14} />}>
+            Add Loan
+          </Button>
+        </div>
       </div>
 
       {loans.length === 0 ? (
@@ -2573,11 +2773,21 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, navigate, on
           <LoanPaymentHistoryTable rows={paymentHistoryRows} />
         </div>
       )}
+
+      <LoanImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        memberId={memberId}
+        memberName={memberName}
+        userId={userId}
+        onImported={onRefresh}
+      />
     </div>
   );
 }
 
 function LoanCard({ loan, navigate, onPay, paymentCount }) {
+  const [showSchedule, setShowSchedule] = useState(false);
   const statusColors = {
     active: 'text-blue-700 bg-blue-50 border-blue-200',
     paid: 'text-green-700 bg-green-50 border-green-200',
@@ -2597,50 +2807,78 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
     0;
 
   return (
-    <div
-      className="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:border-gray-200 bg-gray-50/50 cursor-pointer transition-colors"
-      onClick={() => navigate(`/loans/${loan.id}`)}
-    >
-      <div>
-        <p className="text-sm font-medium text-gray-800">{formatCurrency(loan.amount || 0)}</p>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Released: {loan.release_date ? formatDate(loan.release_date) : '—'}
-        </p>
-        <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
-
-        <p className="text-xs text-blue-600 mt-1 font-medium">
-          Scheduled: {formatCurrency(scheduledPayment)} / {frequencyLabel(loan.repayment_frequency)}
-        </p>
-
-        {nextDue && (
-          <p className="text-xs text-orange-600 mt-0.5">
-            Next Due: {formatDate(nextDue.due_date)} · {formatCurrency(nextDue.remaining_due || nextDue.total_due || nextDue.payment || 0)}
+    <div className="rounded-xl border border-gray-100 bg-gray-50/50 overflow-hidden">
+      {/* Loan header row */}
+      <div
+        className="flex items-center justify-between p-4 hover:bg-gray-100/50 cursor-pointer transition-colors"
+        onClick={() => navigate(`/loans/${loan.id}`)}
+      >
+        <div>
+          <p className="text-sm font-medium text-gray-800">{formatCurrency(loan.amount || 0)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Released: {loan.release_date ? formatDate(loan.release_date) : '—'}
           </p>
-        )}
+          <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
+
+          <p className="text-xs text-blue-600 mt-1 font-medium">
+            Scheduled: {formatCurrency(scheduledPayment)} / {frequencyLabel(loan.repayment_frequency)}
+          </p>
+
+          {nextDue && (
+            <p className="text-xs text-orange-600 mt-0.5">
+              Next Due: {formatDate(nextDue.due_date)} · {formatCurrency(nextDue.remaining_due || nextDue.total_due || nextDue.payment || 0)}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Balance</p>
+            <p className="text-sm font-semibold text-gray-800">{formatCurrency(loan.balance ?? 0)}</p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-full border font-medium ${statusColors[loan.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
+            {loan.status || 'pending'}
+          </span>
+          {loan.status === 'active' && (
+            <Button
+              size="sm"
+              variant="finance"
+              onClick={e => {
+                e.stopPropagation();
+                onPay(loan);
+              }}
+              icon={<DollarSign size={13} />}
+            >
+              Pay
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="text-right">
-          <p className="text-xs text-gray-400">Balance</p>
-          <p className="text-sm font-semibold text-gray-800">{formatCurrency(loan.balance ?? 0)}</p>
-        </div>
-        <span className={`text-xs px-2 py-1 rounded-full border font-medium ${statusColors[loan.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
-          {loan.status || 'pending'}
-        </span>
-        {loan.status === 'active' && (
-          <Button
-            size="sm"
-            variant="finance"
-            onClick={e => {
-              e.stopPropagation();
-              onPay(loan);
-            }}
-            icon={<DollarSign size={13} />}
+      {/* Toggle schedule button */}
+      {schedule.length > 0 && (
+        <>
+          <button
+            onClick={e => { e.stopPropagation(); setShowSchedule(v => !v); }}
+            className="w-full px-4 py-2 text-xs font-medium text-[#07A04E] hover:bg-emerald-50 border-t border-gray-100 flex items-center justify-center gap-1 transition-colors"
           >
-            Pay
-          </Button>
-        )}
-      </div>
+            {showSchedule ? 'Hide' : 'View'} Amortization Schedule ({schedule.filter(r => r.paid).length}/{schedule.length} paid)
+          </button>
+
+          {showSchedule && (
+            <div className="border-t border-gray-100">
+              <LoanScheduleTable
+                schedule={schedule}
+                frequency={loan.repayment_frequency || 'monthly'}
+                compact={true}
+                defaultOpen={true}
+                showPaymentTracking={true}
+                title=""
+              />
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -2778,9 +3016,11 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw
 
 function TransactionsTab({ transactions }) {
   const typeStyles = {
-    deposit: { icon: TrendingUp, color: 'text-green-600' },
-    withdrawal: { icon: TrendingDown, color: 'text-red-600' },
-    loan_payment: { icon: TrendingDown, color: 'text-orange-600' },
+    deposit:            { icon: TrendingUp,   color: 'text-green-600'  },
+    withdrawal:         { icon: TrendingDown, color: 'text-red-600'    },
+    loan_payment:       { icon: TrendingDown, color: 'text-orange-600' },
+    loan_release:       { icon: TrendingUp,   color: 'text-blue-600'   },
+    membership_payment: { icon: TrendingDown, color: 'text-purple-600' },
   };
 
   return (
@@ -2801,7 +3041,7 @@ function TransactionsTab({ transactions }) {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-800 capitalize">
-                      {tx.type?.replace('_', ' ') || 'Transaction'}
+                      {tx.type?.replace(/_/g, ' ') || 'Transaction'}
                     </p>
                     <p className="text-xs text-gray-400">
                       {tx.category && <span className="capitalize mr-1">{tx.category} ·</span>}

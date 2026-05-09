@@ -1,4 +1,15 @@
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+
+// Isolated client for user creation — never touches the admin's session.
+// Uses the same public anon key but a separate auth state.
+function createIsolatedClient() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+}
 
 // ── Read ──────────────────────────────────────────────────────
 
@@ -31,10 +42,8 @@ export async function getProfileById(userId) {
 
 /**
  * Create a new system account:
- *   1. Save current admin session
- *   2. signUp the new user in auth
- *   3. Restore admin session
- *   4. Insert matching row into profiles
+ *   1. Use an isolated Supabase client for signUp (admin session untouched)
+ *   2. Insert matching row into profiles via the admin's main client
  */
 export async function createAccount({ full_name, email, password, role = 'staff' }) {
   const {
@@ -48,8 +57,9 @@ export async function createAccount({ full_name, email, password, role = 'staff'
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedName = full_name.trim();
 
-  // Step 1 — create auth user
-  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+  // Step 1 — create auth user via isolated client (never touches admin session)
+  const isolated = createIsolatedClient();
+  const { data: signUpData, error: signUpError } = await isolated.auth.signUp({
     email: normalizedEmail,
     password,
   });
@@ -64,20 +74,7 @@ export async function createAccount({ full_name, email, password, role = 'staff'
     throw new Error('Sign up succeeded but no user ID was returned.');
   }
 
-  // Step 2 — restore admin session immediately
-  const { error: restoreError } = await supabase.auth.setSession({
-    access_token: adminSession.access_token,
-    refresh_token: adminSession.refresh_token,
-  });
-
-  if (restoreError) {
-    console.warn(
-      '[accountManagementService] Failed to restore admin session:',
-      restoreError.message
-    );
-  }
-
-  // Step 3 — insert profile row
+  // Step 2 — insert profile row (uses admin's session, which was never disrupted)
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .insert({

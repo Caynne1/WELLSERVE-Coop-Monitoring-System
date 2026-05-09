@@ -19,7 +19,7 @@ export async function getDashboardStats() {
   });
 
   const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, recentTxRes] = await Promise.all([
-    supabase.from('members').select('id, status, date_joined, created_at'),
+    supabase.from('members').select('id, status, membership_type, date_joined, created_at'),
     supabase.from('loans').select('id, status, amount, balance, due_date'),
     supabase.from('accounts').select('id, account_type, balance'),
     // Paid invoices are the authoritative cash-in (and sometimes cash-out) source
@@ -113,6 +113,8 @@ export async function getDashboardStats() {
   return {
     totalMembers:         memberData.length,
     activeMembers:        memberData.filter(m => m.status === 'active').length,
+    regularMembers:       memberData.filter(m => m.membership_type === 'regular').length,
+    associateMembers:     memberData.filter(m => m.membership_type === 'associate').length,
     activeLoans:          activeLoans.length,
     totalLoanOutstanding: activeLoans.reduce((s, l) => s + (l.balance ?? l.amount ?? 0), 0),
     overduePayments:      overdueLoans.length,

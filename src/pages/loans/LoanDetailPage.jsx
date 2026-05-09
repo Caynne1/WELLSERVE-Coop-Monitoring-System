@@ -19,6 +19,7 @@ import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 
 import { getLoanById } from '../../services/loanService';
+import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
 import {
   buildScheduleByFrequency,
   frequencyDisplayLabel,
@@ -833,25 +834,31 @@ export default function LoanDetailPage() {
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Loan Summary */}
+          {/* Loan Summary — matching Excel header format */}
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
             {[
               ['Member', memberName || '—'],
               ['Member No.', loan.members?.member_no || '—'],
-              ['Loan Amount', formatCurrency(loan.amount)],
-              ['Outstanding Balance', formatCurrency(loan.balance ?? loan.amount)],
-              ['Monthly Interest Rate', loan.interest_rate ? `${loan.interest_rate}%` : '—'],
-              ['Term', loan.term_months ? `${loan.term_months} months` : '—'],
-              ['Payment Frequency', frequencyDisplayLabel(loan.repayment_frequency || 'monthly')],
-              ['Loan Method', titleCase(loan.loan_method || 'diminishing')],
-              ['Payment / Period', formatCurrency(loan.monthly_amortization)],
-              ['Release Date', formatDate(loan.release_date)],
+              ['Loan Principal', formatCurrency(loan.amount)],
+              ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(loan.balance ?? loan.amount)}</span>],
+              ['Monthly Interest Rate', loan.interest_rate ? `${(parseFloat(loan.interest_rate) / 12).toFixed(2)}%` : '—'],
+              ['Semi-Monthly Interest', loan.interest_rate ? `${(parseFloat(loan.interest_rate) / 24).toFixed(2)}%` : '—'],
+              ['Start Date', formatDate(loan.release_date)],
+              ['Loan Term (Months)', loan.term_months ? `${loan.term_months} months` : '—'],
+              ['Payment Frequency', <Badge key="freq" variant="default">{frequencyDisplayLabel(loan.repayment_frequency || 'monthly')}</Badge>],
+              ['No. of Payments', previewSummary?.number_of_payments ?? scheduleRows.length ?? '—'],
+              ['Total Payment per Period', formatCurrency(previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0)],
+              ['Total Cash Out (Net Proceeds)', formatCurrency(previewDeductions?.net_proceeds ?? (loan.amount - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0)))],
+              ['Total Principal Collected', formatCurrency(totalPrincipal)],
+              ['Total Interest Earned', <span key="int" className="text-emerald-700 font-semibold">{formatCurrency(totalInterest)}</span>],
+              ['Total Payments Collected', formatCurrency(totalDue)],
+              ['Total ROI (%)', <span key="roi" className="text-emerald-700 font-semibold">{loan.amount > 0 ? `${((totalInterest / loan.amount) * 100).toFixed(2)}%` : '—'}</span>],
               ['Status', <Badge key="status" variant={statusVariant[loan.status] || 'default'}>{loan.status}</Badge>],
               ['Purpose', loan.purpose || '—'],
               ['Notes', loan.notes || '—'],
             ].map(([label, value]) => (
               <div key={label} className="flex items-start justify-between px-5 py-3 text-sm gap-4">
-                <span className="text-gray-400 font-medium w-44 flex-shrink-0">{label}</span>
+                <span className="text-gray-400 font-medium w-52 flex-shrink-0">{label}</span>
                 <span className="text-gray-900 text-right">{value}</span>
               </div>
             ))}
@@ -875,21 +882,24 @@ export default function LoanDetailPage() {
               <div className="border-t border-gray-100 divide-y divide-gray-50">
                 {[
                   ['Loan Proposal', formatCurrency(loan.loan_proposal || loan.amount || 0)],
-                  ['Service Fee %', `${loan.service_fee_percent ?? 2}%`],
-                  ['Service Fee', formatCurrency(previewDeductions?.service_fee ?? loan.service_fee ?? 0)],
-                  ['CBU Retention %', `${loan.cbu_retention_percent ?? 2.5}%`],
-                  ['CBU Retention', formatCurrency(previewDeductions?.cbu_retention ?? 0)],
-                  ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
-                  ['Insurance Mode', titleCase(loan.insurance_mode || 'fixed')],
-                  ['Insurance', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
-                  ['CBU', formatCurrency(loan.share_capital ?? 0)],
+                  [`Service Fee (${loan.service_fee_percent ?? 2}%)`, formatCurrency(previewDeductions?.service_fee ?? loan.service_fee ?? 0)],
+                  ['CBU (Share Capital)', formatCurrency(loan.share_capital ?? 0)],
                   ['Regular Savings', formatCurrency(loan.regular_savings ?? 0)],
-                  ['Mode of Payment', loan.deduction_payment_mode || '—'],
-                  ['Total Deductions', formatCurrency(previewDeductions?.total_deductions ?? 0)],
-                  ['Net Proceeds', formatCurrency(previewDeductions?.net_proceeds ?? (loan.amount || 0))],
+                  ['Coop Loan Protection Plan', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
+                  ['Previous Loan Balance', formatCurrency(previewDeductions?.previous_loan_balance ?? 0)],
+                  ['Annual Dues', formatCurrency(previewDeductions?.annual_dues ?? 0)],
+                  ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
+                  ['Total Deductions', <span key="td" className="font-semibold text-red-600">{formatCurrency(
+                    (previewDeductions?.total_deductions ?? 0) ||
+                    ((loan.service_fee || 0) + (loan.share_capital || 0) + (loan.regular_savings || 0) + (loan.loan_insurance || 0))
+                  )}</span>],
+                  ['Net Proceeds', <span key="np" className="font-semibold text-emerald-700">{formatCurrency(
+                    previewDeductions?.net_proceeds ??
+                    ((loan.amount || 0) - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0))
+                  )}</span>],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-start justify-between px-5 py-3 text-sm gap-4">
-                    <span className="text-gray-400 font-medium w-44 flex-shrink-0">{label}</span>
+                    <span className="text-gray-400 font-medium w-52 flex-shrink-0">{label}</span>
                     <span className="text-gray-900 text-right">{value}</span>
                   </div>
                 ))}
@@ -939,116 +949,15 @@ export default function LoanDetailPage() {
         </div>
       </div>
 
-      {/* Amortization Schedule */}
-      <div className="mt-6 bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setScheduleOpen(v => !v)}
-          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Calendar size={15} className="text-gray-400" />
-            <span className="text-sm font-semibold text-gray-700">Amortization Schedule</span>
-            <span className="text-xs text-gray-400">
-              ({frequencyDisplayLabel(loan.repayment_frequency || 'monthly')})
-            </span>
-          </div>
-          {scheduleOpen
-            ? <ChevronUp size={16} className="text-gray-400" />
-            : <ChevronDown size={16} className="text-gray-400" />}
-        </button>
-
-        {scheduleOpen && (
-          <div className="border-t border-gray-100">
-            {scheduleRows.length === 0 ? (
-              <div className="px-5 py-6 text-center text-sm text-gray-400">
-                No schedule available.
-              </div>
-            ) : (
-              <>
-                <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-4 text-xs text-gray-600">
-                  <span>
-                    <span className="font-medium text-gray-800">{scheduleRows.length}</span>{' '}
-                    {frequencyPeriodLabel(loan.repayment_frequency || 'monthly')}s
-                  </span>
-                  <span>
-                    Payment / period:{' '}
-                    <span className="font-medium text-gray-800">
-                      {formatCurrency(previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0)}
-                    </span>
-                  </span>
-                  <span>
-                    Total payable:{' '}
-                    <span className="font-medium text-gray-800">
-                      {formatCurrency(previewSummary?.total_payments_collected ?? loan.total_loan_payable ?? 0)}
-                    </span>
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-100">
-                        {['#', 'Due Date', 'Beg. Balance', 'Principal', 'Interest', 'CBU', 'Savings', 'Total Due', 'End. Balance', 'Status'].map(h => (
-                          <th key={h} className="px-4 py-2.5 text-left font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {scheduleRows.map((row, idx) => {
-                        const st = row.status || 'unpaid';
-                        const style = ROW_STATUS_STYLE[st] || ROW_STATUS_STYLE.unpaid;
-                        return (
-                          <tr key={`${row.payment_no || idx}-${row.due_date || idx}`} className="hover:bg-gray-50/60 text-gray-700">
-                            <td className="px-4 py-2.5 font-mono text-gray-400 whitespace-nowrap">{row.payment_no ?? idx + 1}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">{formatDate(row.due_date)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">
-                              {row.beginning_balance != null ? formatCurrency(row.beginning_balance) : '—'}
-                            </td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(row.principal_amount ?? row.principal ?? 0)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(row.interest_amount  ?? row.interest  ?? 0)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(row.cbu_amount     ?? 0)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(row.savings_amount ?? 0)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap font-medium">{formatCurrency(row.total_due ?? row.payment ?? 0)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(row.ending_balance ?? row.balance ?? 0)}</td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">
-                              <span
-                                className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase"
-                                style={{ background: style.bg, color: style.color }}
-                              >
-                                {style.label}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    {/* Totals footer */}
-                    <tfoot>
-                      <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-700">
-                        <td className="px-4 py-2.5" colSpan={3}>Totals</td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(totalPrincipal)}</td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(totalInterest)}</td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(totalCBU)}</td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(totalSavings)}</td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">{formatCurrency(totalDue)}</td>
-                        <td colSpan={2}></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-
-                <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50/50">
-                  <p className="text-xs text-gray-400">
-                    This schedule is for preview and reference. Actual payment posting should still follow your transaction ledger and repayment process.
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+      {/* Amortization Schedule — Excel format */}
+      <div className="mt-6">
+        <LoanScheduleTable
+          schedule={scheduleRows}
+          frequency={loan.repayment_frequency || 'monthly'}
+          defaultOpen={scheduleOpen}
+          showPaymentTracking={true}
+          title="Amortization Schedule"
+        />
       </div>
     </div>
   );

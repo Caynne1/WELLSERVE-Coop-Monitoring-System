@@ -13,9 +13,11 @@ import {
   AlertCircle,
   Printer,
   Download,
+  Upload,
 } from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
+import LoanImportModal from '../../components/shared/LoanImportModal';
 
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
@@ -192,6 +194,7 @@ export default function LoansPage() {
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [payModal, setPayModal] = useState({
     open: false,
@@ -322,9 +325,14 @@ export default function LoansPage() {
         title="Loans"
         subtitle="Manage and monitor member loans"
         action={
-          <Button icon={<Plus size={15} />} onClick={() => navigate('/loans/new')}>
-            New Loan
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImportOpen(true)}>
+              Import Excel
+            </Button>
+            <Button icon={<Plus size={15} />} onClick={() => navigate('/loans/new')}>
+              New Loan
+            </Button>
+          </div>
         }
       />
 
@@ -627,6 +635,13 @@ export default function LoansPage() {
         loan={payModal.loan}
         userId={user?.id}
         onSuccess={fetchLoans}
+      />
+
+      <LoanImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        userId={user?.id}
+        onImported={fetchLoans}
       />
     </div>
   );

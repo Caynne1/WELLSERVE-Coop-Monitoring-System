@@ -35,7 +35,7 @@ const STATUS_OPTIONS = [
 
 const MEMBERSHIP_TYPE_OPTIONS = [
   { value: 'associate', label: 'Associate' },
-  { value: 'regular', label: 'Regular' },
+  { value: 'regular', label: 'Regular / Fullpledge' },
 ];
 
 const PAYMENT_OPTION_OPTIONS = [
@@ -53,7 +53,35 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'Others', label: 'Others' },
 ];
 
-const MEMBERSHIP_BREAKDOWN = {
+// New members (joining now) — current fee structure effective 2026
+// Each item: key (unique per type), label (exact display word), amount, category (membership|cbu|savings), optional group
+const NEW_MEMBER_BREAKDOWN = {
+  associate: {
+    label: 'Associate Membership',
+    items: [
+      { key: 'membership_fee', label: 'Membership Fee',  amount: 100, category: 'membership' },
+      { key: 'vip_card',       label: 'WELLife VIP Card', amount: 300, category: 'membership' },
+      { key: 'cbu',            label: 'Initial CBU',      amount: 500, category: 'cbu'        },
+    ],
+  },
+  regular: {
+    label: 'Regular / Fullpledge Membership',
+    items: [
+      { key: 'membership_fee', label: 'Membership Fee',          amount: 100,  category: 'membership', group: 'Associate Package' },
+      { key: 'vip_card',       label: 'WELLife VIP Card',        amount: 300,  category: 'membership', group: 'Associate Package' },
+      { key: 'cbu_assoc',      label: 'Initial CBU',             amount: 500,  category: 'cbu',        group: 'Associate Package' },
+      { key: 'admin_fees',     label: 'Admin & Regulatory Fees', amount: 1000, category: 'membership', group: 'Regular Package'   },
+      { key: 'savings_deposit',label: 'Initial Savings Deposit', amount: 500,  category: 'savings',    group: 'Regular Package'   },
+      { key: 'min_cbu',        label: 'Minimum CBU',             amount: 3500, category: 'cbu',        group: 'Regular Package'   },
+    ],
+  },
+};
+
+// All possible item keys across both new-member types (for clearing/reset)
+const ALL_NEW_ITEM_KEYS = ['membership_fee', 'vip_card', 'cbu', 'cbu_assoc', 'admin_fees', 'savings_deposit', 'min_cbu'];
+
+// Old members (encoded from pre-system records 2023–2025) — historical fee structure; DO NOT CHANGE
+const OLD_MEMBER_BREAKDOWN = {
   associate: {
     label: 'Entry Membership',
     membership_fee: 300,
@@ -125,10 +153,15 @@ export function MemberFormContent({
       date_joined: '',
       // New member payment fields
       payment_option: 'none',
-      membership_paid: '',
-      cbu_paid: '',
-      savings_paid: '',
       payment_date: '',
+      // Per-item paid amounts (keyed to NEW_MEMBER_BREAKDOWN item keys)
+      paid_membership_fee: '',
+      paid_vip_card: '',
+      paid_cbu: '',
+      paid_cbu_assoc: '',
+      paid_admin_fees: '',
+      paid_savings_deposit: '',
+      paid_min_cbu: '',
       invoice_no: '',
       payment_mode: '',
       payment_reference: '',
@@ -139,6 +172,10 @@ export function MemberFormContent({
       // Old member historical balance fields (not saved to members table)
       old_cbu_balance: '',
       old_savings_balance: '',
+      // Old member breakdown manual overrides (optional — defaults to OLD_MEMBER_BREAKDOWN amounts)
+      old_manual_membership_fee: '',
+      old_manual_cbu: '',
+      old_manual_savings: '',
       // Old member time deposit fields
       has_time_deposit: false,
       td_date_applied: '',
@@ -154,18 +191,39 @@ export function MemberFormContent({
   const paymentOption  = watch('payment_option');
   const paymentMode    = watch('payment_mode');
   const paymentReference = watch('payment_reference');
-  const membershipPaid = parseFloat(watch('membership_paid')) || 0;
-  const cbuPaid        = parseFloat(watch('cbu_paid')) || 0;
-  const savingsPaid    = parseFloat(watch('savings_paid')) || 0;
   const hasTimeDep     = watch('has_time_deposit');
+
+  // Watch all per-item paid fields for live remaining display
+  const itemPaidRaw = watch(ALL_NEW_ITEM_KEYS.map(k => `paid_${k}`));
+  const itemPaidMap = Object.fromEntries(ALL_NEW_ITEM_KEYS.map((k, i) => [k, parseFloat(itemPaidRaw[i]) || 0]));
 
   const isOldMember = recordType === 'old_member';
 
-  const breakdown = MEMBERSHIP_BREAKDOWN[membershipType];
-  const total =
-    (breakdown?.membership_fee || 0) +
-    (breakdown?.cbu || 0) +
-    (breakdown?.savings || 0);
+  const breakdownMap = isOldMember ? OLD_MEMBER_BREAKDOWN : NEW_MEMBER_BREAKDOWN;
+  const breakdown = breakdownMap[membershipType];
+
+  // Old member manual override watches
+  const oldManualMFRaw  = watch('old_manual_membership_fee');
+  const oldManualCBURaw = watch('old_manual_cbu');
+  const oldManualSavRaw = watch('old_manual_savings');
+
+  // Defaults from OLD_MEMBER_BREAKDOWN (used when manual fields are blank)
+  const oldDefaults = OLD_MEMBER_BREAKDOWN[membershipType] || { membership_fee: 0, cbu: 0, savings: 0 };
+
+  const oldEffectiveMF  = isOldMember ? (parseFloat(oldManualMFRaw)  || oldDefaults.membership_fee) : 0;
+  const oldEffectiveCBU = isOldMember ? (parseFloat(oldManualCBURaw) || oldDefaults.cbu)            : 0;
+  const oldEffectiveSav = isOldMember ? (parseFloat(oldManualSavRaw) || oldDefaults.savings)        : 0;
+  const oldEffectiveTotal = oldEffectiveMF + oldEffectiveCBU + oldEffectiveSav;
+
+  // Total required: sum item amounts for new members, or sum effective (manual/default) amounts for old members
+  const total = breakdown?.items
+    ? breakdown.items.reduce((s, i) => s + i.amount, 0)
+    : oldEffectiveTotal;
+
+  // Total paid so far across all items (for new member payment summary)
+  const totalPaidSoFar = breakdown?.items
+    ? breakdown.items.reduce((s, i) => s + Math.min(itemPaidMap[i.key] || 0, i.amount), 0)
+    : 0;
 
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
@@ -174,25 +232,41 @@ export function MemberFormContent({
   }, [memberId]);
 
   useEffect(() => {
-    if (!breakdown || isEdit || isOldMember) return;
+    if (!breakdown?.items || isEdit || isOldMember) return;
 
     if (paymentOption === 'full') {
-      setValue('membership_paid', String(breakdown.membership_fee));
-      setValue('cbu_paid', String(breakdown.cbu));
-      setValue('savings_paid', String(breakdown.savings));
+      // Fill each item with its max amount; clear keys not in the current breakdown
+      ALL_NEW_ITEM_KEYS.forEach(key => {
+        const item = breakdown.items.find(i => i.key === key);
+        setValue(`paid_${key}`, item ? String(item.amount) : '');
+      });
       if (!watch('payment_date')) {
         setValue('payment_date', new Date().toISOString().split('T')[0]);
       }
     }
 
     if (paymentOption === 'none') {
-      setValue('membership_paid', '');
-      setValue('cbu_paid', '');
-      setValue('savings_paid', '');
+      ALL_NEW_ITEM_KEYS.forEach(key => setValue(`paid_${key}`, ''));
       setValue('invoice_no', '');
       setValue('payment_mode', '');
       setValue('payment_reference', '');
       setValue('payment_notes', '');
+    }
+
+    // When switching record type or membership type, reset old-member manual override fields
+    if (isOldMember) {
+      setValue('old_manual_membership_fee', '');
+      setValue('old_manual_cbu', '');
+      setValue('old_manual_savings', '');
+    }
+
+    // When membership type changes, clear item fields not in the new breakdown
+    if (paymentOption === 'partial') {
+      ALL_NEW_ITEM_KEYS.forEach(key => {
+        if (!breakdown.items.find(i => i.key === key)) {
+          setValue(`paid_${key}`, '');
+        }
+      });
     }
   }, [paymentOption, membershipType, isEdit, isOldMember, breakdown, setValue, watch]);
 
@@ -226,9 +300,6 @@ export function MemberFormContent({
         notes: data.notes || '',
         date_joined: data.date_joined || '',
         payment_option: 'none',
-        membership_paid: '',
-        cbu_paid: '',
-        savings_paid: '',
         payment_date: '',
         invoice_no: '',
         payment_mode: '',
@@ -238,6 +309,9 @@ export function MemberFormContent({
         savings_account_no: savings?.account_no || '',
         old_cbu_balance: '',
         old_savings_balance: '',
+        old_manual_membership_fee: '',
+        old_manual_cbu: '',
+        old_manual_savings: '',
         has_time_deposit: false,
         td_date_applied: '',
         td_terms: '',
@@ -312,7 +386,8 @@ export function MemberFormContent({
         return;
       }
 
-      const selectedBreakdown = MEMBERSHIP_BREAKDOWN[values.membership_type];
+      const selectedBreakdownMap = values.record_type === 'old_member' ? OLD_MEMBER_BREAKDOWN : NEW_MEMBER_BREAKDOWN;
+      const selectedBreakdown = selectedBreakdownMap[values.membership_type];
 
       // ── OLD MEMBER FLOW ──────────────────────────────────────────────────────
       if (values.record_type === 'old_member') {
@@ -326,6 +401,18 @@ export function MemberFormContent({
             toast.error('Please fill in all required Time Deposit fields (Date Applied, Terms, Amount, Interest Rate).');
             return;
           }
+        }
+
+        // Compute effective breakdown amounts: manual input takes priority, falls back to OLD_MEMBER_BREAKDOWN defaults
+        const oldBD = OLD_MEMBER_BREAKDOWN[values.membership_type] || { membership_fee: 0, cbu: 0, savings: 0 };
+        const effectiveMF  = parseFloat(values.old_manual_membership_fee)  || oldBD.membership_fee;
+        const effectiveCBU = parseFloat(values.old_manual_cbu)             || oldBD.cbu;
+        const effectiveSav = parseFloat(values.old_manual_savings)         || oldBD.savings;
+        const effectiveTotal = effectiveMF + effectiveCBU + effectiveSav;
+
+        if (effectiveTotal <= 0) {
+          toast.error('Membership total must be greater than zero.');
+          return;
         }
 
         const newMember = await createMember({ ...payload, record_type: 'old_member' });
@@ -350,13 +437,14 @@ export function MemberFormContent({
           });
         }
 
-        // Mark membership as fully paid — no payment record, no invoice, no fund movement
+        // Mark membership as fully paid using the full effective total (membership + CBU + savings)
+        // is_historical = true → skips payment record, no invoice, no fund movement
         await createMembership({
           member_id: newMemberId,
           membership_type: values.membership_type,
-          fee_required: selectedBreakdown.membership_fee,
-          fee_paid_now: selectedBreakdown.membership_fee,
-          notes: 'Historical record — membership fully paid before system was in use.',
+          fee_required: effectiveTotal,
+          fee_paid_now: effectiveTotal,
+          notes: `Historical record — membership fully paid before system. Breakdown: Entry ₱${effectiveMF.toLocaleString()}, CBU ₱${effectiveCBU.toLocaleString()}, Savings ₱${effectiveSav.toLocaleString()}`,
           created_by: user.id,
           is_historical: true,
         });
@@ -392,31 +480,22 @@ export function MemberFormContent({
       let postedCbuPaid = 0;
       let postedSavingsPaid = 0;
 
-      if (values.payment_option === 'full') {
-        postedMembershipPaid = selectedBreakdown.membership_fee;
-        postedCbuPaid = selectedBreakdown.cbu;
-        postedSavingsPaid = selectedBreakdown.savings;
-      } else if (values.payment_option === 'partial') {
-        postedMembershipPaid = parseFloat(values.membership_paid) || 0;
-        postedCbuPaid = parseFloat(values.cbu_paid) || 0;
-        postedSavingsPaid = parseFloat(values.savings_paid) || 0;
-      }
-
-      if (postedMembershipPaid < 0 || postedCbuPaid < 0 || postedSavingsPaid < 0) {
-        toast.error('Paid amounts cannot be negative.');
-        return;
-      }
-      if (postedMembershipPaid > selectedBreakdown.membership_fee) {
-        toast.error(`Membership payment cannot exceed ₱${selectedBreakdown.membership_fee.toLocaleString()}.`);
-        return;
-      }
-      if (postedCbuPaid > selectedBreakdown.cbu) {
-        toast.error(`Initial CBU payment cannot exceed ₱${selectedBreakdown.cbu.toLocaleString()}.`);
-        return;
-      }
-      if (postedSavingsPaid > selectedBreakdown.savings) {
-        toast.error(`Initial Savings payment cannot exceed ₱${selectedBreakdown.savings.toLocaleString()}.`);
-        return;
+      if (values.payment_option !== 'none') {
+        // Validate each item and aggregate into the 3 transaction categories
+        for (const item of selectedBreakdown.items) {
+          const paid = parseFloat(values[`paid_${item.key}`]) || 0;
+          if (paid < 0) {
+            toast.error(`${item.label} amount cannot be negative.`);
+            return;
+          }
+          if (paid > item.amount) {
+            toast.error(`${item.label} cannot exceed ₱${item.amount.toLocaleString()}.`);
+            return;
+          }
+          if (item.category === 'membership') postedMembershipPaid += paid;
+          else if (item.category === 'cbu')        postedCbuPaid        += paid;
+          else if (item.category === 'savings')    postedSavingsPaid    += paid;
+        }
       }
 
       const totalPaid = postedMembershipPaid + postedCbuPaid + postedSavingsPaid;
@@ -460,68 +539,112 @@ export function MemberFormContent({
       const paymentModeNote =
         [values.payment_reference?.trim(), values.payment_notes?.trim()].filter(Boolean).join(' | ') || null;
 
+      // fee_required = full package total (entry + CBU + savings) so the payment panel tracks all components
+      const feeRequired = selectedBreakdown.items
+        ? selectedBreakdown.items.reduce((s, i) => s + i.amount, 0)
+        : selectedBreakdown.membership_fee;
+
+      // Build JSON breakdown note using exact item keys so each row shows its own paid amount
+      let initPaymentNotes = null;
+      if (totalPaid > 0 && selectedBreakdown.items) {
+        const itemBreakdown = {};
+        selectedBreakdown.items.forEach(item => {
+          const paid = parseFloat(values[`paid_${item.key}`]) || 0;
+          if (paid > 0) itemBreakdown[item.key] = paid;
+        });
+        initPaymentNotes = JSON.stringify(itemBreakdown);
+      }
+
       const membershipRecord = await createMembership({
         member_id: newMemberId,
         membership_type: values.membership_type,
-        fee_required: selectedBreakdown.membership_fee,
-        fee_paid_now: postedMembershipPaid,
+        fee_required: feeRequired,
+        fee_paid_now: totalPaid,   // full initial payment (entry + CBU + savings)
+        payment_notes: initPaymentNotes,
         created_by: user.id,
       });
 
       if (postedMembershipPaid > 0) {
-        await createTransaction({
-          member_id: newMemberId,
-          category: 'membership',
-          type: 'membership_payment',
-          amount: postedMembershipPaid,
-          reference: values.payment_reference?.trim() || null,
-          notes: values.payment_notes?.trim() || 'Membership initial payment',
-          created_by: user.id,
-          transaction_date: paymentDate,
-          payment_mode: values.payment_mode,
-          payment_mode_note: paymentModeNote,
-        });
+        // Create one transaction per membership fee item so each shows individually
+        const membershipItems = selectedBreakdown.items.filter(i => i.category === 'membership');
+        for (const item of membershipItems) {
+          const paid = parseFloat(values[`paid_${item.key}`]) || 0;
+          if (paid > 0) {
+            await createTransaction({
+              member_id: newMemberId,
+              category: 'membership',
+              type: 'membership_payment',
+              amount: paid,
+              reference: values.payment_reference?.trim() || null,
+              notes: [item.label, values.payment_notes?.trim()].filter(Boolean).join(' — '),
+              created_by: user.id,
+              transaction_date: paymentDate,
+              payment_mode: values.payment_mode,
+              payment_mode_note: paymentModeNote,
+            });
+          }
+        }
       }
 
       if (postedCbuPaid > 0) {
         if (!refreshedCbuAccount) throw new Error('CBU account not found after member initialization.');
-        await createTransaction({
-          member_id: newMemberId,
-          account_id: refreshedCbuAccount.id,
-          category: 'cbu',
-          type: 'deposit',
-          amount: postedCbuPaid,
-          reference: values.payment_reference?.trim() || refreshedCbuAccount.account_no || null,
-          notes: values.payment_notes?.trim() || 'Initial CBU deposit',
-          created_by: user.id,
-          transaction_date: paymentDate,
-          payment_mode: values.payment_mode,
-          payment_mode_note: paymentModeNote,
-        });
+        // Create one transaction per CBU fee item
+        const cbuItems = selectedBreakdown.items.filter(i => i.category === 'cbu');
+        for (const item of cbuItems) {
+          const paid = parseFloat(values[`paid_${item.key}`]) || 0;
+          if (paid > 0) {
+            await createTransaction({
+              member_id: newMemberId,
+              account_id: refreshedCbuAccount.id,
+              category: 'cbu',
+              type: 'deposit',
+              amount: paid,
+              reference: values.payment_reference?.trim() || refreshedCbuAccount.account_no || null,
+              notes: [item.label, values.payment_notes?.trim()].filter(Boolean).join(' — '),
+              created_by: user.id,
+              transaction_date: paymentDate,
+              payment_mode: values.payment_mode,
+              payment_mode_note: paymentModeNote,
+            });
+          }
+        }
       }
 
       if (postedSavingsPaid > 0) {
         if (!refreshedSavingsAccount) throw new Error('Savings account not found after member initialization.');
-        await createTransaction({
-          member_id: newMemberId,
-          account_id: refreshedSavingsAccount.id,
-          category: 'savings',
-          type: 'deposit',
-          amount: postedSavingsPaid,
-          reference: values.payment_reference?.trim() || refreshedSavingsAccount.account_no || null,
-          notes: values.payment_notes?.trim() || 'Initial savings deposit',
-          created_by: user.id,
-          transaction_date: paymentDate,
-          payment_mode: values.payment_mode,
-          payment_mode_note: paymentModeNote,
-        });
+        // Create one transaction per Savings fee item
+        const savingsItems = selectedBreakdown.items.filter(i => i.category === 'savings');
+        for (const item of savingsItems) {
+          const paid = parseFloat(values[`paid_${item.key}`]) || 0;
+          if (paid > 0) {
+            await createTransaction({
+              member_id: newMemberId,
+              account_id: refreshedSavingsAccount.id,
+              category: 'savings',
+              type: 'deposit',
+              amount: paid,
+              reference: values.payment_reference?.trim() || refreshedSavingsAccount.account_no || null,
+              notes: [item.label, values.payment_notes?.trim()].filter(Boolean).join(' — '),
+              created_by: user.id,
+              transaction_date: paymentDate,
+              payment_mode: values.payment_mode,
+              payment_mode_note: paymentModeNote,
+            });
+          }
+        }
       }
 
       if (totalPaid > 0) {
-        const invoiceBreakdown = [];
-        if (postedMembershipPaid > 0) invoiceBreakdown.push(`Membership: ${formatCurrency(postedMembershipPaid)}`);
-        if (postedCbuPaid > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(postedCbuPaid)}`);
-        if (postedSavingsPaid > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(postedSavingsPaid)}`);
+        // Build invoice notes from exact item labels that had a paid amount
+        const invoiceBreakdown = selectedBreakdown.items
+          ? selectedBreakdown.items
+              .filter(i => (parseFloat(values[`paid_${i.key}`]) || 0) > 0)
+              .map(i => `${i.label}: ${formatCurrency(parseFloat(values[`paid_${i.key}`]) || 0)}`)
+          : [
+              postedMembershipPaid > 0 ? `Membership: ${formatCurrency(postedMembershipPaid)}` : null,
+              postedCbuPaid > 0        ? `CBU: ${formatCurrency(postedCbuPaid)}`               : null,
+              postedSavingsPaid > 0    ? `Savings: ${formatCurrency(postedSavingsPaid)}`       : null,
+            ].filter(Boolean);
 
         await createInvoiceStrict(
           {
@@ -576,7 +699,7 @@ export function MemberFormContent({
       {/* ── Record Type selector (new registrations only) ── */}
       {!isEdit && (
         <section>
-          <p className="text-sm font-semibold text-gray-700 mb-3">Member Record Type</p>
+          <p className="text-sm font-semibold text-gray-700 mb-3">Registration Category</p>
           <div className="grid grid-cols-2 gap-3">
             {/* New Member */}
             <label
@@ -732,6 +855,14 @@ export function MemberFormContent({
           <Input label="Occupation" {...register('occupation')} />
           <Input label="TIN No." {...register('tin_no')} />
           <Input label="SSS ID No." {...register('sss_id_no')} />
+
+          <div className="sm:col-span-2">
+            <Input
+              label="Complete Address"
+              placeholder="House No., Street, Barangay, City"
+              {...register('address')}
+            />
+          </div>
         </div>
       </section>
 
@@ -782,25 +913,126 @@ export function MemberFormContent({
                   )}
                 </div>
 
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Membership Entry</span>
-                    <span>₱{breakdown.membership_fee.toLocaleString()}</span>
+                {/* Old Member: manual-input breakdown — defaults to OLD_MEMBER_BREAKDOWN amounts, fully overridable */}
+                {isOldMember && (
+                  <div className="space-y-3 text-sm">
+                    <p className="text-xs text-amber-600 mb-3">
+                      Standard amounts are pre-filled. Leave a field blank to use the default, or type a new value to override.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Membership Entry
+                          <span className="ml-1 text-amber-500 font-normal">(default ₱{oldDefaults.membership_fee.toLocaleString()})</span>
+                        </label>
+                        <input
+                          type="number" step="0.01" min="0"
+                          placeholder={String(oldDefaults.membership_fee)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          {...register('old_manual_membership_fee')}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Initial CBU
+                          <span className="ml-1 text-amber-500 font-normal">(default ₱{oldDefaults.cbu.toLocaleString()})</span>
+                        </label>
+                        <input
+                          type="number" step="0.01" min="0"
+                          placeholder={String(oldDefaults.cbu)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          {...register('old_manual_cbu')}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Initial Savings
+                          <span className="ml-1 text-amber-500 font-normal">(default ₱{oldDefaults.savings.toLocaleString()})</span>
+                        </label>
+                        <input
+                          type="number" step="0.01" min="0"
+                          placeholder={String(oldDefaults.savings)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          {...register('old_manual_savings')}
+                        />
+                      </div>
+                    </div>
+                    <div className="border-t my-2 border-amber-100" />
+                    <div className="flex justify-between font-semibold text-base text-amber-900">
+                      <span>Total Amount</span>
+                      <span>₱{oldEffectiveTotal.toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-amber-500 mt-0.5">
+                      This total is recorded as the historical membership amount — marked fully paid automatically.
+                    </p>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Initial CBU</span>
-                    <span>₱{breakdown.cbu.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Initial Savings</span>
-                    <span>₱{breakdown.savings.toLocaleString()}</span>
-                  </div>
-                  <div className={`border-t my-2 ${isOldMember ? 'border-amber-100' : 'border-blue-100'}`} />
-                  <div className={`flex justify-between font-semibold text-base ${isOldMember ? 'text-amber-900' : 'text-blue-900'}`}>
-                    <span>Total Amount</span>
-                    <span>₱{total.toLocaleString()}</span>
-                  </div>
-                </div>
+                )}
+
+                {/* New Member: render from items array, grouped when group property exists */}
+                {!isOldMember && breakdown.items && (() => {
+                  const hasGroups = breakdown.items.some(i => i.group);
+
+                  if (!hasGroups) {
+                    return (
+                      <div className="space-y-1 text-sm">
+                        {breakdown.items.map(item => (
+                          <div key={item.key} className="flex justify-between text-gray-700">
+                            <span>{item.label}</span>
+                            <span>₱{item.amount.toLocaleString()}</span>
+                          </div>
+                        ))}
+                        <div className="border-t my-2 border-blue-100" />
+                        <div className="flex justify-between font-semibold text-base text-blue-900">
+                          <span>Total Required</span>
+                          <span>₱{total.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Grouped display (Regular / Fullpledge)
+                  const groups = [...new Set(breakdown.items.map(i => i.group))];
+                  return (
+                    <div className="space-y-3 text-sm">
+                      {groups.map(grp => {
+                        const grpItems = breakdown.items.filter(i => i.group === grp);
+                        const subtotal = grpItems.reduce((s, i) => s + i.amount, 0);
+                        return (
+                          <div key={grp}>
+                            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1.5">{grp}</p>
+                            <div className="space-y-1">
+                              {grpItems.map(item => (
+                                <div key={item.key} className="flex justify-between text-gray-700">
+                                  <span>{item.label}</span>
+                                  <span>₱{item.amount.toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex justify-between text-xs font-semibold text-blue-700 mt-1.5 pt-1.5 border-t border-blue-100">
+                              <span>Package Subtotal</span>
+                              <span>₱{subtotal.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div className="border-t-2 border-blue-200 pt-2">
+                        <div className="flex justify-between font-bold text-base text-blue-900">
+                          <span>Total Required</span>
+                          <span>₱{total.toLocaleString()}</span>
+                        </div>
+                        <p className="text-xs text-blue-500 mt-0.5">
+                          Includes Associate package (₱900) + Regular package (₱5,000)
+                        </p>
+                        <div className="mt-2 flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                          <CheckCircle size={12} className="text-emerald-600 flex-shrink-0" />
+                          <p className="text-xs text-emerald-700 font-medium">
+                            Member status upon full payment: <span className="uppercase tracking-wide">Fullpledge</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -825,29 +1057,61 @@ export function MemberFormContent({
                   )}
                 </div>
 
-                {paymentOption !== 'none' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-                    <Input
-                      label={`Membership Entry Paid (max ₱${breakdown.membership_fee.toLocaleString()})`}
-                      type="number" step="0.01" min="0"
-                      disabled={paymentOption === 'full'}
-                      {...register('membership_paid')}
-                    />
-                    <Input
-                      label={`Initial CBU Paid (max ₱${breakdown.cbu.toLocaleString()})`}
-                      type="number" step="0.01" min="0"
-                      disabled={paymentOption === 'full'}
-                      {...register('cbu_paid')}
-                    />
-                    <Input
-                      label={`Initial Savings Paid (max ₱${breakdown.savings.toLocaleString()})`}
-                      type="number" step="0.01" min="0"
-                      disabled={paymentOption === 'full'}
-                      {...register('savings_paid')}
-                    />
-                  </div>
-                )}
+                {/* Per-item paid inputs — always shown regardless of payment option */}
+                {breakdown.items && (() => {
+                  const isDisabled = paymentOption !== 'partial';
+                  const hasGroups  = breakdown.items.some(i => i.group);
+                  const groups     = hasGroups ? [...new Set(breakdown.items.map(i => i.group))] : [null];
 
+                  return (
+                    <div className="mt-4 space-y-4">
+                      {groups.map(grp => {
+                        const grpItems = grp
+                          ? breakdown.items.filter(i => i.group === grp)
+                          : breakdown.items;
+                        return (
+                          <div key={grp || 'flat'}>
+                            {grp && (
+                              <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2">{grp}</p>
+                            )}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              {grpItems.map(item => {
+                                const paid      = itemPaidMap[item.key] || 0;
+                                const remaining = Math.max(0, item.amount - paid);
+                                const isFull    = paid >= item.amount && item.amount > 0;
+                                return (
+                                  <div key={item.key} className="relative">
+                                    <Input
+                                      label={`${item.label} (₱${item.amount.toLocaleString()})`}
+                                      type="number" step="0.01" min="0"
+                                      placeholder="0.00"
+                                      disabled={isDisabled}
+                                      {...register(`paid_${item.key}`)}
+                                    />
+                                    <p className={`text-xs mt-0.5 ${isFull ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>
+                                      {isFull ? '✓ Fully paid' : `Remaining: ₱${remaining.toLocaleString()}`}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Total paid summary */}
+                      <div className="p-3 rounded-lg bg-white border border-green-100 text-sm flex justify-between font-semibold">
+                        <span>Total Paid Now</span>
+                        <span className={totalPaidSoFar > 0 ? 'text-emerald-700' : 'text-gray-400'}>
+                          ₱{totalPaidSoFar.toLocaleString()}
+                          <span className="font-normal text-gray-400 ml-1">/ ₱{total.toLocaleString()}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* SI#, mode, reference — only when there is an actual payment */}
                 {paymentOption !== 'none' && (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
@@ -863,23 +1127,6 @@ export function MemberFormContent({
                       <Input label="Payment Notes" placeholder="Optional notes" {...register('payment_notes')} />
                     </div>
                   </>
-                )}
-
-                {paymentOption !== 'none' && (
-                  <div className="mt-4 p-3 rounded-lg bg-white border border-green-100 text-sm">
-                    <div className="flex justify-between">
-                      <span>Membership Remaining</span>
-                      <span>₱{Math.max(0, breakdown.membership_fee - membershipPaid).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span>CBU Remaining</span>
-                      <span>₱{Math.max(0, breakdown.cbu - cbuPaid).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span>Savings Remaining</span>
-                      <span>₱{Math.max(0, breakdown.savings - savingsPaid).toLocaleString()}</span>
-                    </div>
-                  </div>
                 )}
               </div>
             </div>
@@ -993,14 +1240,6 @@ export function MemberFormContent({
               </div>
             </div>
           )}
-
-          <div className="sm:col-span-2">
-            <Input
-              label="Complete Address"
-              placeholder="House No., Street, Barangay, City"
-              {...register('address')}
-            />
-          </div>
 
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>

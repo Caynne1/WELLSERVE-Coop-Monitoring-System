@@ -23,6 +23,7 @@ const MEMBER_COLUMNS = [
   'beneficiary_name',
   'beneficiary_address',
   'beneficiary_tel',
+  'record_type',
 ];
 
 function sanitizeMemberPayload(payload) {
@@ -215,11 +216,18 @@ export async function initializeMemberAccounts(memberId) {
 }
 
 export async function searchMembers(query) {
+  // Sanitize: strip characters that could manipulate PostgREST filter syntax
+  const sanitized = String(query || '')
+    .replace(/[,.()"'\\%;]/g, '')
+    .trim();
+
+  if (!sanitized) return [];
+
   const { data, error } = await supabase
     .from('members')
     .select('id, first_name, last_name, middle_initial, member_no, email, phone, membership_type, status, recruiter_name')
     .or(
-      `first_name.ilike.%${query}%,last_name.ilike.%${query}%,member_no.ilike.%${query}%,recruiter_name.ilike.%${query}%`
+      `first_name.ilike.%${sanitized}%,last_name.ilike.%${sanitized}%,member_no.ilike.%${sanitized}%,recruiter_name.ilike.%${sanitized}%`
     )
     .order('first_name')
     .limit(20);

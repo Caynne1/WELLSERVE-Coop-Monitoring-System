@@ -42,10 +42,11 @@ const STATUS_OPTS = [
 
 const FREQUENCY_OPTS = [
   { value: 'weekly', label: 'Weekly' },
-  { value: 'semi_monthly', label: 'Semi-Monthly' },
+  { value: 'semi_monthly', label: 'Quencena (Semi-Monthly)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
   { value: 'yearly', label: 'Yearly' },
+  { value: 'chattel', label: 'Chattel' },
 ];
 
 const LOAN_METHOD_OPTS = [
@@ -409,12 +410,16 @@ export default function LoanFormPage() {
 
       const payload = {
         ...values,
+        source: 'manual',
         amount: principalAmount,
         balance: principalAmount,
-        monthly_amortization: round2(preview.summary.payment_per_period),
-        total_loan_payable: round2(preview.summary.total_payments_collected),
-        service_fee: round2(preview.deductions.service_fee),
-        loan_insurance: round2(preview.deductions.insurance),
+        monthly_amortization: round2(preview.summary?.payment_per_period || 0),
+        total_loan_payable: round2(preview.summary?.total_payments_collected || 0),
+        service_fee: round2(preview.deductions?.items?.find(d => d.label?.toLowerCase().includes('service'))?.amount
+          || preview.deductions?.service_fee || 0),
+        loan_insurance: round2(preview.deductions?.items?.find(d =>
+          d.label?.toLowerCase().includes('protection') || d.label?.toLowerCase().includes('clpp'))?.amount
+          || preview.deductions?.insurance || 0),
         loan_proposal: parseFloat(values.loan_proposal || principalAmount) || principalAmount,
         repayment_frequency: values.repayment_frequency,
         loan_method: values.loan_method,
@@ -909,21 +914,21 @@ export default function LoanFormPage() {
                 <div className="overflow-x-auto border border-gray-100 rounded-lg">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="bg-gray-50 border-b border-gray-100">
+                      <tr className="bg-[#07A04E] text-white">
                         {[
                           'No.',
-                          'Due Date',
-                          'Beginning Balance',
                           'Principal',
-                          'Interest',
+                          'Principal Amort.',
+                          watchedFrequency === 'semi_monthly' ? 'Quencena' : watchedFrequency === 'weekly' ? 'Weekly' : watchedFrequency === 'yearly' ? 'Yearly' : 'Monthly',
+                          'Loan Total',
                           'CBU',
                           'Savings',
-                          'Total Due',
-                          'Ending Balance',
+                          watchedFrequency === 'semi_monthly' ? 'Kinsenas' : watchedFrequency === 'weekly' ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : 'Monthly Total',
+                          'Due Date',
                         ].map(h => (
                           <th
                             key={h}
-                            className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
+                            className="px-3 py-2 text-left font-semibold whitespace-nowrap"
                           >
                             {h}
                           </th>
@@ -931,19 +936,23 @@ export default function LoanFormPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {preview.schedule.map(row => (
-                        <tr key={row.payment_no} className="hover:bg-gray-50/60">
-                          <td className="px-3 py-2 whitespace-nowrap">{row.payment_no}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.due_date)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.beginning_balance)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.principal_amount)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.interest_amount)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.cbu_amount)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.savings_amount)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap font-semibold">{formatCurrency(row.total_due)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.ending_balance)}</td>
-                        </tr>
-                      ))}
+                      {preview.schedule.map(row => {
+                        const loanTotal = round2((row.principal || 0) + (row.interest || 0));
+                        const freqTotal = round2(loanTotal + (row.cbu_paid || 0) + (row.savings_paid || 0));
+                        return (
+                          <tr key={row.period} className="hover:bg-gray-50/60 text-gray-700">
+                            <td className="px-3 py-2 font-mono">{row.period}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.balance || 0)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.principal || 0)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.interest || 0)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap font-medium">{formatCurrency(loanTotal)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-blue-600">{(row.cbu_paid || 0) > 0 ? formatCurrency(row.cbu_paid) : '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap text-emerald-600">{(row.savings_paid || 0) > 0 ? formatCurrency(row.savings_paid) : '—'}</td>
+                            <td className="px-3 py-2 whitespace-nowrap font-semibold">{formatCurrency(freqTotal)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.due_date)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -1,4 +1,14 @@
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+
+// Isolated client for user creation — never touches the admin's active session.
+function createIsolatedClient() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+}
 
 // ─── Default permission set for a new staff user ─────────────────────────────
 export const DEFAULT_PERMISSIONS = {
@@ -82,8 +92,9 @@ export async function createUser({ full_name, email, password, role, permissions
   let userId;
 
   if (inviteError || !inviteData?.user) {
-    // Fallback: create auth user via signUp (may require email confirmation)
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // Fallback: create auth user via isolated client (admin session stays intact)
+    const isolated = createIsolatedClient();
+    const { data: authData, error: authError } = await isolated.auth.signUp({
       email,
       password,
       options: { data: { full_name } },

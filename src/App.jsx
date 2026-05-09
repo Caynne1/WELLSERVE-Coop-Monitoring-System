@@ -148,10 +148,10 @@ export default function App() {
               <Route path="expenses" element={<PermissionRoute module="expenses"><ExpensesPage /></PermissionRoute>} />
 
               {/* Cooperative Monitoring */}
-              <Route path="coop-monitoring" element={<CoopMonitoringPage />} />
+              <Route path="coop-monitoring" element={<PermissionRoute module="account_monitoring"><CoopMonitoringPage /></PermissionRoute>} />
 
               {/* Time Deposit */}
-              <Route path="time-deposit" element={<TimeDepositPage />} />
+              <Route path="time-deposit" element={<PermissionRoute module="time_deposit"><TimeDepositPage /></PermissionRoute>} />
 
               {/* Analytics */}
               <Route path="reports" element={<PermissionRoute module="reports"><ReportsPage /></PermissionRoute>} />
@@ -159,7 +159,7 @@ export default function App() {
 
               {/* Administration */}
               <Route path="settings" element={<PermissionRoute module="settings"><SettingsPage /></PermissionRoute>} />
-              <Route path="staff" element={<StaffPage />} />
+              <Route path="staff" element={<AdminRoute><StaffPage /></AdminRoute>} />
 
               {/* Admin only */}
               <Route
@@ -180,10 +180,10 @@ export default function App() {
               />
 
               {/* Compatibility */}
-              <Route path="accounts" element={<AccountsPage />} />
-              <Route path="accounts/new" element={<AccountFormPage />} />
-              <Route path="accounts/:id/edit" element={<AccountFormPage />} />
-              <Route path="accounts/:id" element={<AccountDetailPage />} />
+              <Route path="accounts" element={<PermissionRoute module="account_monitoring"><AccountsPage /></PermissionRoute>} />
+              <Route path="accounts/new" element={<PermissionRoute module="account_monitoring"><AccountFormPage /></PermissionRoute>} />
+              <Route path="accounts/:id/edit" element={<PermissionRoute module="account_monitoring"><AccountFormPage /></PermissionRoute>} />
+              <Route path="accounts/:id" element={<PermissionRoute module="account_monitoring"><AccountDetailPage /></PermissionRoute>} />
 
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

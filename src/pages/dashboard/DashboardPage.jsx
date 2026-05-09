@@ -817,7 +817,13 @@ export default function DashboardPage() {
           <SummaryCard
             label="Total Members"
             value={stats?.totalMembers ?? 0}
-            sub={`${stats?.activeMembers ?? 0} active`}
+            sub={
+              <span className="flex gap-2 flex-wrap">
+                <span className="text-blue-600 font-medium">{stats?.regularMembers ?? 0} Regular</span>
+                <span className="text-gray-300">·</span>
+                <span className="text-indigo-500 font-medium">{stats?.associateMembers ?? 0} Associate</span>
+              </span>
+            }
             icon={<Users size={18} />}
             accent="#2563EB"
             accentBg="rgba(37,99,235,0.08)"
