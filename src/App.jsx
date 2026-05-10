@@ -42,6 +42,7 @@ import CoopMonitoringPage from './pages/coop-monitoring/CoopMonitoringPage';
 
 // ── NEW: Time Deposit ──────────────────────────────────────────────────────────
 import TimeDepositPage from './pages/time-deposit/TimeDepositPage';
+import SavingsBoosterPage from './pages/savings-booster/SavingsBoosterPage';
 
 // Compatibility routes
 import AccountsPage from './pages/accounts/AccountsPage';
@@ -152,6 +153,7 @@ export default function App() {
 
               {/* Time Deposit */}
               <Route path="time-deposit" element={<PermissionRoute module="time_deposit"><TimeDepositPage /></PermissionRoute>} />
+              <Route path="savings-booster" element={<PermissionRoute module="savings_booster"><SavingsBoosterPage /></PermissionRoute>} />
 
               {/* Analytics */}
               <Route path="reports" element={<PermissionRoute module="reports"><ReportsPage /></PermissionRoute>} />
