@@ -601,7 +601,7 @@ export default function MembersPage() {
                       'Member',
                       'Member No.',
                       'Contact',
-                      'Inviter / Recruiter',
+                      'Referrer',
                       'Joined',
                       'Status',
                       'Quick Access',
