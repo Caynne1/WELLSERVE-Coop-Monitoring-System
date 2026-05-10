@@ -17,6 +17,7 @@ import {
   CATEGORY_LABEL,
   CATEGORY_COLOR,
   recordManualFundDeposit,
+  getIncomeBreakdown,
 } from '../../services/coopFundService';
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -902,6 +903,40 @@ export default function CoopMonitoringPage() {
   const [paymentNotes, setPaymentNotes]         = useState('');
   const [savingFund, setSavingFund]             = useState(false);
 
+  // ── Income Monitoring ──────────────────────────────────────────────────────
+  const [incomePeriod, setIncomePeriod]     = useState('all');
+  const [incomeRange, setIncomeRange]       = useState({ from: '', to: '' });
+  const [incomeData, setIncomeData]         = useState(null);
+  const [incomeLoading, setIncomeLoading]   = useState(true);
+
+  function getDateRangeForPeriod(period) {
+    const today = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const toStr = fmt(today);
+    if (period === 'daily')        return { from: toStr, to: toStr };
+    if (period === 'weekly')       { const d = new Date(today); d.setDate(d.getDate() - 6); return { from: fmt(d), to: toStr }; }
+    if (period === 'semi_monthly') { const d = new Date(today); d.setDate(d.getDate() - 14); return { from: fmt(d), to: toStr }; }
+    if (period === 'monthly')      { return { from: `${today.getFullYear()}-${pad(today.getMonth()+1)}-01`, to: toStr }; }
+    if (period === 'yearly')       { return { from: `${today.getFullYear()}-01-01`, to: toStr }; }
+    if (period === 'custom')       return incomeRange;
+    return { from: null, to: null };
+  }
+
+  const fetchIncome = useCallback(async (period = incomePeriod, range = incomeRange) => {
+    try {
+      setIncomeLoading(true);
+      const dr = period === 'custom' ? range : getDateRangeForPeriod(period);
+      const data = await getIncomeBreakdown({ from: dr.from || null, to: dr.to || null });
+      setIncomeData(data);
+    } catch (err) {
+      console.error('[CoopMonitoringPage] income fetch error:', err);
+    } finally {
+      setIncomeLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomePeriod, incomeRange]);
+
   const fetchPenalties = useCallback(async () => {
     try {
       setPenaltiesLoading(true);
@@ -938,6 +973,8 @@ export default function CoopMonitoringPage() {
     fetchData();
     fetchPenalties();
   }, [fetchData, fetchPenalties]);
+
+  useEffect(() => { fetchIncome(incomePeriod, incomeRange); }, [incomePeriod, incomeRange, fetchIncome]);
 
   async function handleAddFund() {
     const value = parseFloat(fundAmount) || 0;
@@ -1104,6 +1141,111 @@ export default function CoopMonitoringPage() {
 
           {/* ── Penalty Income Table ── */}
           <PenaltyIncomeTable penalties={filteredPenalties} loading={penaltiesLoading} />
+
+          {/* ── Income Monitoring Breakdown ── */}
+          <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-bold text-gray-800">Income Monitoring</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Breakdown by income source — loans, membership, fees</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { key: 'daily',        label: 'Daily' },
+                  { key: 'weekly',       label: 'Weekly' },
+                  { key: 'semi_monthly', label: 'Semi-Monthly' },
+                  { key: 'monthly',      label: 'Monthly' },
+                  { key: 'yearly',       label: 'Yearly' },
+                  { key: 'all',          label: 'All Time' },
+                  { key: 'custom',       label: 'Custom' },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setIncomePeriod(key)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                      incomePeriod === key
+                        ? 'bg-[#07A04E] text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => fetchIncome(incomePeriod, incomeRange)}
+                  className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                  title="Refresh"
+                >
+                  <RefreshCw size={13} className={incomeLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+
+            {/* Custom date range */}
+            {incomePeriod === 'custom' && (
+              <div className="flex flex-wrap items-center gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100">
+                <input
+                  type="date"
+                  value={incomeRange.from}
+                  onChange={e => setIncomeRange(r => ({ ...r, from: e.target.value }))}
+                  className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                />
+                <span className="text-xs text-gray-400">to</span>
+                <input
+                  type="date"
+                  value={incomeRange.to}
+                  onChange={e => setIncomeRange(r => ({ ...r, to: e.target.value }))}
+                  className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                />
+              </div>
+            )}
+
+            {/* Income cards */}
+            <div className="p-5">
+              {incomeLoading ? (
+                <div className="flex items-center justify-center h-24 text-gray-300">
+                  <RefreshCw size={20} className="animate-spin" />
+                </div>
+              ) : incomeData ? (
+                <>
+                  {/* Total Income highlight */}
+                  <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wide">Total Coop Income</p>
+                      <p className="text-2xl font-bold text-emerald-800 mt-0.5">{formatCurrency(incomeData.total_income)}</p>
+                      <p className="text-xs text-emerald-600 mt-0.5">
+                        {incomeData.loan_count} loan{incomeData.loan_count !== 1 ? 's' : ''} · {incomeData.tx_count} membership tx
+                        {incomePeriod !== 'all' ? ` · ${incomePeriod.replace('_', '-')}` : ' · all time'}
+                      </p>
+                    </div>
+                    <TrendingUp size={32} className="text-emerald-300" />
+                  </div>
+
+                  {/* Income cards grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Loan Interest', value: incomeData.loan_interest,   color: 'bg-blue-50 border-blue-100',   text: 'text-blue-700',   sub: 'Interest earned from loans' },
+                      { label: 'Service Fee',   value: incomeData.service_fee,     color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
+                      { label: 'CLPP / Insurance', value: incomeData.clpp,         color: 'bg-red-50 border-red-100',     text: 'text-red-700',    sub: 'Loan protection plan' },
+                      { label: 'Annual Dues',   value: incomeData.annual_dues,     color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
+                      { label: 'Membership Fee', value: incomeData.membership_fee, color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Registration fees' },
+                      { label: 'WELLife VIP Card / T-Shirt', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'From membership breakdown' },
+                      { label: 'Loan Principal',  value: incomeData.loan_principal, color: 'bg-teal-50 border-teal-100',  text: 'text-teal-700',   sub: 'Total principal released' },
+                      { label: 'Total Cash Out (Net Proceeds)', value: incomeData.net_proceeds, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Net amount disbursed to members' },
+                    ].map(card => (
+                      <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
+                        <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
+                        <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-8">No income data available.</p>
+              )}
+            </div>
+          </section>
 
           {/* ── Filters Row ── */}
           <div className="flex flex-wrap items-center gap-3 mb-4">

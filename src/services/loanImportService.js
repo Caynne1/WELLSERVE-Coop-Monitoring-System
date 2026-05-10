@@ -752,6 +752,49 @@ export async function importLoans({ loans, fixedMemberId = null, userId }) {
 
       await createLoan({ ...finalRecord, source: 'imported' });
 
+      // ── Auto-record coop income for PAID imported loans ──────────────────────
+      // For fully paid loans, record the coop's earned income as cash-in invoices
+      // so they appear in the coop fund monitoring.
+      if (loan.status === 'paid') {
+        try {
+          const incomeItems = [];
+          const excelSummaryParsed = JSON.parse(finalRecord.preview_summary_json || '{}');
+          const interest = Number(excelSummaryParsed.total_interest_earned || 0);
+          const svcFee   = Number(finalRecord.service_fee || 0);
+          const clppAmt  = Number(finalRecord.loan_insurance || 0);
+          const annDues  = Number(finalRecord.annual_dues || 0);
+
+          if (interest > 0)  incomeItems.push({ label: 'Loan Interest Income',      amount: interest,  type: 'loan_interest' });
+          if (svcFee > 0)    incomeItems.push({ label: 'Service Fee',                amount: svcFee,    type: 'service_fee'   });
+          if (clppAmt > 0)   incomeItems.push({ label: 'CLPP / Loan Insurance',      amount: clppAmt,   type: 'clpp'          });
+          if (annDues > 0)   incomeItems.push({ label: 'Annual Dues',               amount: annDues,   type: 'annual_dues'   });
+
+          const txDate = loan.release_date || new Date().toISOString().split('T')[0];
+          const { createInvoice } = await import('./invoiceService');
+
+          for (const item of incomeItems) {
+            await createInvoice({
+              invoice_no: `IMP-${item.type.toUpperCase()}-${memberId.slice(0, 6)}-${Date.now()}`,
+              date: txDate,
+              payee: loan._borrower_name || 'Imported Loan',
+              purpose: `${item.label} — [Imported] ${loan._sheet_name}`,
+              amount: item.amount,
+              status: 'paid',
+              payment_type: item.type,
+              created_by: userId,
+              member_id: memberId,
+              ref_id: null,
+              account_id: null,
+              fund_added: true,
+              payment_mode: null,
+            }).catch(err => console.warn(`[loanImport] coop income invoice failed (${item.label}):`, err.message));
+          }
+        } catch (incomeErr) {
+          // Non-blocking — loan is already imported, just log the warning
+          console.warn(`[loanImport] coop income recording failed for ${loan._borrower_name}:`, incomeErr.message);
+        }
+      }
+
       // Mark fingerprint as imported to prevent duplicates in same batch
       existingFingerprints.add(fp);
 

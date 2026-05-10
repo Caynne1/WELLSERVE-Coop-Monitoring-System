@@ -885,7 +885,7 @@ export function MemberFormContent({
           <Input label="Res. Tel. No." {...register('res_tel_no')} />
 
           <Input
-            label="Inviter / Recruiter"
+            label="Referred By"
             placeholder="Leave blank for Self"
             {...register('recruiter_name')}
           />

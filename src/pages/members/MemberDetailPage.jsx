@@ -382,7 +382,7 @@ export default function MemberDetailPage() {
 
               <div className="mt-3 space-y-1 text-xs text-gray-500">
                 <p>
-                  Inviter / Recruiter:{' '}
+                  Referred By:{' '}
                   <span className="font-medium text-gray-800">{member.recruiter_name || 'Self'}</span>
                 </p>
                 <p>
@@ -2720,7 +2720,7 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
           <InfoRow icon={User} label="Sex" value={member.sex} />
           <InfoRow icon={User} label="Occupation" value={member.occupation} />
           <InfoRow icon={Shield} label="Membership Type" value={displayMembershipType ? displayMembershipType.charAt(0).toUpperCase() + displayMembershipType.slice(1) : '—'} />
-          <InfoRow icon={User} label="Inviter / Recruiter" value={member.recruiter_name || 'Self'} />
+          <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
           <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
           <InfoRow icon={Wallet} label="Savings Account No." value={savingsAccount?.account_no || '—'} />
           <InfoRow icon={User} label="Status" value={member.status || 'active'} />

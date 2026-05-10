@@ -364,7 +364,7 @@ export default function PassbookPage() {
           <div class="box">
             <p><strong>Name:</strong> ${plainFullName(selectedMember)}</p>
             <p><strong>Member No.:</strong> ${selectedMember.member_no || '—'}</p>
-            <p><strong>Inviter / Recruiter:</strong> ${selectedMember.recruiter_name || 'Self'}</p>
+            <p><strong>Referred By:</strong> ${selectedMember.recruiter_name || 'Self'}</p>
             <p><strong>Account No.:</strong> ${accountNo}</p>
             <p><strong>Date Joined:</strong> ${formatDate(selectedMember.date_joined || selectedMember.created_at)}</p>
           </div>
@@ -494,7 +494,7 @@ export default function PassbookPage() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     {[
-                      'Invite / Recruiter',
+                      'Referred By',
                       'Status',
                       'Print Passbook',
                       'CBU Account',
@@ -675,7 +675,7 @@ export default function PassbookPage() {
                           </h3>
                           <div className="mt-2 space-y-1 text-sm text-gray-500">
                             <p>Member No.: <span className="font-medium text-gray-800">{selectedMember.member_no || '—'}</span></p>
-                            <p>Inviter / Recruiter: <span className="font-medium text-gray-800">{selectedMember.recruiter_name || 'Self'}</span></p>
+                            <p>Referred By: <span className="font-medium text-gray-800">{selectedMember.recruiter_name || 'Self'}</span></p>
                             <p>Date Joined: <span className="font-medium text-gray-800">{formatDate(selectedMember.date_joined || selectedMember.created_at)}</span></p>
                             <p>CBU Account No.: <span className="font-mono text-gray-800">{selectedAccounts.cbu?.account_no || '—'}</span></p>
                             <p>Savings Account No.: <span className="font-mono text-gray-800">{selectedAccounts.savings?.account_no || '—'}</span></p>

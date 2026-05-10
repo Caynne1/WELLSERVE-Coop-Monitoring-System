@@ -18,36 +18,63 @@ export async function getDashboardStats() {
     };
   });
 
-  const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, recentTxRes] = await Promise.all([
+  const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, allTxRes] = await Promise.all([
     supabase.from('members').select('id, status, membership_type, date_joined, created_at'),
-    supabase.from('loans').select('id, status, amount, balance, due_date'),
+    supabase.from('loans').select('id, status, amount, balance, due_date, preview_deductions_json, release_date, created_at'),
     supabase.from('accounts').select('id, account_type, balance'),
-    // Paid invoices are the authoritative cash-in (and sometimes cash-out) source
+    // Only admin-level invoices NOT already captured in transactions table
     supabase
       .from('invoices')
       .select('id, date, amount, purpose, payment_type, created_at')
-      .eq('status', 'paid'),
-    // Approved vouchers are the authoritative expense / withdrawal cash-out source
+      .eq('status', 'paid')
+      .in('payment_type', ['capital', 'loan_interest', 'service_fee', 'clpp', 'annual_dues']),
+    // Approved vouchers = Cash Out (expenses)
     supabase
       .from('vouchers')
       .select('id, date, amount, created_at')
       .eq('status', 'approved'),
     supabase.from('time_deposits').select('amount, status'),
-    // Recent transactions for the activity feed only (no charts)
+    // All transactions = primary source for member-level cash flows
     supabase
       .from('transactions')
-      .select('id, type, amount, created_at, transaction_date')
-      .order('created_at', { ascending: false })
-      .limit(8),
+      .select('id, type, category, amount, created_at, transaction_date')
+      .order('created_at', { ascending: false }),
   ]);
 
   const memberData   = membersRes.data   || [];
   const loanData     = loansRes.data     || [];
   const accountData  = accountsRes.data  || [];
-  const invoiceData  = invoicesRes.data  || [];
+  const invoiceData  = invoicesRes.data  || [];   // admin-only types
   const voucherData  = vouchersRes.data  || [];
   const tdData       = tdRes.data        || [];
-  const recentTxData = recentTxRes.data  || [];
+  const allTxData    = allTxRes.data     || [];
+
+  // ── Transaction-based cash flow (primary source) ───────────────────────────
+  const CASH_IN_TYPES  = new Set(['loan_payment','deposit','membership_payment','penalty_payment','other_payment','cbu','savings','membership','time_deposit']);
+  const CASH_OUT_TYPES = new Set(['withdrawal','cbu_withdrawal','savings_withdrawal']);
+
+  const cashInTx  = allTxData.filter(t => !CASH_OUT_TYPES.has((t.type||'').toLowerCase()) && (CASH_IN_TYPES.has((t.type||'').toLowerCase()) || CASH_IN_TYPES.has((t.category||'').toLowerCase())));
+  const cashOutTx = allTxData.filter(t => CASH_OUT_TYPES.has((t.type||'').toLowerCase()));
+
+  // ── Net proceeds released to members (Cash Out — loan disbursements) ───────
+  let netProceedsTotal = 0;
+  for (const loan of loanData) {
+    try {
+      const d = typeof loan.preview_deductions_json === 'string'
+        ? JSON.parse(loan.preview_deductions_json) : (loan.preview_deductions_json || {});
+      netProceedsTotal += Number(d.net_proceeds || 0);
+    } catch { /* skip */ }
+  }
+
+  const totalCashIn  = cashInTx.reduce((s, t) => s + (t.amount || 0), 0)
+                     + invoiceData.reduce((s, i) => s + (i.amount || 0), 0);
+
+  const totalCashOut = cashOutTx.reduce((s, t) => s + (t.amount || 0), 0)
+                     + voucherData.reduce((s, v) => s + (v.amount || 0), 0)
+                     + netProceedsTotal;
+
+  // Recent transactions for activity feed
+  const recentTxData = allTxData.slice(0, 8);
 
   const cbuAccounts     = accountData.filter(a => a.account_type === 'cbu');
   const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
@@ -58,14 +85,6 @@ export async function getDashboardStats() {
     return new Date(l.due_date) < now;
   });
 
-  // Split invoices: cash in (deposits, fees) vs cash out (withdrawals)
-  const cashInInvoices  = invoiceData.filter(inv => !isWithdrawalInvoice(inv));
-  const cashOutInvoices = invoiceData.filter(inv =>  isWithdrawalInvoice(inv));
-
-  const totalCashIn  = cashInInvoices.reduce((s, inv) => s + (inv.amount || 0), 0);
-  const totalCashOut = cashOutInvoices.reduce((s, inv) => s + (inv.amount || 0), 0)
-                     + voucherData.reduce((s, v) => s + (v.amount || 0), 0);
-
   // ── Loan Status Distribution ───────────────────────────────────────────────
   const loanStatusMap = {};
   loanData.forEach(l => {
@@ -74,23 +93,21 @@ export async function getDashboardStats() {
   });
   const loanStatusChart = Object.entries(loanStatusMap).map(([label, value]) => ({ label, value }));
 
-  // ── Cash Flow per Month (last 6 months) ───────────────────────────────────
-  // Uses invoices + vouchers — same source of truth as the Coop Fund page.
-  // Timestamp comparison avoids UTC string-slice timezone errors.
+  // ── Cash Flow per Month (last 6 months) — transaction-based ──────────────
   const cashFlowChart = months.map(({ label, start, end }) => {
     const startMs = new Date(start).getTime();
     const endMs   = new Date(end).getTime();
 
     const inWindow = arr =>
       arr.filter(r => {
-        // invoices use `date` (YYYY-MM-DD); treat as local noon to stay in the right day
-        const raw = r.date ? `${r.date}T12:00:00` : r.created_at;
+        const raw = r.transaction_date ? `${r.transaction_date}T12:00:00` : (r.date ? `${r.date}T12:00:00` : r.created_at);
         const ms  = new Date(raw).getTime();
         return ms >= startMs && ms <= endMs;
       });
 
-    const cashIn  = inWindow(cashInInvoices).reduce((s, inv) => s + (inv.amount || 0), 0);
-    const cashOut = inWindow(cashOutInvoices).reduce((s, inv) => s + (inv.amount || 0), 0)
+    const cashIn  = inWindow(cashInTx).reduce((s, t) => s + (t.amount || 0), 0)
+                  + inWindow(invoiceData).reduce((s, i) => s + (i.amount || 0), 0);
+    const cashOut = inWindow(cashOutTx).reduce((s, t) => s + (t.amount || 0), 0)
                   + inWindow(voucherData).reduce((s, v) => s + (v.amount || 0), 0);
 
     return { label, cashIn, cashOut };
