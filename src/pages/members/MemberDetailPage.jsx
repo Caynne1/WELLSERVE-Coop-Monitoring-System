@@ -50,14 +50,15 @@ import { trackActivity } from '../../services/logService';
 import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
 
 const TABS = [
-  { id: 'overview', label: 'Overview', icon: User },
-  { id: 'loan', label: 'Loans', icon: CreditCard },
-  { id: 'cbu', label: 'CBU', icon: PiggyBank },
-  { id: 'savings', label: 'Savings', icon: Wallet },
-  { id: 'time_deposit', label: 'Time Deposit', icon: Clock },
-  { id: 'membership', label: 'Membership', icon: Shield },
-  { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
-  { id: 'penalty', label: 'Penalty', icon: BadgeAlert },
+  { id: 'overview',        label: 'Overview',       icon: User },
+  { id: 'loan',            label: 'Loans',          icon: CreditCard },
+  { id: 'cbu',             label: 'CBU',            icon: PiggyBank },
+  { id: 'savings',         label: 'Savings',        icon: Wallet },
+  { id: 'time_deposit',    label: 'Time Deposit',   icon: Clock },
+  { id: 'membership',      label: 'Membership',     icon: Shield },
+  { id: 'transactions',    label: 'Transactions',   icon: ArrowLeftRight },
+  { id: 'penalty',         label: 'Penalty',        icon: BadgeAlert },
+  { id: 'credit_profile',  label: 'Credit Profile', icon: TrendingUp },
 ];
 
 const PAYMENT_MODE_OPTIONS = [
@@ -553,6 +554,10 @@ export default function MemberDetailPage() {
               userId={user?.id}
               onRefresh={fetchPenalties}
             />
+          )}
+
+          {activeTab === 'credit_profile' && (
+            <CreditProfileTab loans={loans} memberName={memberFullName} />
           )}
         </div>
       </div>
@@ -3108,6 +3113,209 @@ function MembershipStatCard({ label, value, bg, textColor }) {
     <div className={`${bg} rounded-xl border border-gray-100 p-4`}>
       <p className="text-xs text-gray-400 mb-1">{label}</p>
       <p className={`text-lg font-bold ${textColor}`}>{value}</p>
+    </div>
+  );
+}
+
+// ─── Credit Profile Tab ──────────────────────────────────────────────────────
+
+function computeCreditProfile(loans) {
+  const total        = loans.length;
+  const paid         = loans.filter(l => l.status === 'paid').length;
+  const active       = loans.filter(l => l.status === 'active' || l.status === 'ongoing').length;
+  const overdue      = loans.filter(l => l.status === 'overdue').length;
+  const defaulted    = loans.filter(l => l.status === 'defaulted').length;
+  const partial      = loans.filter(l => l.status === 'partial').length;
+  const totalBorrowed   = loans.reduce((s, l) => s + (l.amount || 0), 0);
+  const totalOutstanding = loans.filter(l => (l.balance || 0) > 0).reduce((s, l) => s + (l.balance || 0), 0);
+  const repaymentRate   = total > 0 ? Math.round((paid / total) * 100) : 0;
+
+  // Score components (0–100):
+  // 40pts: payment history (paid rate, no defaults)
+  // 30pts: default/overdue penalty
+  // 30pts: exposure (outstanding vs borrowed)
+  let score = 0;
+  if (total > 0) {
+    const historyScore = Math.round(((paid + active * 0.5) / total) * 40);
+    const penaltyScore = Math.max(0, 30 - defaulted * 15 - overdue * 5);
+    const exposureScore = totalBorrowed > 0
+      ? Math.round(((totalBorrowed - totalOutstanding) / totalBorrowed) * 30)
+      : 30;
+    score = Math.min(100, historyScore + penaltyScore + exposureScore);
+  }
+
+  const grade =
+    score >= 85 ? 'A' :
+    score >= 70 ? 'B' :
+    score >= 55 ? 'C' :
+    score >= 40 ? 'D' : 'F';
+
+  const gradeColor =
+    grade === 'A' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+    grade === 'B' ? 'text-blue-700 bg-blue-50 border-blue-200' :
+    grade === 'C' ? 'text-amber-700 bg-amber-50 border-amber-200' :
+    grade === 'D' ? 'text-orange-700 bg-orange-50 border-orange-200' :
+                   'text-red-700 bg-red-50 border-red-200';
+
+  const recommendations = [];
+  if (defaulted > 0)       recommendations.push('Resolve defaulted loans to improve credit standing.');
+  if (overdue > 0)         recommendations.push('Clear overdue obligations to avoid further penalties.');
+  if (total === 0)         recommendations.push('No loan history found. First-time borrower.');
+  if (repaymentRate < 50 && total > 0) recommendations.push('Improve repayment rate for better credit grade.');
+  if (score >= 85)         recommendations.push('Excellent credit record. Eligible for preferential rates.');
+
+  return { total, paid, active, overdue, defaulted, partial, totalBorrowed, totalOutstanding, repaymentRate, score, grade, gradeColor, recommendations };
+}
+
+function CreditProfileTab({ loans, memberName }) {
+  const profile = useMemo(() => computeCreditProfile(loans || []), [loans]);
+
+  const statItems = [
+    { label: 'Total Loans', value: profile.total, color: 'text-gray-800' },
+    { label: 'Loans Paid',  value: profile.paid,  color: 'text-emerald-700' },
+    { label: 'Active',      value: profile.active, color: 'text-blue-700' },
+    { label: 'Overdue',     value: profile.overdue, color: profile.overdue > 0 ? 'text-red-700' : 'text-gray-400' },
+    { label: 'Defaulted',   value: profile.defaulted, color: profile.defaulted > 0 ? 'text-rose-700' : 'text-gray-400' },
+    { label: 'Repayment Rate', value: `${profile.repaymentRate}%`, color: profile.repaymentRate >= 70 ? 'text-emerald-700' : 'text-orange-600' },
+  ];
+
+  return (
+    <div className="space-y-5 py-1">
+      {/* Score card */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex flex-col items-center gap-1">
+          <div className={`w-24 h-24 rounded-full border-4 flex items-center justify-center ${profile.gradeColor}`}>
+            <span className="text-3xl font-extrabold">{profile.grade}</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Credit Grade</p>
+        </div>
+
+        <div className="flex-1">
+          <p className="text-lg font-bold text-gray-900">{memberName}</p>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+              <div
+                className={`h-3 rounded-full transition-all ${
+                  profile.score >= 85 ? 'bg-emerald-500' :
+                  profile.score >= 70 ? 'bg-blue-500' :
+                  profile.score >= 55 ? 'bg-amber-400' :
+                  profile.score >= 40 ? 'bg-orange-400' : 'bg-red-500'
+                }`}
+                style={{ width: `${profile.score}%` }}
+              />
+            </div>
+            <span className="text-sm font-bold text-gray-700 tabular-nums w-12 text-right">{profile.score}/100</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Credit Score</p>
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        {statItems.map(({ label, value, color }) => (
+          <div key={label} className="bg-white rounded-xl border border-gray-200 p-3 text-center">
+            <p className={`text-xl font-bold tabular-nums ${color}`}>{value}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Exposure */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <p className="text-sm font-semibold text-gray-700 mb-3">Loan Exposure</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Total Borrowed</p>
+            <p className="text-lg font-bold text-gray-900">{formatCurrency(profile.totalBorrowed)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Outstanding Balance</p>
+            <p className={`text-lg font-bold ${profile.totalOutstanding > 0 ? 'text-orange-600' : 'text-emerald-700'}`}>
+              {formatCurrency(profile.totalOutstanding)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Amount Repaid</p>
+            <p className="text-lg font-bold text-emerald-700">
+              {formatCurrency(profile.totalBorrowed - profile.totalOutstanding)}
+            </p>
+          </div>
+        </div>
+        {profile.totalBorrowed > 0 && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+              <span>Repaid</span>
+              <span>{Math.round(((profile.totalBorrowed - profile.totalOutstanding) / profile.totalBorrowed) * 100)}%</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2">
+              <div
+                className="h-2 rounded-full bg-emerald-500"
+                style={{ width: `${Math.min(100, ((profile.totalBorrowed - profile.totalOutstanding) / profile.totalBorrowed) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Recommendations */}
+      {profile.recommendations.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-sm font-semibold text-gray-700 mb-3">Recommendations</p>
+          <ul className="space-y-2">
+            {profile.recommendations.map((rec, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                <span className="mt-0.5 w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 text-[10px] font-bold">{i + 1}</span>
+                {rec}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Loan breakdown */}
+      {(loans || []).length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <p className="text-sm font-semibold text-gray-700">Loan History</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50/80 border-b border-gray-100">
+                  {['Loan No.', 'Amount', 'Balance', 'Term', 'Status', 'Released'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loans.map(loan => (
+                  <tr key={loan.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{loan.loan_no || '—'}</td>
+                    <td className="px-4 py-3 font-semibold tabular-nums">{formatCurrency(loan.amount)}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      <span className={(loan.balance || 0) > 0 ? 'text-orange-600 font-semibold' : 'text-emerald-600'}>
+                        {formatCurrency(loan.balance ?? loan.amount)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{loan.term_months ? `${loan.term_months} mo.` : '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
+                        ${loan.status === 'paid' ? 'bg-emerald-50 text-emerald-700' :
+                          loan.status === 'defaulted' ? 'bg-red-50 text-red-700' :
+                          loan.status === 'overdue' ? 'bg-red-50 text-red-600' :
+                          loan.status === 'active' ? 'bg-blue-50 text-blue-700' :
+                          'bg-gray-100 text-gray-600'}`}>
+                        {loan.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(loan.release_date)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

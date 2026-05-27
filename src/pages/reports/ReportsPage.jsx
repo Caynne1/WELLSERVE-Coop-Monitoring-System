@@ -17,7 +17,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import { getMemberStats } from '../../services/memberService';
-import { getLoanStats } from '../../services/loanService';
+import { getLoanStats, getLoanPortfolioAnalytics } from '../../services/loanService';
 import { getAccountStats } from '../../services/accountService';
 import { getTransactions } from '../../services/transactionService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -333,11 +333,12 @@ const PRINT_CSS = `
 // ── Main ───────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
-  const [memberStats, setMemberStats]   = useState(null);
-  const [loanStats, setLoanStats]       = useState(null);
-  const [accountStats, setAccountStats] = useState(null);
+  const [memberStats, setMemberStats]       = useState(null);
+  const [loanStats, setLoanStats]           = useState(null);
+  const [loanAnalytics, setLoanAnalytics]   = useState(null);
+  const [accountStats, setAccountStats]     = useState(null);
   const [allTransactions, setAllTransactions] = useState([]);
-  const [loading, setLoading]           = useState(true);
+  const [loading, setLoading]               = useState(true);
 
   const [preset, setPreset]             = useState('monthly');
   const [customFrom, setCustomFrom]     = useState(null);
@@ -355,14 +356,16 @@ export default function ReportsPage() {
   async function fetchAll() {
     setLoading(true);
     try {
-      const [ms, ls, as, txs] = await Promise.all([
+      const [ms, ls, la, as, txs] = await Promise.all([
         getMemberStats(),
         getLoanStats(),
+        getLoanPortfolioAnalytics().catch(() => null),
         getAccountStats(),
         getTransactions(),
       ]);
       setMemberStats(ms);
       setLoanStats(ls);
+      setLoanAnalytics(la);
       setAccountStats(as);
       setAllTransactions(txs || []);
     } catch {
@@ -574,6 +577,116 @@ export default function ReportsPage() {
               trend={showComparison ? pct(totalReleased, prevReleased) : undefined} trendLabel="vs prev" />
             <StatCard icon={<TrendingDown size={20} />} label="Outstanding" value={formatCurrency(loanStats?.totalOutstanding ?? 0)} sub="Active loans only" iconBg="bg-red-50" iconColor="#DC2626" />
           </div>
+
+          {/* Loan Portfolio Analytics */}
+          {loanAnalytics && (
+            <>
+              <SectionTitle>Loan Portfolio Analytics</SectionTitle>
+
+              {/* Collection & Default rates */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                <StatCard
+                  icon={<TrendingUp size={20} />}
+                  label="Collection Rate"
+                  value={`${loanAnalytics.rates.collection_rate ?? 0}%`}
+                  sub="Amount collected vs released"
+                  iconBg="bg-emerald-50"
+                  iconColor="#059669"
+                />
+                <StatCard
+                  icon={<TrendingDown size={20} />}
+                  label="Default Rate"
+                  value={`${loanAnalytics.rates.default_rate ?? 0}%`}
+                  sub="Defaulted / Total loans"
+                  iconBg="bg-red-50"
+                  iconColor="#DC2626"
+                />
+                <StatCard
+                  icon={<CreditCard size={20} />}
+                  label="Total Outstanding"
+                  value={formatCurrency(loanAnalytics.portfolio.total_outstanding ?? 0)}
+                  sub="Across all active loans"
+                  iconBg="bg-orange-50"
+                  iconColor="#EA580C"
+                />
+                <StatCard
+                  icon={<TrendingUp size={20} />}
+                  label="Total Paid Off"
+                  value={formatCurrency(loanAnalytics.portfolio.total_paid_off ?? 0)}
+                  sub="Fully settled loans"
+                  iconBg="bg-blue-50"
+                  iconColor="#2563EB"
+                />
+              </div>
+
+              {/* Status Breakdown + Aging — side by side */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Status breakdown */}
+                <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Loan Status Breakdown</p>
+                  <div className="space-y-3">
+                    {[
+                      { key: 'active',    label: 'Active',    color: 'bg-emerald-400' },
+                      { key: 'paid',      label: 'Paid',      color: 'bg-blue-400' },
+                      { key: 'overdue',   label: 'Overdue',   color: 'bg-red-400' },
+                      { key: 'partial',   label: 'Partial',   color: 'bg-yellow-400' },
+                      { key: 'pending',   label: 'Pending',   color: 'bg-amber-400' },
+                      { key: 'defaulted', label: 'Defaulted', color: 'bg-rose-600' },
+                    ].map(({ key, label, color }) => {
+                      const count = loanAnalytics.by_status[key] ?? 0;
+                      const pct   = loanAnalytics.total > 0 ? ((count / loanAnalytics.total) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={key} className="flex items-center gap-3">
+                          <span className="text-xs text-gray-500 w-16 flex-shrink-0">{label}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">
+                            {count} <span className="font-normal text-gray-400">({pct}%)</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Aging analysis */}
+                <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Loan Aging Analysis</p>
+                  <div className="space-y-3">
+                    {[
+                      { key: 'current',    label: 'Current (not overdue)', color: 'bg-emerald-400' },
+                      { key: 'days_30',    label: '1–30 days overdue',     color: 'bg-yellow-400' },
+                      { key: 'days_60',    label: '31–60 days overdue',    color: 'bg-orange-400' },
+                      { key: 'days_90_plus', label: '60+ days overdue',   color: 'bg-red-500' },
+                    ].map(({ key, label, color }) => {
+                      const count = loanAnalytics.aging[key] ?? 0;
+                      const totalUnpaid =
+                        (loanAnalytics.aging.current ?? 0) +
+                        (loanAnalytics.aging.days_30 ?? 0) +
+                        (loanAnalytics.aging.days_60 ?? 0) +
+                        (loanAnalytics.aging.days_90_plus ?? 0);
+                      const pct = totalUnpaid > 0 ? ((count / totalUnpaid) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={key} className="flex items-center gap-3">
+                          <span className="text-xs text-gray-500 w-36 flex-shrink-0">{label}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">
+                            {count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-3">
+                    Based on each loan's next due date vs. today.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* CBU & Savings */}
           <SectionTitle>CBU & Savings</SectionTitle>

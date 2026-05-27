@@ -10,6 +10,11 @@ import {
   Printer,
   Download,
   FileText,
+  History,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,7 +23,8 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 
-import { getLoanById } from '../../services/loanService';
+import { getLoanById, getLoanPaymentHistory, updateLoanApprovalStatus } from '../../services/loanService';
+import { getAuditHistory } from '../../services/logService';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
 import {
   buildScheduleByFrequency,
@@ -295,6 +301,12 @@ export default function LoanDetailPage() {
   const [loading, setLoading] = useState(true);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [deductionsOpen, setDeductionsOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [auditHistory, setAuditHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [approvalSaving, setApprovalSaving] = useState(false);
 
   useEffect(() => {
     getLoanById(id)
@@ -305,6 +317,32 @@ export default function LoanDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [id, navigate]);
+
+  useEffect(() => {
+    if (!id) return;
+    setHistoryLoading(true);
+    Promise.all([
+      getLoanPaymentHistory(id).catch(() => []),
+      getAuditHistory(id, 'loan').catch(() => []),
+    ]).then(([payments, audit]) => {
+      setPaymentHistory(payments);
+      setAuditHistory(audit);
+    }).finally(() => setHistoryLoading(false));
+  }, [id]);
+
+  async function handleApprovalChange(newStatus) {
+    if (!loan) return;
+    setApprovalSaving(true);
+    try {
+      const updated = await updateLoanApprovalStatus(loan.id, newStatus);
+      setLoan(prev => ({ ...prev, approval_status: updated.approval_status }));
+      toast.success(`Loan marked as ${newStatus}`);
+    } catch {
+      toast.error('Failed to update approval status');
+    } finally {
+      setApprovalSaving(false);
+    }
+  }
 
   const previewSummary = useMemo(
     () => parseJsonSafely(loan?.preview_summary_json, null),
@@ -958,6 +996,170 @@ export default function LoanDetailPage() {
           showPaymentTracking={true}
           title="Amortization Schedule"
         />
+      </div>
+
+      {/* Payment History */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <History size={15} className="text-gray-400" />
+            <span className="text-sm font-semibold text-gray-700">Payment History</span>
+            {paymentHistory.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                {paymentHistory.length}
+              </span>
+            )}
+          </div>
+          {historyOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+
+        {historyOpen && (
+          <div className="border-t border-gray-100">
+            {historyLoading ? (
+              <div className="flex justify-center py-6"><Spinner /></div>
+            ) : paymentHistory.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-gray-400">No payment records found.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50/80 border-b border-gray-100">
+                      {['Date', 'Amount', 'Mode', 'Reference', 'Notes', 'Recorded By'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {paymentHistory.map(tx => (
+                      <tr key={tx.id} className="hover:bg-gray-50/50">
+                        <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                          {formatDate(tx.transaction_date || tx.created_at)}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-emerald-700 tabular-nums">
+                          {formatCurrency(tx.amount)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {tx.payment_mode ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
+                              {tx.payment_mode}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs font-mono">
+                          {tx.reference || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate">
+                          {tx.notes || tx.payment_mode_note || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {tx.created_by_name || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50 border-t border-gray-100">
+                      <td className="px-4 py-3 text-xs font-semibold text-gray-600">
+                        Total Paid ({paymentHistory.length} payments)
+                      </td>
+                      <td className="px-4 py-3 font-bold text-emerald-700 tabular-nums">
+                        {formatCurrency(paymentHistory.reduce((s, t) => s + (t.amount || 0), 0))}
+                      </td>
+                      <td colSpan={4} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Approval Workflow */}
+      {(loan.approval_status !== undefined) && (
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <CheckCircle2 size={15} className="text-gray-400" />
+            Approval Workflow
+          </h3>
+          <div className="flex flex-wrap items-center gap-3">
+            {[
+              { value: 'draft',     label: 'Draft',     icon: Clock,         color: 'text-gray-600',  bg: 'bg-gray-100' },
+              { value: 'submitted', label: 'Submitted', icon: Clock,         color: 'text-amber-700', bg: 'bg-amber-50' },
+              { value: 'approved',  label: 'Approved',  icon: CheckCircle2,  color: 'text-green-700', bg: 'bg-green-50' },
+              { value: 'rejected',  label: 'Rejected',  icon: XCircle,       color: 'text-red-700',   bg: 'bg-red-50' },
+              { value: 'released',  label: 'Released',  icon: CheckCircle2,  color: 'text-blue-700',  bg: 'bg-blue-50' },
+            ].map(({ value, label, icon: Icon, color, bg }) => (
+              <button
+                key={value}
+                disabled={approvalSaving || loan.approval_status === value}
+                onClick={() => handleApprovalChange(value)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border
+                  ${loan.approval_status === value
+                    ? `${bg} ${color} border-current ring-2 ring-offset-1 ring-current/30`
+                    : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                  }`}
+              >
+                <Icon size={12} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Audit Trail */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setAuditOpen(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={15} className="text-gray-400" />
+            <span className="text-sm font-semibold text-gray-700">Audit Trail</span>
+            {auditHistory.length > 0 && (
+              <span className="ml-1 text-xs text-gray-400">({auditHistory.length} events)</span>
+            )}
+          </div>
+          {auditOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+
+        {auditOpen && (
+          <div className="border-t border-gray-100">
+            {historyLoading ? (
+              <div className="flex justify-center py-6"><Spinner /></div>
+            ) : auditHistory.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-gray-400">No audit events found.</div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {auditHistory.map(log => (
+                  <div key={log.id} className="px-5 py-3 flex items-start gap-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold text-gray-700 capitalize">{log.action}</span>
+                        {log.user_name && (
+                          <span className="text-xs text-gray-400">by {log.user_name}</span>
+                        )}
+                        <span className="text-xs text-gray-300">
+                          {new Date(log.created_at).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {log.description && (
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">{log.description}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

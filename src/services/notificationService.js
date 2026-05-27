@@ -185,6 +185,124 @@ export async function generateDailyAlerts() {
   }
 }
 
+// ── Birthday Alert Generator ──────────────────────────────────────────────────
+// Checks members with a birthday today and creates a single alert per member.
+
+export async function generateBirthdayAlerts() {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const todayMonth = today.getMonth() + 1;
+  const todayDay   = today.getDate();
+
+  try {
+    const { data: members } = await supabase
+      .from('members')
+      .select('id, first_name, last_name, date_of_birth')
+      .not('date_of_birth', 'is', null);
+
+    for (const member of members || []) {
+      if (!member.date_of_birth) continue;
+
+      const dob = new Date(member.date_of_birth);
+      if (dob.getMonth() + 1 !== todayMonth || dob.getDate() !== todayDay) continue;
+
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('reference_id', member.id)
+        .eq('category', 'birthday')
+        .gte('created_at', todayStr)
+        .limit(1);
+
+      if (!existing || existing.length === 0) {
+        const age = today.getFullYear() - dob.getFullYear();
+        const suffix = age === 1 ? 'st' : age === 2 ? 'nd' : age === 3 ? 'rd' : 'th';
+        await createNotification({
+          title: 'Member Birthday',
+          message: `${member.first_name} ${member.last_name} celebrates their ${age}${suffix} birthday today!`,
+          type: 'info',
+          category: 'birthday',
+          reference_id: member.id,
+          reference_type: 'member',
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[generateBirthdayAlerts] error:', err);
+  }
+}
+
+// ── Overdue Escalation ────────────────────────────────────────────────────────
+// Creates escalation alerts for loans that are 30, 60, and 90+ days overdue.
+
+export async function generateOverdueEscalationAlerts() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+
+  const THRESHOLDS = [
+    { days: 30,  label: '30-day',   type: 'warning' },
+    { days: 60,  label: '60-day',   type: 'error' },
+    { days: 90,  label: '90+ day',  type: 'error' },
+  ];
+
+  try {
+    const { data: overdueLoans } = await supabase
+      .from('loans')
+      .select('id, loan_no, due_date, balance, members(first_name, last_name)')
+      .in('status', ['active', 'overdue', 'partial'])
+      .lt('due_date', todayStr)
+      .gt('balance', 0);
+
+    for (const loan of overdueLoans || []) {
+      const dueDate = new Date(loan.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+      const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+
+      const memberName = loan.members
+        ? `${loan.members.first_name} ${loan.members.last_name}`
+        : 'Unknown Member';
+
+      for (const threshold of THRESHOLDS) {
+        if (daysOverdue < threshold.days) continue;
+
+        const category = `overdue_${threshold.days}`;
+        const { data: existing } = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('reference_id', loan.id)
+          .eq('category', category)
+          .gte('created_at', todayStr)
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          await createNotification({
+            title: `Loan ${threshold.label} Overdue`,
+            message: `Loan #${loan.loan_no} for ${memberName} is ${daysOverdue} days overdue. Outstanding: ₱${Number(loan.balance || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+            type: threshold.type,
+            category,
+            reference_id: loan.id,
+            reference_type: 'loan',
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[generateOverdueEscalationAlerts] error:', err);
+  }
+}
+
+// ── Master Daily Alert Runner ─────────────────────────────────────────────────
+// Call this once per session (from NotificationContext or App.jsx).
+
+export async function generateAllDailyAlerts() {
+  await Promise.allSettled([
+    generateDailyAlerts(),
+    generateBirthdayAlerts(),
+    generateOverdueEscalationAlerts(),
+  ]);
+}
+
 // ── Transaction Alert Helpers (called from service layer) ────────────────────
 
 export async function notifyPayment(payload) {

@@ -36,7 +36,7 @@ const navGroups = [
     ],
   },
   {
-    label: 'Financial',
+    label: 'Products',
     items: [
       { to: '/loans',              icon: CreditCard,      label: 'Loans',              permKey: 'loans' },
       { to: '/cbu',                icon: PiggyBank,       label: 'CBU',                permKey: 'cbu' },

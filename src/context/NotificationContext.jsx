@@ -7,7 +7,7 @@ import {
   markAllAsRead,
   deleteNotification,
   subscribeToNotifications,
-  generateDailyAlerts,
+  generateAllDailyAlerts,
 } from '../services/notificationService';
 
 const NotificationContext = createContext(null);
@@ -41,7 +41,7 @@ export function NotificationProvider({ children }) {
 
     if (!dailyAlertRunRef.current) {
       dailyAlertRunRef.current = true;
-      generateDailyAlerts().then(refresh).catch(console.error);
+      generateAllDailyAlerts().then(refresh).catch(console.error);
     }
   }, [refresh]);
 

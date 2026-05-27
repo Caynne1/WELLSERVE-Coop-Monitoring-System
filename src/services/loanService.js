@@ -342,6 +342,143 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount) {
 }
 
 /**
+ * Get payment history for a specific loan (from transactions table).
+ */
+export async function getLoanPaymentHistory(loanId) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('loan_id', loanId)
+    .eq('type', 'loan_payment')
+    .order('transaction_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  const txList = data || [];
+
+  const createdByIds = [...new Set(txList.map(t => t.created_by).filter(Boolean))];
+  if (createdByIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', createdByIds);
+    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p.full_name]));
+    return txList.map(t => ({
+      ...t,
+      created_by_name: t.created_by ? (profileMap[t.created_by] || t.created_by) : 'System',
+    }));
+  }
+
+  return txList.map(t => ({ ...t, created_by_name: 'System' }));
+}
+
+/**
+ * Get loans that are currently overdue (balance > 0 and due_date < today).
+ */
+export async function getOverdueLoans() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('loans')
+    .select('id, loan_no, status, amount, balance, due_date, member_id, repayment_frequency')
+    .in('status', ['active', 'overdue', 'partial'])
+    .lt('due_date', today)
+    .gt('balance', 0);
+
+  if (error) throw error;
+
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  return (data || []).map(loan => {
+    const dueDate = new Date(loan.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    const daysOverdue = Math.floor((todayDate - dueDate) / (1000 * 60 * 60 * 24));
+    return { ...loan, days_overdue: daysOverdue };
+  });
+}
+
+/**
+ * Compute loan portfolio analytics for reports (aging, status breakdown, collection rate).
+ */
+export async function getLoanPortfolioAnalytics() {
+  const { data: loans, error } = await supabase
+    .from('loans')
+    .select('id, status, amount, balance, due_date, release_date, repayment_frequency, loan_method, term_months');
+
+  if (error) throw error;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const byStatus = { active: 0, paid: 0, pending: 0, defaulted: 0, overdue: 0, partial: 0 };
+  const aging    = { current: 0, days_30: 0, days_60: 0, days_90_plus: 0 };
+  let totalReleased    = 0;
+  let totalOutstanding = 0;
+  let totalPaidOff     = 0;
+
+  for (const loan of loans || []) {
+    const status  = loan.status || 'active';
+    const balance = safeNum(loan.balance);
+    const amount  = safeNum(loan.amount);
+
+    if (Object.prototype.hasOwnProperty.call(byStatus, status)) byStatus[status]++;
+
+    totalReleased    += amount;
+    totalOutstanding += balance;
+    if (balance <= 0) totalPaidOff += amount;
+
+    // Aging buckets — only unpaid loans with a due date
+    if (balance > 0 && loan.due_date) {
+      const dueDate = new Date(loan.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+      const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+      if (daysOverdue <= 0)       aging.current++;
+      else if (daysOverdue <= 30) aging.days_30++;
+      else if (daysOverdue <= 60) aging.days_60++;
+      else                        aging.days_90_plus++;
+    }
+  }
+
+  const total = (loans || []).length;
+  const collectionRate = totalReleased > 0
+    ? round2(((totalReleased - totalOutstanding) / totalReleased) * 100)
+    : 0;
+  const defaultRate = total > 0
+    ? round2((byStatus.defaulted / total) * 100)
+    : 0;
+
+  return {
+    total,
+    by_status: byStatus,
+    aging,
+    portfolio: {
+      total_released:    round2(totalReleased),
+      total_outstanding: round2(totalOutstanding),
+      total_paid_off:    round2(totalPaidOff),
+    },
+    rates: {
+      collection_rate: collectionRate,
+      default_rate:    defaultRate,
+    },
+  };
+}
+
+/**
+ * Update loan approval status.
+ * Requires approval_status and approval_notes columns (see migration SQL).
+ */
+export async function updateLoanApprovalStatus(loanId, approvalStatus, notes = '') {
+  const { data, error } = await supabase
+    .from('loans')
+    .update({ approval_status: approvalStatus, approval_notes: notes })
+    .eq('id', loanId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Check if a loan already exists (duplicate detection for imports).
  */
 export async function findDuplicateLoan(memberId, releaseDate, amount) {
