@@ -5,9 +5,6 @@ import {
   Eye,
   Search,
   UserPlus,
-  CreditCard,
-  PiggyBank,
-  Wallet,
   Pencil,
   Trash2,
   Users,
@@ -351,7 +348,7 @@ export default function MembersPage() {
         mobile_no:       m.phone           || '',
         recruiter_name:  m.recruiter_name  || 'Self',
         status:          m.status          || '',
-        joined:          m.created_at ? formatDate(m.created_at) : '',
+        joined:          m.date_joined ? formatDate(m.date_joined) : (m.created_at ? formatDate(m.created_at) : ''),
       }));
       exportToCSV(`members_export_${new Date().toISOString().slice(0, 10)}.csv`, rows);
       toast.success(`${rows.length} member${rows.length !== 1 ? 's' : ''} exported.`);
@@ -421,7 +418,7 @@ export default function MembersPage() {
         mobile_no:       m.phone           || '',
         recruiter_name:  m.recruiter_name  || 'Self',
         status:          m.status          || '',
-        joined:          m.created_at ? formatDate(m.created_at) : '',
+        joined:          m.date_joined ? formatDate(m.date_joined) : (m.created_at ? formatDate(m.created_at) : ''),
       }));
       exportToCSV(
         statusTab === 'inactive' ? 'inactive_members_report.csv' : 'members_report.csv',
@@ -604,16 +601,15 @@ export default function MembersPage() {
                       'Referrer',
                       'Joined',
                       'Status',
-                      'Quick Access',
                       'Actions',
                     ].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          ['Member No.', 'Joined', 'Status', 'Quick Access', 'Actions'].includes(h)
+                          ['Member No.', 'Joined', 'Status', 'Actions'].includes(h)
                             ? 'text-center'
                             : 'text-left'
-                        } ${h === 'Quick Access' || h === 'Actions' ? 'print:hidden' : ''}`}
+                        } ${h === 'Actions' ? 'print:hidden' : ''}`}
                       >
                         {h}
                       </th>
@@ -728,7 +724,7 @@ export default function MembersPage() {
 
                           {/* Joined */}
                           <td className="px-4 py-3 text-gray-500 text-xs text-center">
-                            {member.created_at ? formatDate(member.created_at) : '—'}
+                            {member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : '—')}
                           </td>
 
                           {/* Status */}
@@ -736,33 +732,6 @@ export default function MembersPage() {
                             <Badge variant={statusVariant[member.status] || 'default'} dot>
                               {member.status || 'active'}
                             </Badge>
-                          </td>
-
-                          {/* Quick Access */}
-                          <td className="px-4 py-3 print:hidden" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => openMemberTab(member.id, 'loan')}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg
-                                  bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 transition-colors"
-                              >
-                                <CreditCard size={11} /> Loan
-                              </button>
-                              <button
-                                onClick={() => openMemberTab(member.id, 'cbu')}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg
-                                  bg-[#D6FADC] text-[#07A04E] hover:bg-[#c0f5c8] border border-[#07A04E]/20 transition-colors"
-                              >
-                                <PiggyBank size={11} /> CBU
-                              </button>
-                              <button
-                                onClick={() => openMemberTab(member.id, 'savings')}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg
-                                  bg-[#AEECEF]/30 text-[#000066] hover:bg-[#AEECEF]/50 border border-[#000066]/15 transition-colors"
-                              >
-                                <Wallet size={11} /> Savings
-                              </button>
-                            </div>
                           </td>
 
                           {/* Row Actions */}

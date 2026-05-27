@@ -451,22 +451,25 @@ export default function MemberDetailPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="flex overflow-x-auto border-b border-gray-100">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setSearchParams({ tab: tab.id })}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700 bg-blue-50/50'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <tab.icon size={15} />
-              {tab.label}
-            </button>
-          ))}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
+        {/* Tab navigation — horizontal scroll on small screens */}
+        <div className="overflow-x-auto border-b border-gray-100 scrollbar-thin scrollbar-thumb-gray-200">
+          <div className="flex min-w-max">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setSearchParams({ tab: tab.id })}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${
+                  activeTab === tab.id
+                    ? 'border-[#07A04E] text-[#07A04E] bg-[#D6FADC]/40'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <tab.icon size={14} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="p-6">
@@ -1856,7 +1859,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
       {/* ── Per-component payment progress ── */}
       {membershipFees && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2.5 border-b border-gray-100">
             Payment Breakdown — {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
           </p>
@@ -1938,7 +1941,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         {payments.length === 0 ? (
           <p className="text-xs text-gray-400 py-4 text-center">No payments recorded yet.</p>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
@@ -1968,7 +1971,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
       {upgradeLogs.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Upgrade History</h3>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
@@ -2341,7 +2344,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
             : '—';
 
           return (
-            <div key={td.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div key={td.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
               <div className="px-5 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{td.name}</p>
@@ -2603,7 +2606,7 @@ function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefres
       {penalties.length === 0 ? (
         <EmptyState icon={BadgeAlert} message="No penalties recorded for this member." />
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
@@ -2890,7 +2893,7 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
 
 function LoanPaymentHistoryTable({ rows }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
@@ -3070,7 +3073,7 @@ function TransactionsTab({ transactions }) {
 
 function HistoryTable({ rows }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
@@ -3274,7 +3277,7 @@ function CreditProfileTab({ loans, memberName }) {
 
       {/* Loan breakdown */}
       {(loans || []).length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
           <div className="px-5 py-4 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-700">Loan History</p>
           </div>

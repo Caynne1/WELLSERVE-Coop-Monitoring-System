@@ -26,11 +26,23 @@ const MEMBER_COLUMNS = [
   'record_type',
 ];
 
-function sanitizeMemberPayload(payload) {
+// For CREATE: strip empty strings and undefined (don't send blank fields on insert)
+function sanitizeCreatePayload(payload) {
   return Object.fromEntries(
     Object.entries(payload).filter(
       ([k, v]) => MEMBER_COLUMNS.includes(k) && v !== '' && v !== undefined
     )
+  );
+}
+
+// For UPDATE: send null for cleared fields so the DB is actually cleared.
+// Empty string → null; undefined → skip entirely (unknown field).
+function sanitizeUpdatePayload(payload) {
+  return Object.fromEntries(
+    Object.entries(payload)
+      .filter(([k]) => MEMBER_COLUMNS.includes(k))
+      .map(([k, v]) => [k, v === '' ? null : v])
+      .filter(([, v]) => v !== undefined)
   );
 }
 
@@ -56,7 +68,7 @@ export async function getMemberById(id) {
 }
 
 export async function createMember(payload) {
-  const clean = sanitizeMemberPayload(payload);
+  const clean = sanitizeCreatePayload(payload);
 
   const { data, error } = await supabase
     .from('members')
@@ -69,7 +81,7 @@ export async function createMember(payload) {
 }
 
 export async function updateMember(id, payload) {
-  const clean = sanitizeMemberPayload(payload);
+  const clean = sanitizeUpdatePayload(payload);
 
   const { data, error } = await supabase
     .from('members')
@@ -133,16 +145,13 @@ async function hardDeleteMember(id) {
 }
 
 export async function deleteMember(id) {
-  // Read current member status first so the UI can use one delete button
-  // while the backend decides whether to archive or hard-delete.
   const member = await getMemberById(id);
   const currentStatus = member?.status || 'active';
 
   const dependencies = await getMemberDeleteDependencies(id);
   const protectedExists = hasProtectedRecords(dependencies);
 
-  // Case 1:
-  // Active member with protected/accounting records → archive instead of delete
+  // Active member with protected records → archive
   if (currentStatus === 'active' && protectedExists) {
     const { data, error: updateError } = await supabase
       .from('members')
@@ -162,16 +171,14 @@ export async function deleteMember(id) {
     };
   }
 
-  // Case 2:
-  // Inactive member with protected/accounting records → block permanent delete
+  // Inactive member with protected records → block
   if (currentStatus === 'inactive' && protectedExists) {
     throw new Error(
       'This inactive member still has financial/history records and cannot be permanently deleted.'
     );
   }
 
-  // Case 3:
-  // No protected records → safe hard delete
+  // No protected records → hard delete
   return await hardDeleteMember(id);
 }
 
@@ -187,38 +194,22 @@ export async function initializeMemberAccounts(memberId) {
   const toCreate = [];
 
   if (!existingTypes.includes('cbu')) {
-    toCreate.push({
-      member_id: memberId,
-      account_type: 'cbu',
-      balance: 0,
-      status: 'active',
-    });
+    toCreate.push({ member_id: memberId, account_type: 'cbu', balance: 0, status: 'active' });
   }
-
   if (!existingTypes.includes('savings')) {
-    toCreate.push({
-      member_id: memberId,
-      account_type: 'savings',
-      balance: 0,
-      status: 'active',
-    });
+    toCreate.push({ member_id: memberId, account_type: 'savings', balance: 0, status: 'active' });
   }
 
   if (toCreate.length === 0) return [];
 
-  const { data, error } = await supabase
-    .from('accounts')
-    .insert(toCreate)
-    .select();
-
+  const { data, error } = await supabase.from('accounts').insert(toCreate).select();
   if (error) throw error;
   return data || [];
 }
 
 export async function searchMembers(query) {
-  // Sanitize: strip characters that could manipulate PostgREST filter syntax
   const sanitized = String(query || '')
-    .replace(/[,.()"'\\%;]/g, '')
+    .replace(/[,.()\"'\\%;]/g, '')
     .trim();
 
   if (!sanitized) return [];

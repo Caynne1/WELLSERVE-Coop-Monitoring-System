@@ -7,7 +7,7 @@ export default function AddMemberModal({ open, onClose, onCreated }) {
       open={open}
       onClose={onClose}
       title="Add New Member"
-      size="xl"
+      size="2xl"
     >
       <MemberFormContent
         inModal
@@ -16,4 +16,4 @@ export default function AddMemberModal({ open, onClose, onCreated }) {
       />
     </Modal>
   );
-} 
+}

@@ -696,92 +696,15 @@ export function MemberFormContent({
   const content = (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
-      {/* ── Record Type selector (new registrations only) ── */}
+      {/* ── New Member info banner (add mode only) ── */}
       {!isEdit && (
-        <section>
-          <p className="text-sm font-semibold text-gray-700 mb-3">Registration Category</p>
-          <div className="grid grid-cols-2 gap-3">
-            {/* New Member */}
-            <label
-              className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                !isOldMember
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <input
-                type="radio"
-                value="new_member"
-                className="mt-0.5 accent-blue-600"
-                {...register('record_type')}
-              />
-              <div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <UserPlus size={14} className={!isOldMember ? 'text-blue-600' : 'text-gray-400'} />
-                  <span className={`text-sm font-semibold ${!isOldMember ? 'text-blue-700' : 'text-gray-600'}`}>
-                    New Member
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 leading-snug">
-                  Joining now. Follows normal registration and payment flow.
-                </p>
-              </div>
-            </label>
-
-            {/* Old Member */}
-            <label
-              className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                isOldMember
-                  ? 'border-amber-500 bg-amber-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <input
-                type="radio"
-                value="old_member"
-                className="mt-0.5 accent-amber-600"
-                {...register('record_type')}
-              />
-              <div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Archive size={14} className={isOldMember ? 'text-amber-600' : 'text-gray-400'} />
-                  <span className={`text-sm font-semibold ${isOldMember ? 'text-amber-700' : 'text-gray-600'}`}>
-                    Old Member
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 leading-snug">
-                  Encoding from existing Excel / printed records. No fund movement.
-                </p>
-              </div>
-            </label>
-          </div>
-
-          {/* Old Member explanation banner */}
-          {isOldMember && (
-            <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 space-y-1">
-              <p className="font-semibold flex items-center gap-1.5">
-                <Archive size={14} /> Historical Record — Old Member
-              </p>
-              <ul className="list-disc list-inside space-y-0.5 text-xs text-amber-700 mt-1">
-                <li>Membership is automatically marked as <strong>Fully Paid</strong>.</li>
-                <li>No invoice or receipt will be generated.</li>
-                <li>No fund movement will be recorded in the cooperative fund.</li>
-                <li>This member will be recognized as eligible for loans and other services.</li>
-                <li>You may enter the member's existing CBU, Savings, and Time Deposit balances below.</li>
-              </ul>
-            </div>
-          )}
-
-          {/* New Member info banner */}
-          {!isOldMember && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-start gap-2">
-              <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
-              <span>
-                You may register a member only, or register and post initial onboarding payments at the same time.
-              </span>
-            </div>
-          )}
-        </section>
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-start gap-2">
+          <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
+          <span>
+            Register the member and optionally post initial onboarding payments at the same time.
+            Historical records are only added via <strong>Import Members</strong>.
+          </span>
+        </div>
       )}
 
       {/* Old member read-only badge in edit mode */}
