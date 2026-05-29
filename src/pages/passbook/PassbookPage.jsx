@@ -168,7 +168,20 @@ export default function PassbookPage() {
         setSelectedMemberId(normalizedMembers[0].id);
       }
     } catch (error) {
-      toast.error(error.message || 'Failed to load passbook data.');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            {error.message || 'Failed to load passbook data.'}
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchPassbookData(); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }

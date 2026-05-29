@@ -35,6 +35,7 @@ export default function AccountManagementPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -47,17 +48,31 @@ export default function AccountManagementPage() {
       setAccounts(data);
     } catch (err) {
       console.error('[AccountManagementPage] fetchAccounts error:', err);
-      toast.error('Failed to load accounts');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            Failed to load accounts
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchAccounts(); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }
   }
 
   async function handleStatusToggle() {
-    if (!confirmAction) return;
+    if (!confirmAction || toggling) return;
 
     const { account, action } = confirmAction;
 
+    setToggling(true);
     try {
       if (action === 'deactivate') {
         await deactivateAccount(account.id);
@@ -72,8 +87,11 @@ export default function AccountManagementPage() {
     } catch (err) {
       console.error('[AccountManagementPage] handleStatusToggle error:', err);
       toast.error(err.message || 'Action failed');
+    } finally {
+      setToggling(false);
     }
   }
+
 
   const filtered = accounts.filter((a) => {
     const q = search.toLowerCase();
@@ -298,8 +316,9 @@ export default function AccountManagementPage() {
         confirmVariant={
           confirmAction?.action === 'deactivate' ? 'danger' : 'primary'
         }
+        loading={toggling}
         onConfirm={handleStatusToggle}
-        onCancel={() => setConfirmAction(null)}
+        onCancel={() => { if (!toggling) setConfirmAction(null); }}
       />
     </div>
   );
@@ -461,7 +480,7 @@ function CreateAccountModal({ open, onClose, onSuccess }) {
         </div>
 
         <div className="flex justify-end gap-3 pt-1">
-          <Button type="button" variant="outline" onClick={handleClose}>
+          <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" loading={loading} icon={<UserPlus size={14} />}>

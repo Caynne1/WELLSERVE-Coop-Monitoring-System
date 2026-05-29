@@ -369,7 +369,20 @@ export default function ReportsPage() {
       setAccountStats(as);
       setAllTransactions(txs || []);
     } catch {
-      toast.error('Failed to load report data.');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            Failed to load report data.
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchAll(); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }

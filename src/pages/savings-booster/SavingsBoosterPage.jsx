@@ -301,7 +301,7 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
 
         {/* Actions */}
         <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
           <Button
             variant="green"
             icon={<Sprout size={14} />}

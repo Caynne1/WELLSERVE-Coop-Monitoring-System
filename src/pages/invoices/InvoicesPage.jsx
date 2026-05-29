@@ -121,7 +121,20 @@ export default function InvoicesPage() {
       });
       setInvoices(data);
     } catch {
-      toast.error('Failed to load invoices.');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            Failed to load invoices.
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchInvoices(); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }

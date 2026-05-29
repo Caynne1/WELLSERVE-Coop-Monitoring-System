@@ -94,7 +94,20 @@ export default function ActivityLogsPage() {
       });
       setLogs(data);
     } catch {
-      toast.error('Failed to load activity logs');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            Failed to load activity logs
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchLogs(opts); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }

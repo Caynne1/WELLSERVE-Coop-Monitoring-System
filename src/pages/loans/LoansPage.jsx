@@ -210,7 +210,20 @@ export default function LoansPage() {
       setLoading(true);
       setLoans(await getLoans());
     } catch {
-      toast.error('Failed to load loans');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            Failed to load loans
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchLoans(); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }
@@ -1135,7 +1148,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
             <Button

@@ -19,6 +19,7 @@ import {
   UserCheck,
   UserX,
   ChevronDown,
+  CalendarDays,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -191,6 +192,7 @@ export default function MembersPage() {
   const [search, setSearch]             = useState('');
   const [typeFilter, setTypeFilter]     = useState('all');
   const [statusTab, setStatusTab]       = useState('active');
+  const [yearFilter, setYearFilter]     = useState('all');
 
   // Selection
   const [selectedIds, setSelectedIds]   = useState(new Set());
@@ -203,6 +205,12 @@ export default function MembersPage() {
   const [importOpen, setImportOpen]               = useState(false);
   const [importFinancialOpen, setImportFinancialOpen] = useState(false);
 
+  // Action loading states — prevents duplicate clicks / shows feedback
+  const [deleting, setDeleting]                   = useState(false);
+  const [reactivatingId, setReactivatingId]       = useState(null);   // member id being reactivated
+  const [bulkDeleting, setBulkDeleting]           = useState(false);
+  const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
+
   // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchMembers = useCallback(async () => {
@@ -211,7 +219,20 @@ export default function MembersPage() {
       const data = await getMembers();
       setMembers(data || []);
     } catch {
-      toast.error('Failed to load members');
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3 text-sm">
+            Failed to load members
+            <button
+              className="flex-shrink-0 text-xs font-bold underline"
+              onClick={() => { toast.dismiss(t.id); fetchMembers(); }}
+            >
+              Retry
+            </button>
+          </span>
+        ),
+        { duration: 6000 }
+      );
     } finally {
       setLoading(false);
     }
@@ -220,7 +241,19 @@ export default function MembersPage() {
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
   // Clear selection when tab or filters change
-  useEffect(() => { setSelectedIds(new Set()); }, [statusTab, typeFilter, search]);
+  useEffect(() => { setSelectedIds(new Set()); }, [statusTab, typeFilter, search, yearFilter]);
+
+  // ── Available join years (from date_joined, fallback created_at) ──────────
+  const availableYears = useMemo(() => {
+    const yearSet = new Set();
+    members.forEach(m => {
+      const raw = m.date_joined || m.created_at;
+      if (!raw) return;
+      const yr = new Date(raw).getFullYear();
+      if (!isNaN(yr)) yearSet.add(yr);
+    });
+    return [...yearSet].sort((a, b) => b - a); // newest first
+  }, [members]);
 
   // ── Filtered list ──────────────────────────────────────────────────────────
 
@@ -243,9 +276,16 @@ export default function MembersPage() {
           ? (m.status || 'active') === 'active'
           : m.status === 'inactive';
 
-      return matchesSearch && matchesType && matchesStatus;
+      let matchesYear = true;
+      if (yearFilter !== 'all') {
+        const raw = m.date_joined || m.created_at;
+        const yr  = raw ? new Date(raw).getFullYear() : null;
+        matchesYear = yr === Number(yearFilter);
+      }
+
+      return matchesSearch && matchesType && matchesStatus && matchesYear;
     });
-  }, [members, search, typeFilter, statusTab]);
+  }, [members, search, typeFilter, statusTab, yearFilter]);
 
   // ── Selection helpers ──────────────────────────────────────────────────────
 
@@ -297,9 +337,11 @@ export default function MembersPage() {
   // ── Single-row actions ─────────────────────────────────────────────────────
 
   async function handleDelete(id) {
+    if (deleting) return;
     const memberName = confirmDelete
       ? `${confirmDelete.first_name ?? ''} ${confirmDelete.last_name ?? ''}`.trim()
       : null;
+    setDeleting(true);
     try {
       const result = await deleteMember(id);
       toast.success(result?.message || 'Member deleted');
@@ -311,15 +353,18 @@ export default function MembersPage() {
           ? `Deleted member: ${memberName}`
           : `Deleted member ID: ${id}`,
       });
+      setConfirmDelete(null);
       await fetchMembers();
     } catch (err) {
       toast.error(err.message || 'Failed to delete member');
     } finally {
-      setConfirmDelete(null);
+      setDeleting(false);
     }
   }
 
   async function handleReactivate(member) {
+    if (reactivatingId) return;
+    setReactivatingId(member.id);
     try {
       await updateMember(member.id, { status: 'active' });
       toast.success('Member reactivated');
@@ -327,6 +372,8 @@ export default function MembersPage() {
       await fetchMembers();
     } catch (err) {
       toast.error(err.message || 'Failed to reactivate member');
+    } finally {
+      setReactivatingId(null);
     }
   }
 
@@ -358,10 +405,12 @@ export default function MembersPage() {
   }
 
   async function executeBulkStatusChange(newStatus) {
+    if (bulkStatusChanging) return;
     const ids = selectedMembers.map(m => m.id);
     let successCount = 0;
     let failCount = 0;
 
+    setBulkStatusChanging(true);
     await Promise.allSettled(
       ids.map(id =>
         updateMember(id, { status: newStatus })
@@ -378,14 +427,17 @@ export default function MembersPage() {
 
     clearSelection();
     setConfirmBulkStatus(null);
+    setBulkStatusChanging(false);
     await fetchMembers();
   }
 
   async function executeBulkDelete() {
+    if (bulkDeleting) return;
     const ids = selectedMembers.map(m => m.id);
     let successCount = 0;
     let failCount = 0;
 
+    setBulkDeleting(true);
     await Promise.allSettled(
       ids.map(id =>
         deleteMember(id)
@@ -402,6 +454,7 @@ export default function MembersPage() {
 
     clearSelection();
     setConfirmBulkDelete(false);
+    setBulkDeleting(false);
     await fetchMembers();
   }
 
@@ -521,6 +574,41 @@ export default function MembersPage() {
               </select>
             </div>
 
+            {/* Year filter */}
+            <div className="relative">
+              <CalendarDays size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <select
+                value={yearFilter}
+                onChange={e => setYearFilter(e.target.value)}
+                className={`pl-9 pr-8 py-2 text-sm border rounded-xl bg-white shadow-sm
+                  focus:outline-none focus:ring-2 focus:ring-[#07A04E] transition-colors
+                  ${yearFilter !== 'all'
+                    ? 'border-[#07A04E] ring-1 ring-[#07A04E] text-[#07A04E] font-medium'
+                    : 'border-gray-200 text-gray-700'
+                  }`}
+              >
+                <option value="all">All Years</option>
+                {availableYears.map(yr => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Active filter badges */}
+            {yearFilter !== 'all' && (
+              <button
+                onClick={() => setYearFilter('all')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium
+                  bg-[#D6FADC] text-[#07A04E] border border-[#07A04E]/20 rounded-lg
+                  hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group"
+                title="Clear year filter"
+              >
+                <CalendarDays size={12} />
+                {yearFilter}
+                <X size={11} className="group-hover:scale-110 transition-transform" />
+              </button>
+            )}
+
             <Button variant="outline" icon={<Printer size={15} />} onClick={handlePrint}>Print</Button>
             <Button variant="outline" icon={<Download size={15} />} onClick={handleExportCSV}>Export All</Button>
           </div>
@@ -565,6 +653,7 @@ export default function MembersPage() {
             <p className="text-sm font-semibold text-gray-800">Members Report</p>
             <p className="text-xs text-gray-500">Status: {statusTab === 'active' ? 'Active' : 'Inactive'}</p>
             <p className="text-xs text-gray-500">Type: {typeFilter === 'all' ? 'All' : typeFilter}</p>
+            <p className="text-xs text-gray-500">Year Joined: {yearFilter === 'all' ? 'All Years' : yearFilter}</p>
             <p className="text-xs text-gray-500">Generated: {new Date().toLocaleString()}</p>
           </div>
         </div>
@@ -624,13 +713,21 @@ export default function MembersPage() {
                         <div className="flex flex-col items-center gap-2 text-gray-400">
                           <Users size={32} className="text-gray-200" />
                           <p className="text-sm">
-                            {search || typeFilter !== 'all'
-                              ? 'No members match your filter.'
+                            {search || typeFilter !== 'all' || yearFilter !== 'all'
+                              ? 'No members match your filters.'
                               : statusTab === 'inactive'
                                 ? 'No inactive members.'
                                 : 'No members yet.'}
                           </p>
-                          {!search && typeFilter === 'all' && statusTab === 'active' && (
+                          {yearFilter !== 'all' && (
+                            <button
+                              onClick={() => setYearFilter('all')}
+                              className="text-xs text-[#07A04E] hover:underline font-medium"
+                            >
+                              Clear year filter ({yearFilter})
+                            </button>
+                          )}
+                          {!search && typeFilter === 'all' && yearFilter === 'all' && statusTab === 'active' && (
                             <Button
                               size="sm"
                               onClick={() => setAddMemberOpen(true)}
@@ -754,10 +851,14 @@ export default function MembersPage() {
                               {member.status === 'inactive' && (
                                 <button
                                   onClick={() => handleReactivate(member)}
+                                  disabled={reactivatingId === member.id}
                                   title="Reactivate member"
-                                  className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  <RotateCcw size={15} />
+                                  {reactivatingId === member.id
+                                    ? <span className="inline-block w-[15px] h-[15px] border-2 border-green-400/40 border-t-green-600 rounded-full animate-spin" />
+                                    : <RotateCcw size={15} />
+                                  }
                                 </button>
                               )}
                               <button
@@ -784,6 +885,11 @@ export default function MembersPage() {
                   Showing{' '}
                   <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
                   <span className="font-medium text-gray-600">{members.length}</span> members
+                  {yearFilter !== 'all' && (
+                    <span className="ml-2 font-medium text-[#07A04E]">
+                      · joined {yearFilter}
+                    </span>
+                  )}
                   {selectedCount > 0 && (
                     <span className="ml-2 font-medium text-[#07A04E]">
                       · {selectedCount} selected
@@ -815,8 +921,9 @@ export default function MembersPage() {
         }
         confirmLabel={confirmDelete?.status === 'inactive' ? 'Delete Permanently' : 'Delete'}
         confirmVariant="danger"
+        loading={deleting}
         onConfirm={() => handleDelete(confirmDelete?.id)}
-        onCancel={() => setConfirmDelete(null)}
+        onCancel={() => { if (!deleting) setConfirmDelete(null); }}
       />
 
       {/* ── Bulk delete confirm ── */}
@@ -826,8 +933,9 @@ export default function MembersPage() {
         message={`Are you sure you want to delete ${selectedCount} selected member${selectedCount !== 1 ? 's' : ''}? Members with existing records will be archived. This cannot be undone for permanent deletions.`}
         confirmLabel={`Delete ${selectedCount} Member${selectedCount !== 1 ? 's' : ''}`}
         confirmVariant="danger"
+        loading={bulkDeleting}
         onConfirm={executeBulkDelete}
-        onCancel={() => setConfirmBulkDelete(false)}
+        onCancel={() => { if (!bulkDeleting) setConfirmBulkDelete(false); }}
       />
 
       {/* ── Bulk status change confirm ── */}
@@ -837,8 +945,9 @@ export default function MembersPage() {
         message={`Change the status of ${selectedCount} selected member${selectedCount !== 1 ? 's' : ''} to "${confirmBulkStatus}"?`}
         confirmLabel={`Set ${confirmBulkStatus === 'active' ? 'Active' : 'Inactive'}`}
         confirmVariant={confirmBulkStatus === 'active' ? 'success' : 'warning'}
+        loading={bulkStatusChanging}
         onConfirm={() => executeBulkStatusChange(confirmBulkStatus)}
-        onCancel={() => setConfirmBulkStatus(null)}
+        onCancel={() => { if (!bulkStatusChanging) setConfirmBulkStatus(null); }}
       />
 
       {/* ── Add Member Modal ── */}
