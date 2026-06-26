@@ -68,8 +68,8 @@ function DashboardSkeleton() {
         </div>
         <Skeleton className="h-8 w-24" />
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="rounded-xl border border-gray-100 bg-white p-4 space-y-3">
             <Skeleton className="h-10 w-10 rounded-xl" />
             <Skeleton className="h-3 w-20" />
@@ -813,7 +813,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Summary Cards ── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <SummaryCard
             label="Total Members"
             value={stats?.totalMembers ?? 0}
@@ -828,6 +828,17 @@ export default function DashboardPage() {
             accent="#2563EB"
             accentBg="rgba(37,99,235,0.08)"
             onClick={() => navigate('/members')}
+          />
+          <SummaryCard
+            label="Kiddy Members"
+            value={stats?.kiddyMembers ?? 0}
+            sub={
+              <span className="text-pink-500 font-medium">{stats?.activeKiddyMembers ?? 0} Active</span>
+            }
+            icon={<Users size={18} />}
+            accent="#EC4899"
+            accentBg="rgba(236,72,153,0.08)"
+            onClick={() => navigate('/members?type=kiddy')}
           />
           <SummaryCard
             label="Active Loans"
@@ -993,6 +1004,36 @@ export default function DashboardPage() {
               </p>
               <p className="mt-1 text-xs text-gray-400">
                 {stats?.timeDepositCount ?? 0} active deposit{(stats?.timeDepositCount ?? 0) !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div
+              className="app-card app-card-hover p-5 cursor-pointer group"
+              onClick={() => navigate('/savings?type=booster')}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingUp size={13} className="text-amber-400" />
+                <p className="stat-label">Savings Booster</p>
+              </div>
+              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-amber-600 transition-colors">
+                {formatCurrency(stats?.totalSavingsBooster ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                {stats?.savingsBoosterCount ?? 0} account{(stats?.savingsBoosterCount ?? 0) !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div
+              className="app-card app-card-hover p-5 cursor-pointer group"
+              onClick={() => navigate('/savings?type=kiddy')}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Users size={13} className="text-pink-400" />
+                <p className="stat-label">Kiddy Savings</p>
+              </div>
+              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-pink-600 transition-colors">
+                {formatCurrency(stats?.totalKiddySavings ?? 0)}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                {stats?.kiddySavingsCount ?? 0} account{(stats?.kiddySavingsCount ?? 0) !== 1 ? 's' : ''}
               </p>
             </div>
           </div>

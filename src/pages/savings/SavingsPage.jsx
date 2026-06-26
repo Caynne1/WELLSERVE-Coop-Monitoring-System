@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  PiggyBank,
+  Wallet,
   Search,
   Eye,
   TrendingUp,
@@ -21,7 +21,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
-import { getAllCBUAccounts } from '../../services/accountService';
+import { getAllSavingsAccounts } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
@@ -36,7 +36,7 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'Others', label: 'Others' },
 ];
 
-export default function CBUPage() {
+export default function SavingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -66,22 +66,9 @@ export default function CBUPage() {
   async function fetchAccounts() {
     try {
       setLoading(true);
-      setAccounts((await getAllCBUAccounts()) || []);
+      setAccounts((await getAllSavingsAccounts()) || []);
     } catch {
-      toast.error(
-        (t) => (
-          <span className="flex items-center gap-3 text-sm">
-            Failed to load CBU accounts
-            <button
-              className="flex-shrink-0 text-xs font-bold underline"
-              onClick={() => { toast.dismiss(t.id); fetchAccounts(); }}
-            >
-              Retry
-            </button>
-          </span>
-        ),
-        { duration: 6000 }
-      );
+      toast.error('Failed to load Savings accounts');
     } finally {
       setLoading(false);
     }
@@ -122,7 +109,7 @@ export default function CBUPage() {
       const vouchers = await getApprovedWithdrawalVouchers({
         member_id: account.member_id,
         account_id: account.id,
-        account_type: 'cbu',
+        account_type: 'savings',
       });
       setWithdrawVouchers(vouchers || []);
     } catch (err) {
@@ -191,7 +178,7 @@ export default function CBUPage() {
       await createTransaction({
         member_id: account.member_id,
         account_id: account.id,
-        category: 'cbu',
+        category: 'savings',
         type: 'deposit',
         amount: value,
         reference: paymentReference.trim() || account.account_no || null,
@@ -204,11 +191,11 @@ export default function CBUPage() {
 
       await createInvoiceForPayment({
         invoice_no: siNo.trim(),
-        payment_type: 'cbu',
+        payment_type: 'savings',
         member_id: account.member_id,
         member_name: memberName,
         amount: value,
-        purpose: `CBU Deposit — ${account.account_no || account.id}`,
+        purpose: `Savings Deposit — ${account.account_no || account.id}`,
         ref_id: account.id,
         account_id: account.id,
         created_by: user?.id ?? null,
@@ -218,8 +205,8 @@ export default function CBUPage() {
         payment_mode_note: paymentModeNote,
       });
 
-      toast.success('CBU deposit posted.');
-      trackActivity({ userId: user?.id, module: 'cbu', action: 'deposit', description: `CBU deposit of ${formatCurrency(value)} for ${memberName}` });
+      toast.success('Savings deposit posted.');
+      trackActivity({ userId: user?.id, module: 'savings', action: 'deposit', description: `Savings deposit of ${formatCurrency(value)} for ${memberName}` });
       setDepositTarget(null);
       resetDepositFields();
       fetchAccounts();
@@ -236,7 +223,7 @@ export default function CBUPage() {
     const value = parseFloat(amount) || 0;
 
     if (!account) {
-      return toast.error('CBU account is missing.');
+      return toast.error('Savings account is missing.');
     }
 
     if (!voucher) {
@@ -263,7 +250,7 @@ export default function CBUPage() {
       await createTransaction({
         member_id: account.member_id,
         account_id: account.id,
-        category: 'cbu',
+        category: 'savings',
         type: 'withdrawal',
         amount: value,
         reference: voucher.voucher_no || paymentReference.trim() || account.account_no || null,
@@ -278,8 +265,8 @@ export default function CBUPage() {
         payment_mode_note: paymentModeNote || voucher.reference || null,
       });
 
-      toast.success('CBU withdrawal posted from approved voucher.');
-      trackActivity({ userId: user?.id, module: 'cbu', action: 'withdrawal', description: `CBU withdrawal of ${formatCurrency(value)} via voucher ${voucher.voucher_no}` });
+      toast.success('Savings withdrawal posted from approved voucher.');
+      trackActivity({ userId: user?.id, module: 'savings', action: 'withdrawal', description: `Savings withdrawal of ${formatCurrency(value)} via voucher ${voucher.voucher_no}` });
       setWithdrawTarget(null);
       resetWithdrawFields();
       fetchAccounts();
@@ -318,7 +305,7 @@ export default function CBUPage() {
         total_withdrawals: a.total_withdrawals || 0,
         status: a.status || '',
       }));
-      exportToCSV('cbu_accounts.csv', rows);
+      exportToCSV('savings_accounts.csv', rows);
       toast.success('CSV exported successfully');
     } catch (err) {
       toast.error(err.message || 'Failed to export CSV');
@@ -327,26 +314,26 @@ export default function CBUPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="CBU Monitoring" subtitle="Capital Build-Up accounts across all members" />
+      <PageHeader title="Savings Monitoring" subtitle="Member savings accounts overview" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
         <SummaryCard
-          icon={<DollarSign size={20} className="text-green-600" />}
-          label="Total CBU Balance"
+          icon={<DollarSign size={20} className="text-blue-600" />}
+          label="Total Savings Balance"
           value={formatCurrency(totalBalance)}
-          bg="bg-green-50"
-        />
-        <SummaryCard
-          icon={<TrendingUp size={20} className="text-blue-600" />}
-          label="Total Deposits"
-          value={formatCurrency(totalDeposits)}
           bg="bg-blue-50"
         />
         <SummaryCard
-          icon={<Users size={20} className="text-purple-600" />}
+          icon={<TrendingUp size={20} className="text-indigo-600" />}
+          label="Total Deposits"
+          value={formatCurrency(totalDeposits)}
+          bg="bg-indigo-50"
+        />
+        <SummaryCard
+          icon={<Users size={20} className="text-violet-600" />}
           label="Active Accounts"
           value={activeCount}
-          bg="bg-purple-50"
+          bg="bg-violet-50"
         />
       </div>
 
@@ -358,7 +345,7 @@ export default function CBUPage() {
             placeholder="Search by member name or ID..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
           />
         </div>
         <button
@@ -396,16 +383,16 @@ export default function CBUPage() {
                 {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-12 text-gray-400">
-                      <PiggyBank size={32} className="mx-auto mb-2 text-gray-200" />
-                      {search ? 'No CBU accounts match your search.' : 'No CBU accounts found.'}
+                      <Wallet size={32} className="mx-auto mb-2 text-gray-200" />
+                      {search ? 'No Savings accounts match your search.' : 'No Savings accounts found.'}
                     </td>
                   </tr>
                 ) : filtered.map(account => (
                   <tr key={account.id} className="hover:bg-[#D6FADC]/20 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-green-700 text-xs font-semibold">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-blue-700 text-xs font-semibold">
                             {(account.members?.first_name?.[0] || '') + (account.members?.last_name?.[0] || '')}
                           </span>
                         </div>
@@ -424,7 +411,7 @@ export default function CBUPage() {
                     <td className="px-4 py-3 font-mono text-xs text-gray-600 text-center">
                       {account.account_no || '—'}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-green-700 text-center">
+                    <td className="px-4 py-3 font-semibold text-blue-700 text-center">
                       {formatCurrency(account.balance || 0)}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-center">
@@ -445,21 +432,21 @@ export default function CBUPage() {
                       <div className="flex items-center gap-1 justify-center">
                         <button
                           onClick={() => openDepositModal(account)}
-                          title="Post CBU Deposit"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                          title="Post Savings Deposit"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                         >
                           <Plus size={15} />
                         </button>
                         <button
                           onClick={() => openWithdrawModal(account)}
-                          title="Post CBU Withdrawal"
+                          title="Post Savings Withdrawal"
                           className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                         >
                           <TrendingDown size={15} />
                         </button>
                         <button
-                          onClick={() => navigate(`/members/${account.member_id}?tab=cbu`)}
-                          title="View Member CBU"
+                          onClick={() => navigate(`/members/${account.member_id}?tab=savings`)}
+                          title="View Member Savings"
                           className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                         >
                           <Eye size={15} />
@@ -474,8 +461,8 @@ export default function CBUPage() {
 
           {filtered.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
-              <p className="text-xs text-gray-500">Showing {filtered.length} of {accounts.length} CBU accounts</p>
-              <p className="text-xs font-medium text-green-700">
+              <p className="text-xs text-gray-500">Showing {filtered.length} of {accounts.length} Savings accounts</p>
+              <p className="text-xs font-medium text-blue-700">
                 Filtered total: {formatCurrency(filtered.reduce((s, a) => s + (a.balance || 0), 0))}
               </p>
             </div>
@@ -486,7 +473,7 @@ export default function CBUPage() {
       <Modal
         open={!!depositTarget}
         onClose={() => setDepositTarget(null)}
-        title="Post CBU Deposit"
+        title="Post Savings Deposit"
         size="sm"
       >
         {depositTarget && (
@@ -515,7 +502,7 @@ export default function CBUPage() {
                   onChange={e => setAmount(e.target.value)}
                   placeholder="0.00"
                   autoFocus
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                 />
               </div>
 
@@ -525,7 +512,7 @@ export default function CBUPage() {
                   type="date"
                   value={paymentDate}
                   onChange={e => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                 />
               </div>
 
@@ -536,7 +523,7 @@ export default function CBUPage() {
                   value={siNo}
                   onChange={e => setSiNo(e.target.value)}
                   placeholder="Enter SI# manually"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                 />
               </div>
 
@@ -545,7 +532,7 @@ export default function CBUPage() {
                 <select
                   value={paymentMode}
                   onChange={e => setPaymentMode(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                 >
                   {PAYMENT_MODE_OPTIONS.map(opt => (
                     <option key={opt.value || 'empty'} value={opt.value}>
@@ -564,7 +551,7 @@ export default function CBUPage() {
                   value={paymentReference}
                   onChange={e => setPaymentReference(e.target.value)}
                   placeholder="Optional for Cash, required for GCash/Bank/Check"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                 />
               </div>
 
@@ -575,13 +562,13 @@ export default function CBUPage() {
                   value={paymentNotes}
                   onChange={e => setPaymentNotes(e.target.value)}
                   placeholder="Optional notes"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-5">
-              <Button variant="outline" onClick={() => setDepositTarget(null)} disabled={posting}>
+              <Button variant="outline" onClick={() => setDepositTarget(null)}>
                 Cancel
               </Button>
               <Button loading={posting} variant="finance" onClick={handleDeposit} icon={<TrendingUp size={15} />}>
@@ -595,7 +582,7 @@ export default function CBUPage() {
       <Modal
         open={!!withdrawTarget}
         onClose={() => setWithdrawTarget(null)}
-        title="Post CBU Withdrawal from Approved Voucher"
+        title="Post Savings Withdrawal from Approved Voucher"
         size="sm"
       >
         {withdrawTarget && (
@@ -619,7 +606,7 @@ export default function CBUPage() {
               </div>
             ) : withdrawVouchers.length === 0 ? (
               <div className="rounded-lg border border-dashed border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                No approved member withdrawal vouchers found for this CBU account.
+                No approved member withdrawal vouchers found for this Savings account.
               </div>
             ) : (
               <div className="space-y-4">
@@ -679,7 +666,7 @@ export default function CBUPage() {
             )}
 
             <div className="flex justify-end gap-3 mt-5">
-              <Button variant="outline" onClick={() => setWithdrawTarget(null)} disabled={posting}>
+              <Button variant="outline" onClick={() => setWithdrawTarget(null)}>
                 Cancel
               </Button>
               <Button

@@ -18,7 +18,7 @@ export async function getDashboardStats() {
     };
   });
 
-  const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, allTxRes] = await Promise.all([
+  const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, allTxRes, kiddySavingsRes, savingsBoosterRes] = await Promise.all([
     supabase.from('members').select('id, status, membership_type, date_joined, created_at'),
     supabase.from('loans').select('id, status, amount, balance, due_date, preview_deductions_json, release_date, created_at'),
     supabase.from('accounts').select('id, account_type, balance'),
@@ -39,15 +39,31 @@ export async function getDashboardStats() {
       .from('transactions')
       .select('id, type, category, amount, created_at, transaction_date')
       .order('created_at', { ascending: false }),
+    // Kiddy savings accounts
+    supabase
+      .from('accounts')
+      .select('id, account_type, balance')
+      .eq('account_type', 'kiddy_savings'),
+    // Savings booster accounts
+    supabase
+      .from('accounts')
+      .select('id, account_type, balance')
+      .eq('account_type', 'savings_booster'),
   ]);
 
-  const memberData   = membersRes.data   || [];
-  const loanData     = loansRes.data     || [];
-  const accountData  = accountsRes.data  || [];
-  const invoiceData  = invoicesRes.data  || [];   // admin-only types
-  const voucherData  = vouchersRes.data  || [];
-  const tdData       = tdRes.data        || [];
-  const allTxData    = allTxRes.data     || [];
+  const memberData        = membersRes.data        || [];
+  const loanData          = loansRes.data          || [];
+  const accountData       = accountsRes.data       || [];
+  const invoiceData       = invoicesRes.data       || [];   // admin-only types
+  const voucherData       = vouchersRes.data       || [];
+  const tdData            = tdRes.data             || [];
+  const allTxData         = allTxRes.data          || [];
+  const kiddySavingsData  = kiddySavingsRes.data   || [];
+  const savingsBoosterData = savingsBoosterRes.data || [];
+
+  // ── Member segmentation ────────────────────────────────────────────────────
+  const kiddyMembers    = memberData.filter(m => m.membership_type === 'kiddy');
+  const nonKiddyMembers = memberData.filter(m => m.membership_type !== 'kiddy');
 
   // ── Transaction-based cash flow (primary source) ───────────────────────────
   const CASH_IN_TYPES  = new Set(['loan_payment','deposit','membership_payment','penalty_payment','other_payment','cbu','savings','membership','time_deposit']);
@@ -119,7 +135,7 @@ export async function getDashboardStats() {
   const memberGrowthChart = months.map(({ label, start, end }) => {
     const startMs = new Date(start).getTime();
     const endMs   = new Date(end).getTime();
-    const count = memberData.filter(m => {
+    const count = nonKiddyMembers.filter(m => {
       if (!m.created_at) return false;
       const ms = new Date(m.created_at).getTime();
       return ms >= startMs && ms <= endMs;
@@ -128,10 +144,12 @@ export async function getDashboardStats() {
   });
 
   return {
-    totalMembers:         memberData.length,
-    activeMembers:        memberData.filter(m => m.status === 'active').length,
-    regularMembers:       memberData.filter(m => m.membership_type === 'regular').length,
-    associateMembers:     memberData.filter(m => m.membership_type === 'associate').length,
+    totalMembers:         nonKiddyMembers.length,
+    activeMembers:        nonKiddyMembers.filter(m => m.status === 'active').length,
+    regularMembers:       nonKiddyMembers.filter(m => m.membership_type === 'regular').length,
+    associateMembers:     nonKiddyMembers.filter(m => m.membership_type === 'associate').length,
+    kiddyMembers:         kiddyMembers.length,
+    activeKiddyMembers:   kiddyMembers.filter(m => m.status === 'active').length,
     activeLoans:          activeLoans.length,
     totalLoanOutstanding: activeLoans.reduce((s, l) => s + (l.balance ?? l.amount ?? 0), 0),
     overduePayments:      overdueLoans.length,
@@ -142,6 +160,10 @@ export async function getDashboardStats() {
     totalSavings:         savingsAccounts.reduce((s, a) => s + (a.balance || 0), 0),
     totalTimeDeposit:     tdData.filter(td => td.status === 'active').reduce((s, td) => s + (td.amount || 0), 0),
     timeDepositCount:     tdData.filter(td => td.status === 'active').length,
+    totalKiddySavings:    kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),
+    kiddySavingsCount:    kiddySavingsData.length,
+    totalSavingsBooster:  savingsBoosterData.reduce((s, a) => s + (a.balance || 0), 0),
+    savingsBoosterCount:  savingsBoosterData.length,
 
     loanStatusChart,
     cashFlowChart,

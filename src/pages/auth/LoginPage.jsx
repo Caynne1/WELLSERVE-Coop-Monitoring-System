@@ -1,16 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
 import { Mail, Lock, Loader2, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import WellserveLogo from '../../components/shared/WellserveLogo';
+import SplashScreen from '../../components/shared/SplashScreen';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm();
+
+  // ── Splash screen state ──────────────────────────────────────────────────
+  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashExiting, setSplashExiting] = useState(false);
+
+  useEffect(() => {
+    // After 2.8s, begin the exit animation
+    const exitTimer = setTimeout(() => setSplashExiting(true), 2800);
+    return () => clearTimeout(exitTimer);
+  }, []);
+
+  function handleSplashDone() {
+    setSplashVisible(false);
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   async function onSubmit({ email, password }) {
     setLoading(true);
@@ -21,7 +37,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="ws-root">
+    <>
+      {/* ── Animated logo splash screen ── */}
+      {splashVisible && (
+        <SplashScreen exiting={splashExiting} onDone={handleSplashDone} />
+      )}
+
+    <div className="ws-root" style={splashVisible && !splashExiting ? { visibility: 'hidden' } : { animation: 'wsLoginReveal 0.5s ease both' }}>
 
       {/* ── Animated gradient wave background ── */}
       <div className="ws-wave-bg" />
@@ -439,7 +461,13 @@ export default function LoginPage() {
         @media (max-width: 500px) {
           .ws-right { padding: 32px 20px; }
         }
+
+        @keyframes wsLoginReveal {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </div>
+    </>
   );
 }

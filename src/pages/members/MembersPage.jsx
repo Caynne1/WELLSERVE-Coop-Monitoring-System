@@ -1,25 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Upload,
-  Eye,
-  Search,
-  UserPlus,
-  Pencil,
-  Trash2,
-  Users,
-  Printer,
-  Download,
-  Filter,
-  RotateCcw,
-  CheckSquare,
-  Square,
-  MinusSquare,
-  X,
-  UserCheck,
-  UserX,
-  ChevronDown,
-  CalendarDays,
+  Upload, Eye, Search, UserPlus, Pencil, Trash2, Users, Printer,
+  Download, Filter, RotateCcw, CheckSquare, Square, MinusSquare,
+  X, UserCheck, UserX, ChevronDown, CalendarDays, Baby,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -46,54 +30,55 @@ const avatarColors = [
   'bg-[#D6FADC] text-[#7EB751]',
 ];
 
+const kiddyAvatarColors = [
+  'bg-pink-100 text-pink-600',
+  'bg-rose-100 text-rose-600',
+  'bg-fuchsia-100 text-fuchsia-600',
+  'bg-purple-100 text-purple-600',
+  'bg-violet-100 text-violet-600',
+];
+
 const statusVariant = { active: 'success', inactive: 'warning', suspended: 'danger' };
 
 const membershipTypeClass = {
   regular:   'bg-blue-50 text-blue-700 border border-blue-200',
   associate: 'bg-purple-50 text-purple-700 border border-purple-200',
+  kiddy:     'bg-pink-50 text-pink-700 border border-pink-200',
 };
+
+// ─── Tab config ───────────────────────────────────────────────────────────────
+
+// memberView controls which members are shown: 'regular' = associate+regular, 'kiddy' = kiddy only
+const MEMBER_VIEWS = [
+  { id: 'regular', label: 'Members', icon: Users },
+  { id: 'kiddy',   label: 'Kiddy & Youth', icon: Baby },
+];
 
 // ─── Bulk Action Toolbar ──────────────────────────────────────────────────────
 
 function BulkToolbar({
-  selectedCount,
-  totalCount,
-  onClearSelection,
-  onSelectAll,
-  onBulkExport,
-  onBulkActivate,
-  onBulkDeactivate,
-  onBulkDelete,
-  statusTab,
+  selectedCount, totalCount, onClearSelection, onSelectAll,
+  onBulkExport, onBulkActivate, onBulkDeactivate, onBulkDelete, statusTab,
 }) {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
 
   return (
     <div className="flex items-center gap-3 bg-[#07A04E] text-white px-4 py-3 rounded-xl shadow-md animate-in slide-in-from-top-2 duration-200">
-      {/* Selection info */}
       <div className="flex items-center gap-2 min-w-0">
         <CheckSquare size={16} className="flex-shrink-0" />
         <span className="text-sm font-semibold whitespace-nowrap">
           {selectedCount} of {totalCount} selected
         </span>
       </div>
-
       <div className="h-4 w-px bg-white/30 flex-shrink-0" />
-
-      {/* Select all visible */}
       <button
         onClick={onSelectAll}
         className="text-xs font-medium text-white/80 hover:text-white transition-colors whitespace-nowrap"
       >
         Select all {totalCount}
       </button>
-
       <div className="flex-1" />
-
-      {/* Bulk actions */}
       <div className="flex items-center gap-2 flex-wrap">
-
-        {/* Export selected */}
         <button
           onClick={onBulkExport}
           className="flex items-center gap-1.5 text-xs font-medium bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors"
@@ -101,8 +86,6 @@ function BulkToolbar({
           <Download size={13} />
           Export CSV
         </button>
-
-        {/* Status change dropdown */}
         <div className="relative">
           <button
             onClick={() => setShowStatusMenu(v => !v)}
@@ -132,8 +115,6 @@ function BulkToolbar({
             </>
           )}
         </div>
-
-        {/* Bulk delete */}
         <button
           onClick={onBulkDelete}
           className="flex items-center gap-1.5 text-xs font-medium bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-lg transition-colors"
@@ -142,8 +123,6 @@ function BulkToolbar({
           Delete
         </button>
       </div>
-
-      {/* Clear */}
       <button
         onClick={onClearSelection}
         className="ml-1 p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors flex-shrink-0"
@@ -152,29 +131,6 @@ function BulkToolbar({
         <X size={15} />
       </button>
     </div>
-  );
-}
-
-// ─── Checkbox Cell ────────────────────────────────────────────────────────────
-
-function CheckboxCell({ checked, indeterminate, onChange, onClick }) {
-  return (
-    <td
-      className="pl-4 pr-2 py-3 w-10"
-      onClick={e => { e.stopPropagation(); onClick?.(); }}
-    >
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); onChange(); }}
-        className="text-gray-400 hover:text-[#07A04E] transition-colors"
-      >
-        {indeterminate
-          ? <MinusSquare size={16} className="text-[#07A04E]" />
-          : checked
-            ? <CheckSquare size={16} className="text-[#07A04E]" />
-            : <Square size={16} />}
-      </button>
-    </td>
   );
 }
 
@@ -188,6 +144,9 @@ export default function MembersPage() {
   const [members, setMembers]           = useState([]);
   const [loading, setLoading]           = useState(true);
 
+  // View: 'regular' (associate + regular) | 'kiddy'
+  const [memberView, setMemberView]     = useState('regular');
+
   // Filters
   const [search, setSearch]             = useState('');
   const [typeFilter, setTypeFilter]     = useState('all');
@@ -198,18 +157,18 @@ export default function MembersPage() {
   const [selectedIds, setSelectedIds]   = useState(new Set());
 
   // Dialogs
-  const [confirmDelete, setConfirmDelete]         = useState(null);   // single member
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [confirmBulkStatus, setConfirmBulkStatus] = useState(null);  // 'active' | 'inactive'
-  const [addMemberOpen, setAddMemberOpen]         = useState(false);
-  const [importOpen, setImportOpen]               = useState(false);
+  const [confirmDelete, setConfirmDelete]             = useState(null);
+  const [confirmBulkDelete, setConfirmBulkDelete]     = useState(false);
+  const [confirmBulkStatus, setConfirmBulkStatus]     = useState(null);
+  const [addMemberOpen, setAddMemberOpen]             = useState(false);
+  const [importOpen, setImportOpen]                   = useState(false);
   const [importFinancialOpen, setImportFinancialOpen] = useState(false);
 
-  // Action loading states — prevents duplicate clicks / shows feedback
-  const [deleting, setDeleting]                   = useState(false);
-  const [reactivatingId, setReactivatingId]       = useState(null);   // member id being reactivated
-  const [bulkDeleting, setBulkDeleting]           = useState(false);
-  const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
+  // Action loading states
+  const [deleting, setDeleting]                       = useState(false);
+  const [reactivatingId, setReactivatingId]           = useState(null);
+  const [bulkDeleting, setBulkDeleting]               = useState(false);
+  const [bulkStatusChanging, setBulkStatusChanging]   = useState(false);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -240,26 +199,57 @@ export default function MembersPage() {
 
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
-  // Clear selection when tab or filters change
-  useEffect(() => { setSelectedIds(new Set()); }, [statusTab, typeFilter, search, yearFilter]);
+  // Clear selection when view/tab/filters change
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [memberView, statusTab, typeFilter, search, yearFilter]);
 
-  // ── Available join years (from date_joined, fallback created_at) ──────────
+  // Reset typeFilter when switching views (kiddy view has no type sub-filter)
+  useEffect(() => {
+    setTypeFilter('all');
+    setSearch('');
+    setYearFilter('all');
+    setStatusTab('active');
+  }, [memberView]);
+
+  // ── Split members by view ──────────────────────────────────────────────────
+
+  const isKiddyView = memberView === 'kiddy';
+
+  // Counts for tab badges
+  const regularMemberCount = useMemo(
+    () => members.filter(m => m.membership_type !== 'kiddy' && (m.status || 'active') === 'active').length,
+    [members]
+  );
+  const kiddyMemberCount = useMemo(
+    () => members.filter(m => m.membership_type === 'kiddy' && (m.status || 'active') === 'active').length,
+    [members]
+  );
+
+  // ── Available join years ───────────────────────────────────────────────────
+
   const availableYears = useMemo(() => {
     const yearSet = new Set();
-    members.forEach(m => {
-      const raw = m.date_joined || m.created_at;
-      if (!raw) return;
-      const yr = new Date(raw).getFullYear();
-      if (!isNaN(yr)) yearSet.add(yr);
-    });
-    return [...yearSet].sort((a, b) => b - a); // newest first
-  }, [members]);
+    members
+      .filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy')
+      .forEach(m => {
+        const raw = m.date_joined || m.created_at;
+        if (!raw) return;
+        const yr = new Date(raw).getFullYear();
+        if (!isNaN(yr)) yearSet.add(yr);
+      });
+    return [...yearSet].sort((a, b) => b - a);
+  }, [members, isKiddyView]);
 
   // ── Filtered list ──────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return members.filter(m => {
+      // Split by view first
+      if (isKiddyView && m.membership_type !== 'kiddy') return false;
+      if (!isKiddyView && m.membership_type === 'kiddy') return false;
+
       const matchesSearch =
         m.first_name?.toLowerCase().includes(q) ||
         m.last_name?.toLowerCase().includes(q) ||
@@ -285,7 +275,7 @@ export default function MembersPage() {
 
       return matchesSearch && matchesType && matchesStatus && matchesYear;
     });
-  }, [members, search, typeFilter, statusTab, yearFilter]);
+  }, [members, search, typeFilter, statusTab, yearFilter, isKiddyView]);
 
   // ── Selection helpers ──────────────────────────────────────────────────────
 
@@ -303,14 +293,12 @@ export default function MembersPage() {
 
   function toggleAll() {
     if (allFilteredSelected) {
-      // Deselect all filtered
       setSelectedIds(prev => {
         const next = new Set(prev);
         filtered.forEach(m => next.delete(m.id));
         return next;
       });
     } else {
-      // Select all filtered
       setSelectedIds(prev => {
         const next = new Set(prev);
         filtered.forEach(m => next.add(m.id));
@@ -319,15 +307,8 @@ export default function MembersPage() {
     }
   }
 
-  function selectAll() {
-    setSelectedIds(new Set(filtered.map(m => m.id)));
-  }
-
-  function clearSelection() {
-    setSelectedIds(new Set());
-  }
-
-  // ── Selected member objects (from filtered) ────────────────────────────────
+  function selectAll() { setSelectedIds(new Set(filtered.map(m => m.id))); }
+  function clearSelection() { setSelectedIds(new Set()); }
 
   const selectedMembers = useMemo(
     () => filtered.filter(m => selectedIds.has(m.id)),
@@ -346,12 +327,8 @@ export default function MembersPage() {
       const result = await deleteMember(id);
       toast.success(result?.message || 'Member deleted');
       trackActivity({
-        userId: user?.id,
-        module: 'member',
-        action: 'delete',
-        description: memberName
-          ? `Deleted member: ${memberName}`
-          : `Deleted member ID: ${id}`,
+        userId: user?.id, module: 'member', action: 'delete',
+        description: memberName ? `Deleted member: ${memberName}` : `Deleted member ID: ${id}`,
       });
       setConfirmDelete(null);
       await fetchMembers();
@@ -377,10 +354,6 @@ export default function MembersPage() {
     }
   }
 
-  function openMemberTab(memberId, tab) {
-    navigate(`/members/${memberId}?tab=${tab}`);
-  }
-
   // ── Bulk actions ───────────────────────────────────────────────────────────
 
   function handleBulkExport() {
@@ -397,7 +370,7 @@ export default function MembersPage() {
         status:          m.status          || '',
         joined:          m.date_joined ? formatDate(m.date_joined) : (m.created_at ? formatDate(m.created_at) : ''),
       }));
-      exportToCSV(`members_export_${new Date().toISOString().slice(0, 10)}.csv`, rows);
+      exportToCSV(`${isKiddyView ? 'kiddy_' : ''}members_export_${new Date().toISOString().slice(0, 10)}.csv`, rows);
       toast.success(`${rows.length} member${rows.length !== 1 ? 's' : ''} exported.`);
     } catch (err) {
       toast.error(err.message || 'Failed to export.');
@@ -407,58 +380,32 @@ export default function MembersPage() {
   async function executeBulkStatusChange(newStatus) {
     if (bulkStatusChanging) return;
     const ids = selectedMembers.map(m => m.id);
-    let successCount = 0;
-    let failCount = 0;
-
+    let successCount = 0; let failCount = 0;
     setBulkStatusChanging(true);
-    await Promise.allSettled(
-      ids.map(id =>
-        updateMember(id, { status: newStatus })
-          .then(() => successCount++)
-          .catch(() => failCount++)
-      )
-    );
-
+    await Promise.allSettled(ids.map(id => updateMember(id, { status: newStatus }).then(() => successCount++).catch(() => failCount++)));
     if (successCount > 0) {
       toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} set to ${newStatus}.`);
       trackActivity({ userId: user?.id, module: 'member', action: newStatus === 'active' ? 'reactivate' : 'deactivate', description: `Bulk status change: ${successCount} member(s) set to ${newStatus}.` });
     }
     if (failCount > 0) toast.error(`${failCount} update${failCount !== 1 ? 's' : ''} failed.`);
-
-    clearSelection();
-    setConfirmBulkStatus(null);
-    setBulkStatusChanging(false);
+    clearSelection(); setConfirmBulkStatus(null); setBulkStatusChanging(false);
     await fetchMembers();
   }
 
   async function executeBulkDelete() {
     if (bulkDeleting) return;
     const ids = selectedMembers.map(m => m.id);
-    let successCount = 0;
-    let failCount = 0;
-
+    let successCount = 0; let failCount = 0;
     setBulkDeleting(true);
-    await Promise.allSettled(
-      ids.map(id =>
-        deleteMember(id)
-          .then(() => successCount++)
-          .catch(() => failCount++)
-      )
-    );
-
+    await Promise.allSettled(ids.map(id => deleteMember(id).then(() => successCount++).catch(() => failCount++)));
     if (successCount > 0) {
       toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} deleted/archived.`);
       trackActivity({ userId: user?.id, module: 'member', action: 'delete', description: `Bulk deleted ${successCount} member(s).` });
     }
     if (failCount > 0) toast.error(`${failCount} deletion${failCount !== 1 ? 's' : ''} failed.`);
-
-    clearSelection();
-    setConfirmBulkDelete(false);
-    setBulkDeleting(false);
+    clearSelection(); setConfirmBulkDelete(false); setBulkDeleting(false);
     await fetchMembers();
   }
-
-  // ── Single export / print ──────────────────────────────────────────────────
 
   function handleExportCSV() {
     try {
@@ -474,7 +421,9 @@ export default function MembersPage() {
         joined:          m.date_joined ? formatDate(m.date_joined) : (m.created_at ? formatDate(m.created_at) : ''),
       }));
       exportToCSV(
-        statusTab === 'inactive' ? 'inactive_members_report.csv' : 'members_report.csv',
+        isKiddyView
+          ? 'kiddy_members_report.csv'
+          : (statusTab === 'inactive' ? 'inactive_members_report.csv' : 'members_report.csv'),
         rows
       );
       toast.success('CSV exported successfully');
@@ -493,10 +442,7 @@ export default function MembersPage() {
         @media print {
           body * { visibility: hidden; }
           .print-members-area, .print-members-area * { visibility: visible; }
-          .print-members-area {
-            position: absolute; left: 0; top: 0;
-            width: 100%; background: white; padding: 24px;
-          }
+          .print-members-area { position: absolute; left: 0; top: 0; width: 100%; background: white; padding: 24px; }
         }
       `}</style>
 
@@ -507,12 +453,16 @@ export default function MembersPage() {
           subtitle="Manage cooperative members and their financial accounts"
           action={
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setImportFinancialOpen(true)} icon={<Upload size={16} />}>
-                Import Financial
-              </Button>
-              <Button variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={16} />}>
-                Import Members
-              </Button>
+              {!isKiddyView && (
+                <>
+                  <Button variant="outline" onClick={() => setImportFinancialOpen(true)} icon={<Upload size={16} />}>
+                    Import Financial
+                  </Button>
+                  <Button variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={16} />}>
+                    Import Members
+                  </Button>
+                </>
+              )}
               <Button onClick={() => setAddMemberOpen(true)} icon={<UserPlus size={16} />}>
                 Add Member
               </Button>
@@ -521,27 +471,75 @@ export default function MembersPage() {
         />
       </div>
 
-      {/* ── Status Tabs ── */}
+      {/* ── View Tabs: Members | Kiddy & Youth ── */}
       <div className="mt-4 flex gap-2 print:hidden">
+        {MEMBER_VIEWS.map(view => {
+          const Icon = view.icon;
+          const count = view.id === 'kiddy' ? kiddyMemberCount : regularMemberCount;
+          const isActive = memberView === view.id;
+          return (
+            <button
+              key={view.id}
+              onClick={() => setMemberView(view.id)}
+              className={`
+                flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
+                ${isActive
+                  ? view.id === 'kiddy'
+                    ? 'bg-pink-500 text-white shadow-sm shadow-pink-200'
+                    : 'bg-[#07A04E] text-white shadow-sm shadow-green-200'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }
+              `}
+            >
+              <Icon size={15} />
+              {view.label}
+              <span className={`
+                text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center
+                ${isActive
+                  ? 'bg-white/20 text-white'
+                  : 'bg-gray-200 text-gray-500'
+                }
+              `}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Status Tabs: Active | Inactive (below view tabs) ── */}
+      <div className="mt-3 flex gap-2 print:hidden">
         {['active', 'inactive'].map(tab => (
           <button
             key={tab}
             onClick={() => setStatusTab(tab)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium capitalize transition-colors ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
               statusTab === tab
-                ? 'bg-[#07A04E] text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? isKiddyView
+                  ? 'bg-pink-100 text-pink-700 border border-pink-300'
+                  : 'bg-[#D6FADC] text-[#07A04E] border border-[#07A04E]/20'
+                : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
             }`}
           >
-            {tab === 'active' ? 'Active Members' : 'Inactive Members'}
+            {tab === 'active' ? 'Active' : 'Inactive'}
           </button>
         ))}
       </div>
 
-      {/* ── Filters & Toolbar ── */}
-      <div className="mt-6 mb-4 flex flex-col gap-3 print:hidden">
+      {/* ── Kiddy info banner ── */}
+      {isKiddyView && (
+        <div className="mt-4 flex items-start gap-3 p-3.5 bg-pink-50 border border-pink-200 rounded-xl print:hidden">
+          <Baby size={16} className="text-pink-500 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-pink-700 leading-relaxed">
+            <strong>Kiddy & Youth Savings</strong> members are managed separately.
+            Their member numbers use the <span className="font-mono font-semibold">KY-</span> prefix
+            to avoid conflicts with regular member numbers.
+          </div>
+        </div>
+      )}
 
-        {/* Filter row */}
+      {/* ── Filters & Toolbar ── */}
+      <div className="mt-4 mb-4 flex flex-col gap-3 print:hidden">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
 
@@ -550,7 +548,7 @@ export default function MembersPage() {
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by name, ID, email, recruiter…"
+                placeholder={isKiddyView ? 'Search kiddy members…' : 'Search by name, ID, email, recruiter…'}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl
@@ -559,20 +557,22 @@ export default function MembersPage() {
               />
             </div>
 
-            {/* Type filter */}
-            <div className="relative">
-              <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <select
-                value={typeFilter}
-                onChange={e => setTypeFilter(e.target.value)}
-                className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-              >
-                <option value="all">All Members</option>
-                <option value="associate">Associate</option>
-                <option value="regular">Regular</option>
-              </select>
-            </div>
+            {/* Type filter — only for regular/associate view */}
+            {!isKiddyView && (
+              <div className="relative">
+                <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <select
+                  value={typeFilter}
+                  onChange={e => setTypeFilter(e.target.value)}
+                  className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm
+                    focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                >
+                  <option value="all">All Types</option>
+                  <option value="associate">Associate</option>
+                  <option value="regular">Regular</option>
+                </select>
+              </div>
+            )}
 
             {/* Year filter */}
             <div className="relative">
@@ -594,7 +594,6 @@ export default function MembersPage() {
               </select>
             </div>
 
-            {/* Active filter badges */}
             {yearFilter !== 'all' && (
               <button
                 onClick={() => setYearFilter('all')}
@@ -615,13 +614,13 @@ export default function MembersPage() {
 
           {!loading && (
             <div className="flex items-center gap-2 text-xs text-gray-400">
-              <Users size={14} />
-              <span>{filtered.length} of {members.length} members</span>
+              {isKiddyView ? <Baby size={14} /> : <Users size={14} />}
+              <span>{filtered.length} of {members.filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy').length} {isKiddyView ? 'kiddy members' : 'members'}</span>
             </div>
           )}
         </div>
 
-        {/* Bulk toolbar — shown only when something is selected */}
+        {/* Bulk toolbar */}
         {selectedCount > 0 && (
           <BulkToolbar
             selectedCount={selectedCount}
@@ -650,9 +649,9 @@ export default function MembersPage() {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-sm font-semibold text-gray-800">Members Report</p>
+            <p className="text-sm font-semibold text-gray-800">{isKiddyView ? 'Kiddy & Youth Members Report' : 'Members Report'}</p>
             <p className="text-xs text-gray-500">Status: {statusTab === 'active' ? 'Active' : 'Inactive'}</p>
-            <p className="text-xs text-gray-500">Type: {typeFilter === 'all' ? 'All' : typeFilter}</p>
+            {!isKiddyView && <p className="text-xs text-gray-500">Type: {typeFilter === 'all' ? 'All' : typeFilter}</p>}
             <p className="text-xs text-gray-500">Year Joined: {yearFilter === 'all' ? 'All Years' : yearFilter}</p>
             <p className="text-xs text-gray-500">Generated: {new Date().toLocaleString()}</p>
           </div>
@@ -661,12 +660,11 @@ export default function MembersPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm print:shadow-none print:rounded-none">
+          <div className={`bg-white rounded-2xl border overflow-hidden shadow-sm print:shadow-none print:rounded-none ${isKiddyView ? 'border-pink-100' : 'border-gray-100'}`}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50/80 border-b border-gray-100">
-
+                  <tr className={`border-b ${isKiddyView ? 'bg-pink-50/60 border-pink-100' : 'bg-gray-50/80 border-gray-100'}`}>
                     {/* Select-all checkbox */}
                     <th className="pl-4 pr-2 py-3 w-10 print:hidden">
                       <button
@@ -683,19 +681,16 @@ export default function MembersPage() {
                       </button>
                     </th>
 
-                    {[
-                      'Member',
-                      'Member No.',
-                      'Contact',
-                      'Referrer',
-                      'Joined',
-                      'Status',
-                      'Actions',
-                    ].map((h) => (
+                    {(isKiddyView
+                      ? ['Member', 'Member No.', 'Guardian', 'Contact', 'Date of Birth', 'Status', 'Actions']
+                      : ['Member', 'Member No.', 'Contact', 'Referrer', 'Joined', 'Status', 'Actions']
+                    ).map((h) => (
                       <th
                         key={h}
-                        className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          ['Member No.', 'Joined', 'Status', 'Actions'].includes(h)
+                        className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${
+                          isKiddyView ? 'text-pink-500' : 'text-gray-500'
+                        } ${
+                          ['Member No.', 'Joined', 'Status', 'Actions', 'Date of Birth'].includes(h)
                             ? 'text-center'
                             : 'text-left'
                         } ${h === 'Actions' ? 'print:hidden' : ''}`}
@@ -711,22 +706,20 @@ export default function MembersPage() {
                     <tr>
                       <td colSpan={9} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-400">
-                          <Users size={32} className="text-gray-200" />
+                          {isKiddyView
+                            ? <Baby size={32} className="text-pink-200" />
+                            : <Users size={32} className="text-gray-200" />
+                          }
                           <p className="text-sm">
                             {search || typeFilter !== 'all' || yearFilter !== 'all'
                               ? 'No members match your filters.'
                               : statusTab === 'inactive'
-                                ? 'No inactive members.'
-                                : 'No members yet.'}
+                                ? `No inactive ${isKiddyView ? 'Kiddy & Youth' : ''} members.`
+                                : isKiddyView
+                                  ? 'No Kiddy & Youth members yet.'
+                                  : 'No members yet.'
+                            }
                           </p>
-                          {yearFilter !== 'all' && (
-                            <button
-                              onClick={() => setYearFilter('all')}
-                              className="text-xs text-[#07A04E] hover:underline font-medium"
-                            >
-                              Clear year filter ({yearFilter})
-                            </button>
-                          )}
                           {!search && typeFilter === 'all' && yearFilter === 'all' && statusTab === 'active' && (
                             <Button
                               size="sm"
@@ -734,7 +727,7 @@ export default function MembersPage() {
                               icon={<UserPlus size={13} />}
                               className="print:hidden"
                             >
-                              Add First Member
+                              Add {isKiddyView ? 'Kiddy Member' : 'First Member'}
                             </Button>
                           )}
                         </div>
@@ -743,25 +736,23 @@ export default function MembersPage() {
                   ) : (
                     filtered.map((member, i) => {
                       const isSelected = selectedIds.has(member.id);
+                      const colors = isKiddyView ? kiddyAvatarColors : avatarColors;
                       return (
                         <tr
                           key={member.id}
                           className={`transition-colors cursor-pointer group print:hover:bg-transparent ${
                             isSelected
-                              ? 'bg-emerald-50/60 hover:bg-emerald-50'
-                              : 'hover:bg-[#D6FADC]/30'
+                              ? isKiddyView ? 'bg-pink-50/60 hover:bg-pink-50' : 'bg-emerald-50/60 hover:bg-emerald-50'
+                              : isKiddyView ? 'hover:bg-pink-50/30' : 'hover:bg-[#D6FADC]/30'
                           }`}
                           onClick={() => navigate(`/members/${member.id}`)}
                         >
-                          {/* Row checkbox */}
+                          {/* Checkbox */}
                           <td
                             className="pl-4 pr-2 py-3 w-10 print:hidden"
                             onClick={e => { e.stopPropagation(); toggleOne(member.id); }}
                           >
-                            <button
-                              type="button"
-                              className="text-gray-400 hover:text-[#07A04E] transition-colors"
-                            >
+                            <button type="button" className="text-gray-400 hover:text-[#07A04E] transition-colors">
                               {isSelected
                                 ? <CheckSquare size={16} className="text-[#07A04E]" />
                                 : <Square size={16} />}
@@ -771,25 +762,16 @@ export default function MembersPage() {
                           {/* Member name + type */}
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div
-                                className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-bold ${
-                                  avatarColors[i % avatarColors.length]
-                                }`}
-                              >
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-bold ${colors[i % colors.length]}`}>
                                 {(member.first_name?.[0] || '') + (member.last_name?.[0] || '')}
                               </div>
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-semibold text-gray-900 leading-tight group-hover:text-[#07A04E] transition-colors">
+                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-pink-600' : 'group-hover:text-[#07A04E]'}`}>
                                     {member.first_name} {member.last_name}
                                   </p>
                                   {member.membership_type && (
-                                    <span
-                                      className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                                        membershipTypeClass[member.membership_type] ||
-                                        'bg-gray-100 text-gray-700 border border-gray-200'
-                                      }`}
-                                    >
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${membershipTypeClass[member.membership_type] || 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
                                       {member.membership_type}
                                     </span>
                                   )}
@@ -802,26 +784,50 @@ export default function MembersPage() {
                                 {member.email && (
                                   <p className="text-xs text-gray-400 mt-0.5">{member.email}</p>
                                 )}
+                                {/* School info for kiddy */}
+                                {isKiddyView && member.occupation && (
+                                  <p className="text-xs text-pink-400 mt-0.5">{member.occupation}</p>
+                                )}
                               </div>
                             </div>
                           </td>
 
                           {/* Member No. */}
                           <td className="px-4 py-3 text-center">
-                            <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded-lg text-gray-700 ring-1 ring-gray-200">
+                            <span className={`font-mono text-xs px-2 py-1 rounded-lg ring-1 ${
+                              isKiddyView
+                                ? 'bg-pink-50 text-pink-700 ring-pink-200'
+                                : 'bg-gray-100 text-gray-700 ring-gray-200'
+                            }`}>
                               {member.member_no || '—'}
                             </span>
                           </td>
 
-                          {/* Contact */}
-                          <td className="px-4 py-3 text-gray-600 text-sm">{member.phone || '—'}</td>
+                          {/* Guardian (kiddy) | Contact (regular) */}
+                          {isKiddyView ? (
+                            <td className="px-4 py-3 text-gray-600 text-sm">
+                              {member.guardian_name
+                                ? <span>{member.guardian_name} <span className="text-xs text-gray-400">({member.guardian_relationship || 'Guardian'})</span></span>
+                                : <span className="text-gray-400">—</span>
+                              }
+                            </td>
+                          ) : (
+                            <td className="px-4 py-3 text-gray-600 text-sm">{member.phone || '—'}</td>
+                          )}
 
-                          {/* Recruiter */}
-                          <td className="px-4 py-3 text-gray-600 text-sm">{member.recruiter_name || 'Self'}</td>
+                          {/* Contact (kiddy) | Referrer (regular) */}
+                          {isKiddyView ? (
+                            <td className="px-4 py-3 text-gray-600 text-sm">{member.phone || '—'}</td>
+                          ) : (
+                            <td className="px-4 py-3 text-gray-600 text-sm">{member.recruiter_name || 'Self'}</td>
+                          )}
 
-                          {/* Joined */}
+                          {/* DOB (kiddy) | Joined (regular) */}
                           <td className="px-4 py-3 text-gray-500 text-xs text-center">
-                            {member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : '—')}
+                            {isKiddyView
+                              ? (member.date_of_birth ? formatDate(member.date_of_birth) : '—')
+                              : (member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : '—'))
+                            }
                           </td>
 
                           {/* Status */}
@@ -844,7 +850,7 @@ export default function MembersPage() {
                               <button
                                 onClick={() => navigate(`/members/${member.id}/edit`)}
                                 title="Edit member"
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-[#07A04E] hover:bg-[#D6FADC] transition-colors"
+                                className={`p-1.5 rounded-lg text-gray-400 transition-colors ${isKiddyView ? 'hover:text-pink-600 hover:bg-pink-50' : 'hover:text-[#07A04E] hover:bg-[#D6FADC]'}`}
                               >
                                 <Pencil size={15} />
                               </button>
@@ -884,23 +890,14 @@ export default function MembersPage() {
                 <p className="text-xs text-gray-400">
                   Showing{' '}
                   <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
-                  <span className="font-medium text-gray-600">{members.length}</span> members
-                  {yearFilter !== 'all' && (
-                    <span className="ml-2 font-medium text-[#07A04E]">
-                      · joined {yearFilter}
-                    </span>
-                  )}
-                  {selectedCount > 0 && (
-                    <span className="ml-2 font-medium text-[#07A04E]">
-                      · {selectedCount} selected
-                    </span>
-                  )}
+                  <span className="font-medium text-gray-600">
+                    {members.filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy').length}
+                  </span> {isKiddyView ? 'kiddy members' : 'members'}
+                  {yearFilter !== 'all' && <span className="ml-2 font-medium text-[#07A04E]">· joined {yearFilter}</span>}
+                  {selectedCount > 0 && <span className="ml-2 font-medium text-[#07A04E]">· {selectedCount} selected</span>}
                 </p>
                 {selectedCount > 0 && (
-                  <button
-                    onClick={clearSelection}
-                    className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
-                  >
+                  <button onClick={clearSelection} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
                     Clear selection
                   </button>
                 )}
@@ -910,7 +907,7 @@ export default function MembersPage() {
         )}
       </div>
 
-      {/* ── Single delete confirm ── */}
+      {/* ── Dialogs ── */}
       <ConfirmDialog
         open={!!confirmDelete}
         title={confirmDelete?.status === 'inactive' ? 'Delete Permanently' : 'Delete Member'}
@@ -926,7 +923,6 @@ export default function MembersPage() {
         onCancel={() => { if (!deleting) setConfirmDelete(null); }}
       />
 
-      {/* ── Bulk delete confirm ── */}
       <ConfirmDialog
         open={confirmBulkDelete}
         title={`Delete ${selectedCount} Member${selectedCount !== 1 ? 's' : ''}`}
@@ -938,7 +934,6 @@ export default function MembersPage() {
         onCancel={() => { if (!bulkDeleting) setConfirmBulkDelete(false); }}
       />
 
-      {/* ── Bulk status change confirm ── */}
       <ConfirmDialog
         open={!!confirmBulkStatus}
         title={`Set ${selectedCount} Member${selectedCount !== 1 ? 's' : ''} to ${confirmBulkStatus === 'active' ? 'Active' : 'Inactive'}`}
@@ -950,14 +945,12 @@ export default function MembersPage() {
         onCancel={() => { if (!bulkStatusChanging) setConfirmBulkStatus(null); }}
       />
 
-      {/* ── Add Member Modal ── */}
       <AddMemberModal
         open={addMemberOpen}
         onClose={() => setAddMemberOpen(false)}
         onCreated={() => { setAddMemberOpen(false); fetchMembers(); }}
       />
 
-      {/* ── Import Members Modal ── */}
       {importOpen && (
         <ImportMembersModal
           onClose={() => setImportOpen(false)}
@@ -965,7 +958,6 @@ export default function MembersPage() {
         />
       )}
 
-      {/* ── Import Financial Modal ── */}
       {importFinancialOpen && (
         <ImportFinancialModal
           onClose={() => setImportFinancialOpen(false)}
