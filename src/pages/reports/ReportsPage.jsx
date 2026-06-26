@@ -218,6 +218,97 @@ function StatCard({ icon, label, value, sub, iconBg, iconColor, trend, trendLabe
   );
 }
 
+// ── Membership Breakdown Card ──────────────────────────────────────────────
+// Renders a horizontal stacked bar showing the proportion of each member type
+// alongside per-type counts. Inactive members shown as a separate row.
+
+function MembershipBreakdownCard({ memberStats }) {
+  const regular   = memberStats?.regular   ?? 0;
+  const associate = memberStats?.associate ?? 0;
+  const kiddy     = memberStats?.kiddy     ?? 0;
+  const inactive  = memberStats?.inactive  ?? 0;
+  const active    = memberStats?.active    ?? 0;
+
+  // Total for the stacked bar is all typed members (excl. inactive which cross-cuts)
+  const total = regular + associate + kiddy;
+
+  const segments = [
+    { label: 'Regular',   count: regular,   color: '#7C3AED', bg: 'bg-violet-500',  light: 'bg-violet-50',  text: 'text-violet-700'  },
+    { label: 'Associate', count: associate, color: '#D97706', bg: 'bg-amber-400',   light: 'bg-amber-50',   text: 'text-amber-700'   },
+    { label: 'Kiddy',     count: kiddy,     color: '#EC4899', bg: 'bg-pink-400',    light: 'bg-pink-50',    text: 'text-pink-700'    },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5 col-span-2 sm:col-span-4">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">
+        Membership Breakdown
+      </p>
+
+      {/* Stacked bar */}
+      <div className="flex h-3 rounded-full overflow-hidden gap-px mb-5">
+        {segments.map(({ label, count, color }) => {
+          const pct = total > 0 ? (count / total) * 100 : 0;
+          return pct > 0 ? (
+            <div
+              key={label}
+              style={{ width: `${pct}%`, background: color }}
+              title={`${label}: ${count}`}
+            />
+          ) : null;
+        })}
+        {total === 0 && <div className="flex-1 bg-gray-100" />}
+      </div>
+
+      {/* Per-type rows */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {segments.map(({ label, count, color, light, text }) => {
+          const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+          return (
+            <div key={label} className={`rounded-xl p-3 ${light}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                <span className={`text-xs font-semibold ${text}`}>{label}</span>
+              </div>
+              <p className="text-2xl font-bold text-gray-900 tabular-nums">{count}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{pct}% of members</p>
+            </div>
+          );
+        })}
+
+        {/* Inactive — cross-cutting status, shown separately */}
+        <div className="rounded-xl p-3 bg-gray-50 border border-gray-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0" />
+            <span className="text-xs font-semibold text-gray-500">Inactive</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900 tabular-nums">{inactive}</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">
+            {total + inactive > 0 ? (((inactive / (total + inactive)) * 100).toFixed(1)) : '0.0'}% of all members
+          </p>
+        </div>
+      </div>
+
+      {/* Active / inactive summary strip */}
+      <div className="mt-4 flex items-center gap-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span className="text-xs text-gray-500">Active</span>
+          <span className="text-xs font-bold text-gray-800 tabular-nums">{active}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-gray-300" />
+          <span className="text-xs text-gray-500">Inactive</span>
+          <span className="text-xs font-bold text-gray-800 tabular-nums">{inactive}</span>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-gray-400">Total</span>
+          <span className="text-xs font-bold text-gray-900 tabular-nums">{(memberStats?.total ?? 0)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SectionTitle({ children }) {
   return (
     <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3 mt-8">
@@ -437,21 +528,25 @@ export default function ReportsPage() {
   // Exports
   function handleExportSummary() {
     const rows = [
-      { Metric: 'Report Period',                Value: `${formatDate(from.toISOString())} – ${formatDate(to.toISOString())}` },
-      { Metric: 'Total Members',                Value: memberStats?.total ?? 0 },
-      { Metric: 'Active Members',               Value: memberStats?.active ?? 0 },
-      { Metric: 'Total CBU Balance (PHP)',       Value: accountStats?.totalCBU ?? 0 },
-      { Metric: 'Total Savings Balance (PHP)',   Value: accountStats?.totalSavings ?? 0 },
-      { Metric: 'Total Loans',                  Value: loanStats?.total ?? 0 },
-      { Metric: 'Active Loans',                 Value: loanStats?.active ?? 0 },
-      { Metric: 'Outstanding Balance (PHP)',     Value: loanStats?.totalOutstanding ?? 0 },
-      { Metric: 'Period: Loans Released (PHP)', Value: totalReleased },
-      { Metric: 'Period: Loan Repayments (PHP)',Value: totalRepaid },
-      { Metric: 'Period: All Deposits (PHP)',   Value: totalDeposited },
-      { Metric: 'Period: All Withdrawals (PHP)',Value: totalWithdrawn },
-      { Metric: 'Period: CBU Deposits (PHP)',   Value: cbuDeposits },
-      { Metric: 'Period: Savings Deposits (PHP)',Value: savingsDeposits },
-      { Metric: 'Report Generated',             Value: format(new Date(), 'MMM d, yyyy h:mm a') },
+      { Metric: 'Report Period',                  Value: `${formatDate(from.toISOString())} – ${formatDate(to.toISOString())}` },
+      { Metric: 'Total Members',                  Value: memberStats?.total ?? 0 },
+      { Metric: 'Active Members',                 Value: memberStats?.active ?? 0 },
+      { Metric: 'Inactive Members',               Value: memberStats?.inactive ?? 0 },
+      { Metric: 'Regular Members',                Value: memberStats?.regular ?? 0 },
+      { Metric: 'Associate Members',              Value: memberStats?.associate ?? 0 },
+      { Metric: 'Kiddy Members',                  Value: memberStats?.kiddy ?? 0 },
+      { Metric: 'Total CBU Balance (PHP)',         Value: accountStats?.totalCBU ?? 0 },
+      { Metric: 'Total Savings Balance (PHP)',     Value: accountStats?.totalSavings ?? 0 },
+      { Metric: 'Total Loans',                    Value: loanStats?.total ?? 0 },
+      { Metric: 'Active Loans',                   Value: loanStats?.active ?? 0 },
+      { Metric: 'Outstanding Balance (PHP)',       Value: loanStats?.totalOutstanding ?? 0 },
+      { Metric: 'Period: Loans Released (PHP)',   Value: totalReleased },
+      { Metric: 'Period: Loan Repayments (PHP)',  Value: totalRepaid },
+      { Metric: 'Period: All Deposits (PHP)',     Value: totalDeposited },
+      { Metric: 'Period: All Withdrawals (PHP)',  Value: totalWithdrawn },
+      { Metric: 'Period: CBU Deposits (PHP)',     Value: cbuDeposits },
+      { Metric: 'Period: Savings Deposits (PHP)', Value: savingsDeposits },
+      { Metric: 'Report Generated',               Value: format(new Date(), 'MMM d, yyyy h:mm a') },
     ];
     exportToCSV('wellserve_summary_report', rows);
     toast.success('Summary report exported.');
@@ -491,15 +586,19 @@ export default function ReportsPage() {
   const auditRows = [
     { label: 'Total Members',            curr: memberStats?.total ?? 0,           prev: memberStats?.total ?? 0,          fmt: v => v },
     { label: 'Active Members',           curr: memberStats?.active ?? 0,          prev: memberStats?.active ?? 0,         fmt: v => v },
+    { label: 'Inactive Members',         curr: memberStats?.inactive ?? 0,        prev: memberStats?.inactive ?? 0,       fmt: v => v },
+    { label: 'Regular Members',          curr: memberStats?.regular ?? 0,         prev: memberStats?.regular ?? 0,        fmt: v => v },
+    { label: 'Associate Members',        curr: memberStats?.associate ?? 0,       prev: memberStats?.associate ?? 0,      fmt: v => v },
+    { label: 'Kiddy Members',            curr: memberStats?.kiddy ?? 0,           prev: memberStats?.kiddy ?? 0,          fmt: v => v },
     { label: 'Total CBU Balance',        curr: accountStats?.totalCBU ?? 0,       prev: accountStats?.totalCBU ?? 0,      fmt: formatCurrency },
     { label: 'Total Savings Balance',    curr: accountStats?.totalSavings ?? 0,   prev: accountStats?.totalSavings ?? 0,  fmt: formatCurrency },
     { label: 'Outstanding Loan Balance', curr: loanStats?.totalOutstanding ?? 0,  prev: loanStats?.totalOutstanding ?? 0, fmt: formatCurrency },
-    { label: 'Loans Released (Period)',  curr: totalReleased,                      prev: prevReleased,                      fmt: formatCurrency },
-    { label: 'Loan Repayments (Period)', curr: totalRepaid,                        prev: prevRepaid,                        fmt: formatCurrency },
-    { label: 'Deposits (Period)',        curr: totalDeposited,                     prev: prevDeposited,                     fmt: formatCurrency },
-    { label: 'Withdrawals (Period)',     curr: totalWithdrawn,                     prev: prevWithdrawn,                     fmt: formatCurrency },
-    { label: 'CBU Deposits (Period)',    curr: cbuDeposits,                        prev: prevCbuDep,                        fmt: formatCurrency },
-    { label: 'Savings Deposits (Period)',curr: savingsDeposits,                    prev: prevSavingsDep,                    fmt: formatCurrency },
+    { label: 'Loans Released (Period)',  curr: totalReleased,                      prev: prevReleased,                     fmt: formatCurrency },
+    { label: 'Loan Repayments (Period)', curr: totalRepaid,                        prev: prevRepaid,                       fmt: formatCurrency },
+    { label: 'Deposits (Period)',        curr: totalDeposited,                     prev: prevDeposited,                    fmt: formatCurrency },
+    { label: 'Withdrawals (Period)',     curr: totalWithdrawn,                     prev: prevWithdrawn,                    fmt: formatCurrency },
+    { label: 'CBU Deposits (Period)',    curr: cbuDeposits,                        prev: prevCbuDep,                       fmt: formatCurrency },
+    { label: 'Savings Deposits (Period)',curr: savingsDeposits,                    prev: prevSavingsDep,                   fmt: formatCurrency },
   ];
 
   return (
@@ -572,16 +671,50 @@ export default function ReportsPage() {
             </p>
           </div>
 
-          {/* Membership */}
+          {/* ── Membership ─────────────────────────────────────────────────── */}
           <SectionTitle>Membership</SectionTitle>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard icon={<Users size={20} />} label="Total Members"  value={memberStats?.total ?? 0}     iconBg="bg-blue-50"    iconColor="#2563EB" />
-            <StatCard icon={<Users size={20} />} label="Active Members" value={memberStats?.active ?? 0}    iconBg="bg-emerald-50" iconColor="#059669" />
-            <StatCard icon={<Users size={20} />} label="Associate"      value={memberStats?.associate ?? 0} iconBg="bg-amber-50"   iconColor="#D97706" />
-            <StatCard icon={<Users size={20} />} label="Regular"        value={memberStats?.regular ?? 0}   iconBg="bg-violet-50"  iconColor="#7C3AED" />
+
+          {/* Top-line summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <StatCard
+              icon={<Users size={20} />}
+              label="Total Members"
+              value={memberStats?.total ?? 0}
+              sub={`${memberStats?.active ?? 0} active`}
+              iconBg="bg-blue-50"
+              iconColor="#2563EB"
+            />
+            <StatCard
+              icon={<Users size={20} />}
+              label="Active Members"
+              value={memberStats?.active ?? 0}
+              iconBg="bg-emerald-50"
+              iconColor="#059669"
+            />
+            <StatCard
+              icon={<Users size={20} />}
+              label="Inactive Members"
+              value={memberStats?.inactive ?? 0}
+              sub="Status: inactive"
+              iconBg="bg-gray-100"
+              iconColor="#6B7280"
+            />
+            <StatCard
+              icon={<Users size={20} />}
+              label="Kiddy Members"
+              value={memberStats?.kiddy ?? 0}
+              sub={`${memberStats?.activeKiddy ?? 0} active`}
+              iconBg="bg-pink-50"
+              iconColor="#EC4899"
+            />
           </div>
 
-          {/* Loans */}
+          {/* Detailed breakdown with stacked bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <MembershipBreakdownCard memberStats={memberStats} />
+          </div>
+
+          {/* ── Loans ──────────────────────────────────────────────────────── */}
           <SectionTitle>Loans</SectionTitle>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard icon={<CreditCard size={20} />} label="Total Loans"  value={loanStats?.total ?? 0}  iconBg="bg-orange-50" iconColor="#EA580C" />
@@ -596,7 +729,6 @@ export default function ReportsPage() {
             <>
               <SectionTitle>Loan Portfolio Analytics</SectionTitle>
 
-              {/* Collection & Default rates */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 <StatCard
                   icon={<TrendingUp size={20} />}
@@ -632,7 +764,6 @@ export default function ReportsPage() {
                 />
               </div>
 
-              {/* Status Breakdown + Aging — side by side */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Status breakdown */}
                 <div className="bg-white rounded-2xl border border-gray-200 p-5">
@@ -647,15 +778,15 @@ export default function ReportsPage() {
                       { key: 'defaulted', label: 'Defaulted', color: 'bg-rose-600' },
                     ].map(({ key, label, color }) => {
                       const count = loanAnalytics.by_status[key] ?? 0;
-                      const pct   = loanAnalytics.total > 0 ? ((count / loanAnalytics.total) * 100).toFixed(1) : 0;
+                      const p     = loanAnalytics.total > 0 ? ((count / loanAnalytics.total) * 100).toFixed(1) : 0;
                       return (
                         <div key={key} className="flex items-center gap-3">
                           <span className="text-xs text-gray-500 w-16 flex-shrink-0">{label}</span>
                           <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${p}%` }} />
                           </div>
                           <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">
-                            {count} <span className="font-normal text-gray-400">({pct}%)</span>
+                            {count} <span className="font-normal text-gray-400">({p}%)</span>
                           </span>
                         </div>
                       );
@@ -668,10 +799,10 @@ export default function ReportsPage() {
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Loan Aging Analysis</p>
                   <div className="space-y-3">
                     {[
-                      { key: 'current',    label: 'Current (not overdue)', color: 'bg-emerald-400' },
-                      { key: 'days_30',    label: '1–30 days overdue',     color: 'bg-yellow-400' },
-                      { key: 'days_60',    label: '31–60 days overdue',    color: 'bg-orange-400' },
-                      { key: 'days_90_plus', label: '60+ days overdue',   color: 'bg-red-500' },
+                      { key: 'current',      label: 'Current (not overdue)', color: 'bg-emerald-400' },
+                      { key: 'days_30',      label: '1–30 days overdue',     color: 'bg-yellow-400' },
+                      { key: 'days_60',      label: '31–60 days overdue',    color: 'bg-orange-400' },
+                      { key: 'days_90_plus', label: '60+ days overdue',      color: 'bg-red-500' },
                     ].map(({ key, label, color }) => {
                       const count = loanAnalytics.aging[key] ?? 0;
                       const totalUnpaid =
@@ -679,23 +810,19 @@ export default function ReportsPage() {
                         (loanAnalytics.aging.days_30 ?? 0) +
                         (loanAnalytics.aging.days_60 ?? 0) +
                         (loanAnalytics.aging.days_90_plus ?? 0);
-                      const pct = totalUnpaid > 0 ? ((count / totalUnpaid) * 100).toFixed(1) : 0;
+                      const p = totalUnpaid > 0 ? ((count / totalUnpaid) * 100).toFixed(1) : 0;
                       return (
                         <div key={key} className="flex items-center gap-3">
                           <span className="text-xs text-gray-500 w-36 flex-shrink-0">{label}</span>
                           <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${p}%` }} />
                           </div>
-                          <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">
-                            {count}
-                          </span>
+                          <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">{count}</span>
                         </div>
                       );
                     })}
                   </div>
-                  <p className="text-[10px] text-gray-400 mt-3">
-                    Based on each loan's next due date vs. today.
-                  </p>
+                  <p className="text-[10px] text-gray-400 mt-3">Based on each loan's next due date vs. today.</p>
                 </div>
               </div>
             </>

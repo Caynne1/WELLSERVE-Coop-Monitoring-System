@@ -233,12 +233,29 @@ export async function getMemberStats() {
     .select('id, status, membership_type');
 
   if (error) throw error;
+  const members = data || [];
+
+  const total     = members.length;
+  const active    = members.filter(m => m.status === 'active').length;
+  const inactive  = members.filter(m => m.status === 'inactive').length;
+  const regular   = members.filter(m => m.membership_type === 'regular').length;
+  const associate = members.filter(m => m.membership_type === 'associate').length;
+  const kiddy     = members.filter(m => m.membership_type === 'kiddy').length;
+
+  // Active count per membership type — used for sub-labels in Reports cards
+  const activeKiddy     = members.filter(m => m.membership_type === 'kiddy'     && m.status === 'active').length;
+  const activeRegular   = members.filter(m => m.membership_type === 'regular'   && m.status === 'active').length;
+  const activeAssociate = members.filter(m => m.membership_type === 'associate' && m.status === 'active').length;
 
   return {
-    total: data.length,
-    active: data.filter(m => m.status === 'active').length,
-    inactive: data.filter(m => m.status === 'inactive').length,
-    associate: data.filter(m => m.membership_type === 'associate').length,
-    regular: data.filter(m => m.membership_type === 'regular').length,
+    total,
+    active,
+    inactive,
+    regular,
+    associate,
+    kiddy,
+    activeKiddy,
+    activeRegular,
+    activeAssociate,
   };
 }
