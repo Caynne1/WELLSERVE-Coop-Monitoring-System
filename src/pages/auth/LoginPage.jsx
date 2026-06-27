@@ -13,20 +13,17 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm();
 
-  // ── Splash screen state ──────────────────────────────────────────────────
   const [splashVisible, setSplashVisible] = useState(true);
   const [splashExiting, setSplashExiting] = useState(false);
 
   useEffect(() => {
-    // After 2.8s, begin the exit animation
-    const exitTimer = setTimeout(() => setSplashExiting(true), 2800);
+    const exitTimer = setTimeout(() => setSplashExiting(true), 2600);
     return () => clearTimeout(exitTimer);
   }, []);
 
   function handleSplashDone() {
     setSplashVisible(false);
   }
-  // ────────────────────────────────────────────────────────────────────────
 
   async function onSubmit({ email, password }) {
     setLoading(true);
@@ -38,436 +35,427 @@ export default function LoginPage() {
 
   return (
     <>
-      {/* ── Animated logo splash screen ── */}
       {splashVisible && (
         <SplashScreen exiting={splashExiting} onDone={handleSplashDone} />
       )}
 
-    <div className="ws-root" style={splashVisible && !splashExiting ? { visibility: 'hidden' } : { animation: 'wsLoginReveal 0.5s ease both' }}>
+      <div className="ws-root">
+        <div className="ws-shell">
 
-      {/* ── Animated gradient wave background ── */}
-      <div className="ws-wave-bg" />
-      <svg className="ws-wave ws-wave-1" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M0,160 C240,260 480,60 720,160 C960,260 1200,60 1440,160 L1440,320 L0,320 Z" />
-      </svg>
-      <svg className="ws-wave ws-wave-2" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M0,200 C300,100 600,300 900,200 C1100,130 1280,240 1440,180 L1440,320 L0,320 Z" />
-      </svg>
-      <svg className="ws-wave ws-wave-3" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M0,240 C360,160 720,320 1080,240 C1260,200 1380,260 1440,220 L1440,320 L0,320 Z" />
-      </svg>
-
-      <div className="ws-shell">
-
-        {/* ══════════ LEFT PANEL ══════════ */}
-        <div className="ws-left">
-          {/* Decorative wave at bottom of left panel */}
-          <svg className="ws-panel-wave" viewBox="0 0 400 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0,40 C80,0 160,80 240,40 C300,10 360,60 400,30 L400,80 L0,80 Z" />
-          </svg>
-
-          <div className="ws-left-inner">
-            {/* Brand */}
-            <div className="ws-brand">
-              <div className="ws-logo-ring">
-                <WellserveLogo size={40} variant="light" />
-              </div>
-              <div>
-                <p className="ws-brand-name">WELLSERVE</p>
-                <p className="ws-brand-tagline">Credit Cooperative</p>
-              </div>
+          {/* LEFT PANEL */}
+          <div className="ws-left">
+            {/* Subtle Grid + Floating Circles */}
+            <div className="ws-animated-bg">
+              {/* Grid Layer */}
+              <div className="ws-grid"></div>
+              
+              {/* Floating Circles */}
+              <div className="ws-circle ws-circle-1"></div>
+              <div className="ws-circle ws-circle-2"></div>
+              <div className="ws-circle ws-circle-3"></div>
+              <div className="ws-circle ws-circle-4"></div>
             </div>
 
-            {/* Hero */}
-            <div className="ws-hero">
-              <span className="ws-badge">
-                <ShieldCheck size={13} />
-                Secure &amp; Trusted Platform
-              </span>
-              <h1 className="ws-headline">
-                Your Cooperative,<br />
-                Fully in Control
-              </h1>
-              <p className="ws-sub">
-                Manage members, loans, savings, CBU, and all financial activity
-                from one clean, secure monitoring system built for your cooperative.
-              </p>
+            <div className="ws-left-content">
 
-              <div className="ws-divider" />
+              <div className="ws-brand-header">
+                <WellserveLogo size={92} variant="light" />
+                <div className="ws-brand-text">
+                  <div className="ws-brand-name">WELLSERVE</div>
+                  <div className="ws-brand-tagline">CREDIT COOPERATIVE</div>
+                </div>
+              </div>
 
-              <p className="ws-quote">
-                "Empowering cooperatives with clarity, efficiency, and security — every transaction, every member, every day."
-              </p>
+              <div className="ws-hero">
+
+                <h1 className="ws-portal-title">Administrator Portal</h1>
+                
+                <p className="ws-portal-desc">
+                  Secure access for Administrators, General Manager, 
+                  and authorized staff.
+                </p>
+
+                <div className="ws-features">
+                  <ul>
+                    <li>Real-time financial monitoring</li>
+                    <li>Member &amp; loan management</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="ws-bereso">BERESO GROUP OF COMPANIES</div>
             </div>
+          </div>
 
-            <p className="ws-left-foot">
-              © {new Date().getFullYear()} WELLSERVE Credit Cooperative. All rights reserved.
-            </p>
+          {/* RIGHT PANEL */}
+          <div className="ws-right">
+            <div className="ws-form-container">
+              <div className="ws-form-header">
+                <div className="ws-mobile-brand">
+                  <WellserveLogo size={48} variant="dark" />
+                  <div>
+                    <div className="ws-mobile-name">WELLSERVE</div>
+                    <div className="ws-mobile-tag">COOPERATIVE</div>
+                  </div>
+                </div>
+
+                <h2 className="ws-form-title">Welcome Back</h2>
+                <p className="ws-form-subtitle">Sign in to continue</p>
+              </div>
+
+              <form onSubmit={handleSubmit(onSubmit)} className="ws-form">
+                <div className="ws-field">
+                  <label className="ws-label">Email Address</label>
+                  <div className="ws-input-group">
+                    <Mail className="ws-icon" size={19} />
+                    <input
+                      type="email"
+                      {...register('email', { required: 'Email is required' })}
+                      placeholder="admin@wellserve.coop"
+                      className={`ws-input ${errors.email ? 'error' : ''}`}
+                    />
+                  </div>
+                  {errors.email && <p className="ws-error">{errors.email.message}</p>}
+                </div>
+
+                <div className="ws-field">
+                  <label className="ws-label">Password</label>
+                  <div className="ws-input-group">
+                    <Lock className="ws-icon" size={19} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      {...register('password', { required: 'Password is required' })}
+                      placeholder="••••••••"
+                      className={`ws-input ${errors.password ? 'error' : ''}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="ws-toggle-password"
+                    >
+                      {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                    </button>
+                  </div>
+                  {errors.password && <p className="ws-error">{errors.password.message}</p>}
+                </div>
+
+                <button type="submit" disabled={loading} className="ws-btn-primary">
+                  {loading ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Signing in...
+                    </>
+                  ) : 'Sign In'}
+                </button>
+              </form>
+
+              <div className="ws-secure-notice">
+                <ShieldCheck size={16} /> Authorized Personnel Only
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ══════════ RIGHT PANEL ══════════ */}
-        <div className="ws-right">
-          {/* Mobile logo */}
-          <div className="ws-mobile-logo">
-            <div className="ws-mobile-logo-ring">
-              <WellserveLogo size={36} variant="dark" />
-            </div>
-            <div>
-              <p className="ws-mobile-brand-name">WELLSERVE</p>
-              <p className="ws-mobile-brand-tag">Credit Cooperative</p>
-            </div>
-          </div>
+        <style>{`
+          .ws-root {
+            position: fixed;
+            inset: 0;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, sans-serif;
+          }
 
-          <div className="ws-form-wrap">
-            <div className="ws-form-header">
-              <span className="ws-form-eyebrow">
-                <ShieldCheck size={12} /> Administrator Portal
-              </span>
-              <h2 className="ws-form-title">Welcome back</h2>
-              <p className="ws-form-sub">Sign in to your account to continue</p>
-            </div>
+          .ws-shell {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            width: 100vw;
+            height: 100vh;
+          }
 
-            <form onSubmit={handleSubmit(onSubmit)} className="ws-form">
-              {/* Email */}
-              <div className="ws-field">
-                <label className="ws-label">Email address</label>
-                <div className="ws-input-wrap">
-                  <span className="ws-input-icon"><Mail size={15} /></span>
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    placeholder="admin@wellserve.coop"
-                    {...register('email', { required: 'Email is required' })}
-                    className={`ws-input${errors.email ? ' ws-input-err' : ''}`}
-                  />
-                </div>
-                {errors.email && <p className="ws-err">{errors.email.message}</p>}
-              </div>
+          /* LEFT PANEL */
+          .ws-left {
+            background: #000066;
+            color: white;
+            padding: 60px 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+          }
 
-              {/* Password */}
-              <div className="ws-field">
-                <label className="ws-label">Password</label>
-                <div className="ws-input-wrap">
-                  <span className="ws-input-icon"><Lock size={15} /></span>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    {...register('password', { required: 'Password is required' })}
-                    className={`ws-input${errors.password ? ' ws-input-err' : ''}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(v => !v)}
-                    className="ws-eye"
-                  >
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-                {errors.password && <p className="ws-err">{errors.password.message}</p>}
-              </div>
+          .ws-animated-bg {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+          }
 
-              <button type="submit" disabled={loading} className="ws-btn">
-                {loading ? (
-                  <><Loader2 size={16} className="ws-spin" /> Signing in…</>
-                ) : 'Sign In'}
-              </button>
-            </form>
+          /* Subtle Grid */
+          .ws-grid {
+            position: absolute;
+            inset: 0;
+            background-image: 
+              linear-gradient(rgba(7, 160, 78, 0.08) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(7, 160, 78, 0.08) 1px, transparent 1px);
+            background-size: 60px 60px;
+            animation: gridMove 40s linear infinite;
+            opacity: 0.6;
+          }
 
-            <div className="ws-secure">
-              <ShieldCheck size={13} />
-              <span>Secure access · Authorized personnel only</span>
-            </div>
-          </div>
+          @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(60px, 60px); }
+          }
 
-          <p className="ws-right-foot">WELLSERVE Credit Cooperative Monitoring System</p>
-        </div>
+          /* Floating Circles */
+          .ws-circle {
+            position: absolute;
+            border: 1px solid rgba(7, 160, 78, 0.25);
+            border-radius: 50%;
+            animation: floatCircle 35s infinite linear;
+          }
+
+          .ws-circle-1 { width: 620px; height: 620px; top: -220px; left: -180px; animation-duration: 42s; }
+          .ws-circle-2 { width: 460px; height: 460px; bottom: -180px; right: -120px; animation-duration: 28s; animation-direction: reverse; }
+          .ws-circle-3 { width: 320px; height: 320px; top: 25%; right: 8%; animation-duration: 48s; }
+          .ws-circle-4 { width: 240px; height: 240px; bottom: 20%; left: 15%; animation-duration: 38s; }
+
+          @keyframes floatCircle {
+            0%   { transform: rotate(0deg) translate(50px, 40px) scale(1); }
+            50%  { transform: rotate(180deg) translate(-60px, -50px) scale(1.12); }
+            100% { transform: rotate(360deg) translate(50px, 40px) scale(1); }
+          }
+
+          .ws-left-content {
+            width: 100%;
+            max-width: 460px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            justify-content: center;
+            gap: 48px;
+            position: relative;
+            z-index: 2;
+          }
+
+          .ws-brand-header {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+            justify-content: center;
+          }
+
+          .ws-brand-name {
+            font-size: 36px;
+            font-weight: 900;
+            letter-spacing: -0.04em;
+          }
+
+          .ws-brand-tagline {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: #07A04E;
+          }
+
+          .ws-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(7, 160, 78, 0.12);
+            border: 1px solid rgba(7, 160, 78, 0.5);
+            color: #07A04E;
+            padding: 7px 18px;
+            border-radius: 9999px;
+            font-size: 12.5px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+          }
+
+          .ws-portal-title {
+            font-size: 43px;
+            font-weight: 800;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+          }
+
+          .ws-portal-desc {
+            font-size: 16px;
+            line-height: 1.7;
+            opacity: 0.92;
+            max-width: 390px;
+          }
+
+          .ws-features ul {
+            margin-top: 32px;
+            list-style: none;
+            padding: 0;
+            font-size: 15px;
+            text-align: left;
+            display: inline-block;
+          }
+
+          .ws-features li {
+            padding: 8px 0;
+            position: relative;
+            padding-left: 26px;
+          }
+
+          .ws-features li::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: #07A04E;
+            font-size: 19px;
+          }
+
+          .ws-bereso {
+            font-size: 12px;
+            letter-spacing: 2.8px;
+            opacity: 0.7;
+          }
+
+          /* RIGHT PANEL */
+          .ws-right {
+            background: #ffffff;
+            padding: 80px 72px;
+            display: flex;
+            align-items: center;
+          }
+
+          .ws-form-container {
+            width: 100%;
+            max-width: 380px;
+            margin: 0 auto;
+          }
+
+          .ws-mobile-brand {
+            display: none;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 40px;
+          }
+
+          .ws-form-title {
+            font-size: 31px;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: -0.02em;
+          }
+
+          .ws-form-subtitle {
+            color: #64748b;
+            margin-top: 6px;
+          }
+
+          .ws-form {
+            margin-top: 48px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+          }
+
+          .ws-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: #374151;
+            letter-spacing: 0.6px;
+          }
+
+          .ws-input-group {
+            position: relative;
+          }
+
+          .ws-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+          }
+
+          .ws-input {
+            width: 100%;
+            padding: 15px 16px 15px 50px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 14px;
+            font-size: 15px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+
+          .ws-input:focus {
+            border-color: #000066;
+            box-shadow: 0 0 0 4px rgba(0, 0, 102, 0.12);
+            outline: none;
+          }
+
+          .ws-input.error {
+            border-color: #ef4444;
+          }
+
+          .ws-toggle-password {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+          }
+
+          .ws-error {
+            color: #ef4444;
+            font-size: 12.5px;
+            margin-top: 4px;
+          }
+
+          .ws-btn-primary {
+            height: 58px;
+            background: linear-gradient(135deg, #07A04E, #036636);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0 10px 25px rgba(7, 160, 78, 0.35);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+
+          .ws-btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 32px rgba(7, 160, 78, 0.45);
+          }
+
+          .ws-secure-notice {
+            margin-top: 32px;
+            text-align: center;
+            font-size: 13px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+          }
+
+          /* Mobile */
+          @media (max-width: 900px) {
+            .ws-shell { grid-template-columns: 1fr; }
+            .ws-left { display: none; }
+            .ws-mobile-brand { display: flex; }
+            .ws-right { padding: 60px 32px; }
+          }
+        `}</style>
       </div>
-
-      <style>{`
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        .ws-root {
-          position: relative; min-height: 100vh;
-          display: flex; align-items: center; justify-content: center;
-          overflow: hidden; padding: 24px 16px;
-          font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-        }
-
-        /* ── Wave Background ── */
-        .ws-wave-bg {
-          position: absolute; inset: 0;
-          background: linear-gradient(160deg, #022c1a 0%, #045c32 30%, #07A04E 65%, #34d399 100%);
-        }
-
-        .ws-wave {
-          position: absolute;
-          width: 100%; left: 0;
-          pointer-events: none;
-        }
-        .ws-wave-1 {
-          bottom: -2px; height: 38vh;
-          fill: rgba(4, 120, 64, 0.55);
-          animation: waveFloat1 9s ease-in-out infinite;
-        }
-        .ws-wave-2 {
-          bottom: -2px; height: 30vh;
-          fill: rgba(16, 185, 97, 0.40);
-          animation: waveFloat2 12s ease-in-out infinite;
-        }
-        .ws-wave-3 {
-          bottom: -2px; height: 22vh;
-          fill: rgba(52, 211, 153, 0.30);
-          animation: waveFloat3 7s ease-in-out infinite;
-        }
-
-        @keyframes waveFloat1 {
-          0%, 100% { transform: translateX(0); }
-          50%       { transform: translateX(-40px); }
-        }
-        @keyframes waveFloat2 {
-          0%, 100% { transform: translateX(0); }
-          50%       { transform: translateX(50px); }
-        }
-        @keyframes waveFloat3 {
-          0%, 100% { transform: translateX(0); }
-          50%       { transform: translateX(-30px); }
-        }
-
-        /* ── Shell ── */
-        .ws-shell {
-          position: relative; z-index: 10;
-          width: 100%; max-width: 980px;
-          display: grid; grid-template-columns: 1.1fr 0.9fr;
-          border-radius: 28px; overflow: hidden;
-          box-shadow: 0 32px 80px rgba(0,0,0,0.28), 0 4px 16px rgba(0,0,0,0.14);
-        }
-
-        /* ── Left panel ── */
-        .ws-left {
-          position: relative; overflow: hidden;
-          background: linear-gradient(155deg, #036636 0%, #07A04E 55%, #10b961 100%);
-          padding: 52px 48px;
-          display: flex; flex-direction: column;
-          min-height: 640px;
-        }
-
-        .ws-panel-wave {
-          position: absolute;
-          bottom: 0; left: 0;
-          width: 100%; height: 80px;
-          fill: rgba(255,255,255,0.07);
-          pointer-events: none;
-        }
-
-        .ws-left-inner {
-          position: relative; z-index: 2;
-          display: flex; flex-direction: column;
-          height: 100%; gap: 36px;
-        }
-
-        .ws-brand { display: flex; align-items: center; gap: 14px; }
-        .ws-logo-ring {
-          width: 62px; height: 62px; border-radius: 18px;
-          background: rgba(255,255,255,0.18);
-          border: 1px solid rgba(255,255,255,0.28);
-          display: flex; align-items: center; justify-content: center;
-          backdrop-filter: blur(8px);
-        }
-        .ws-brand-name {
-          font-size: 21px; font-weight: 800; letter-spacing: 0.14em;
-          color: #ffffff; line-height: 1;
-        }
-        .ws-brand-tagline {
-          font-size: 11px; font-weight: 600; letter-spacing: 0.10em;
-          text-transform: uppercase; color: rgba(255,255,255,0.72);
-          margin-top: 5px;
-        }
-
-        .ws-hero { display: flex; flex-direction: column; gap: 16px; }
-        .ws-badge {
-          display: inline-flex; align-items: center; gap: 7px;
-          padding: 6px 14px; border-radius: 9999px;
-          background: rgba(255,255,255,0.18);
-          border: 1px solid rgba(255,255,255,0.26);
-          color: rgba(255,255,255,0.92);
-          font-size: 12px; font-weight: 600; width: fit-content;
-        }
-        .ws-headline {
-          font-size: 38px; font-weight: 800;
-          letter-spacing: -0.03em; line-height: 1.1;
-          color: #ffffff;
-        }
-        .ws-sub {
-          font-size: 14px; line-height: 1.72;
-          color: rgba(255,255,255,0.78);
-          max-width: 390px;
-        }
-        .ws-divider {
-          width: 48px; height: 3px;
-          background: rgba(255,255,255,0.36);
-          border-radius: 9999px;
-        }
-        .ws-quote {
-          font-size: 13px; line-height: 1.7;
-          color: rgba(255,255,255,0.60);
-          font-style: italic;
-          max-width: 380px;
-        }
-        .ws-left-foot {
-          font-size: 11px; color: rgba(255,255,255,0.45);
-          margin-top: auto; padding-top: 8px;
-        }
-
-        /* ── Right panel ── */
-        .ws-right {
-          background: #ffffff;
-          padding: 52px 48px;
-          display: flex; flex-direction: column;
-          justify-content: center; min-height: 640px;
-          position: relative; overflow: hidden;
-        }
-        .ws-right::after {
-          content: '';
-          position: absolute;
-          bottom: 0; left: 0; right: 0; height: 130px;
-          background: linear-gradient(to top, rgba(7,160,78,0.06), transparent);
-          pointer-events: none;
-        }
-
-        .ws-mobile-logo {
-          display: none; align-items: center; gap: 12px;
-          justify-content: center; margin-bottom: 28px;
-        }
-        .ws-mobile-logo-ring {
-          width: 52px; height: 52px; border-radius: 16px;
-          background: #f0fdf4; border: 1px solid #bbf7d0;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .ws-mobile-brand-name {
-          font-size: 17px; font-weight: 800; letter-spacing: 0.12em; color: #0f172a;
-        }
-        .ws-mobile-brand-tag {
-          font-size: 10px; font-weight: 600; color: #07A04E;
-          text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px;
-        }
-
-        .ws-form-wrap {
-          width: 100%; max-width: 360px; margin: 0 auto;
-          position: relative; z-index: 1;
-        }
-
-        .ws-form-header { margin-bottom: 28px; }
-        .ws-form-eyebrow {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
-          text-transform: uppercase; color: #059033;
-          background: #f0fdf4; padding: 5px 12px; border-radius: 9999px;
-          border: 1px solid #bbf7d0;
-        }
-        .ws-form-title {
-          font-size: 30px; font-weight: 800;
-          letter-spacing: -0.03em; color: #0f172a;
-          margin-top: 14px;
-        }
-        .ws-form-sub {
-          font-size: 14px; color: #64748b;
-          line-height: 1.6; margin-top: 6px;
-        }
-
-        .ws-form { display: flex; flex-direction: column; gap: 18px; }
-        .ws-field { display: flex; flex-direction: column; gap: 7px; }
-        .ws-label {
-          font-size: 12px; font-weight: 700;
-          color: #374151; letter-spacing: 0.04em;
-        }
-        .ws-input-wrap { position: relative; }
-        .ws-input-icon {
-          position: absolute; left: 14px; top: 50%;
-          transform: translateY(-50%);
-          color: #9ca3af; display: flex; pointer-events: none;
-        }
-        .ws-input {
-          width: 100%;
-          padding: 13px 14px 13px 42px;
-          border-radius: 12px;
-          border: 1.5px solid #e2e8f0;
-          background: #f8fafc;
-          color: #0f172a; font-size: 14px; font-weight: 500;
-          outline: none;
-          transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
-        }
-        .ws-input:focus {
-          border-color: #07A04E;
-          background: #ffffff;
-          box-shadow: 0 0 0 4px rgba(7,160,78,0.10);
-        }
-        .ws-input::placeholder { color: #94a3b8; }
-        .ws-input-err { border-color: #fca5a5 !important; }
-        .ws-eye {
-          position: absolute; right: 13px; top: 50%;
-          transform: translateY(-50%);
-          background: none; border: none; cursor: pointer;
-          color: #9ca3af; display: flex; align-items: center;
-          padding: 2px; transition: color 0.15s;
-        }
-        .ws-eye:hover { color: #374151; }
-        .ws-err { font-size: 12px; color: #dc2626; font-weight: 500; }
-
-        .ws-btn {
-          width: 100%; padding: 14px;
-          border-radius: 12px; border: none;
-          background: linear-gradient(135deg, #07A04E 0%, #10b961 100%);
-          color: #ffffff; font-size: 15px; font-weight: 700;
-          letter-spacing: 0.02em; cursor: pointer;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          box-shadow: 0 8px 24px rgba(7,160,78,0.30);
-          transition: transform 0.16s, box-shadow 0.16s, filter 0.16s;
-          margin-top: 6px;
-        }
-        .ws-btn:not(:disabled):hover {
-          transform: translateY(-2px);
-          box-shadow: 0 14px 32px rgba(7,160,78,0.38);
-          filter: saturate(1.05);
-        }
-        .ws-btn:not(:disabled):active {
-          transform: translateY(0);
-          box-shadow: 0 6px 16px rgba(7,160,78,0.22);
-        }
-        .ws-btn:disabled { opacity: 0.65; cursor: not-allowed; }
-
-        .ws-secure {
-          display: flex; align-items: center; justify-content: center;
-          gap: 7px; margin-top: 20px;
-          font-size: 12px; color: #94a3b8;
-        }
-
-        .ws-right-foot {
-          font-size: 11px; color: #cbd5e1;
-          text-align: center; margin-top: 28px;
-          position: relative; z-index: 1;
-        }
-
-        @keyframes ws-spin { to { transform: rotate(360deg); } }
-        .ws-spin { animation: ws-spin 0.85s linear infinite; }
-
-        @media (max-width: 860px) {
-          .ws-shell { grid-template-columns: 1fr; max-width: 460px; }
-          .ws-left { display: none; }
-          .ws-right { min-height: auto; padding: 40px 32px; }
-          .ws-mobile-logo { display: flex; }
-        }
-        @media (max-width: 500px) {
-          .ws-right { padding: 32px 20px; }
-        }
-
-        @keyframes wsLoginReveal {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
     </>
   );
 }
