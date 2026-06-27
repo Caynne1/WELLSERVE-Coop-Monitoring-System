@@ -144,13 +144,13 @@ const MEMBERSHIP_CARDS = [
     title: 'Kiddy & Youth Savings',
     description: 'Savings membership for children and youth members.',
     badge: '₱300 total',
-    badgeColor: 'bg-pink-100 text-pink-700',
-    borderColor: 'border-pink-200',
-    hoverBorder: 'hover:border-pink-400',
-    selectedBorder: 'border-pink-500',
-    selectedBg: 'bg-pink-50',
-    iconBg: 'bg-pink-100',
-    iconColor: 'text-pink-600',
+    badgeColor: 'bg-teal-100 text-teal-700',
+    borderColor: 'border-teal-200',
+    hoverBorder: 'hover:border-teal-400',
+    selectedBorder: 'border-teal-500',
+    selectedBg: 'bg-teal-50',
+    iconBg: 'bg-teal-100',
+    iconColor: 'text-teal-700',
     items: ['₱50 Membership Fee', '₱200 Regulatory Fee', '₱50 Initial Savings Deposit'],
   },
 ];
@@ -265,7 +265,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
   return (
     <>
       {/* Child / Youth Information */}
-      <FormSection title="Child / Youth Information" inModal={inModal} colorClass="border-pink-100">
+      <FormSection title="Child / Youth Information" inModal={inModal} colorClass="border-teal-100">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Input
             label="First Name"
@@ -331,7 +331,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
       </FormSection>
 
       {/* Parent / Guardian Information */}
-      <FormSection title="Parent / Guardian Information" inModal={inModal} colorClass="border-pink-100">
+      <FormSection title="Parent / Guardian Information" inModal={inModal} colorClass="border-sky-100">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
             label="Name of Parent / Guardian"
@@ -367,7 +367,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
 
       {/* Savings Option */}
       {!isEdit && (
-        <FormSection title="Savings Option" inModal={inModal} colorClass="border-pink-100">
+        <FormSection title="Savings Option" inModal={inModal} colorClass="border-teal-100">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               {
@@ -378,7 +378,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
                   'Interest Rate: 3% per annum',
                   'Withdrawal allowed during Birthday or Christmas',
                 ],
-                color: 'pink',
+                color: 'teal',
               },
               {
                 value: 'educational_savings',
@@ -389,13 +389,13 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
                   'Locked-in until member reaches 18 years old',
                   'Withdrawals not allowed before maturity',
                 ],
-                color: 'violet',
+                color: 'amber',
               },
             ].map((opt) => {
               const isSelected = savingsType === opt.value;
               const colorMap = {
-                pink:   { border: 'border-pink-300',   bg: 'bg-pink-50',   text: 'text-pink-700',   ring: 'ring-pink-400'   },
-                violet: { border: 'border-violet-300', bg: 'bg-violet-50', text: 'text-violet-700', ring: 'ring-violet-400' },
+                teal:  { border: 'border-teal-300',  bg: 'bg-teal-50',  text: 'text-teal-700',  ring: 'ring-teal-400'  },
+                amber: { border: 'border-amber-300', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-400' },
               };
               const c = colorMap[opt.color];
               return (
@@ -410,7 +410,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
                     <input
                       type="radio"
                       value={opt.value}
-                      className={`accent-pink-600`}
+                      className="accent-teal-600"
                       {...register('kiddy_savings_type')}
                     />
                     <span className={`text-sm font-semibold ${isSelected ? c.text : 'text-gray-700'}`}>
@@ -437,23 +437,23 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
 
       {/* Membership Fees */}
       {!isEdit && breakdown && (
-        <FormSection title="Membership Fees" inModal={inModal} colorClass="border-pink-100">
-          <div className="rounded-xl border border-pink-100 bg-pink-50/40 p-4 space-y-2">
+        <FormSection title="Membership Fees" inModal={inModal} colorClass="border-teal-100">
+          <div className="rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50 via-sky-50 to-amber-50/70 p-4 space-y-2">
             {breakdown.items.map((item) => (
               <div key={item.key} className="flex justify-between text-sm text-gray-700">
                 <span>{item.label}</span>
                 <span className="font-medium">₱{item.amount.toLocaleString()}.00</span>
               </div>
             ))}
-            <div className="border-t border-pink-200 pt-2 mt-2 flex justify-between font-bold text-pink-900 text-sm">
+            <div className="border-t border-teal-200 pt-2 mt-2 flex justify-between font-bold text-teal-900 text-sm">
               <span>TOTAL</span>
               <span>₱{total.toLocaleString()}.00</span>
             </div>
           </div>
 
           {/* Onboarding Payment */}
-          <div className="mt-4 p-4 rounded-xl border bg-white border-pink-100 space-y-4">
-            <div className="flex items-center gap-2 text-pink-800">
+          <div className="mt-4 p-4 rounded-xl border bg-white border-teal-100 space-y-4">
+            <div className="flex items-center gap-2 text-teal-800">
               <DollarSign size={15} />
               <h4 className="text-sm font-semibold">Onboarding Payment</h4>
             </div>
@@ -482,7 +482,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
                   </div>
                 </div>
 
-                <div className="p-3 rounded-lg bg-pink-50 border border-pink-100 text-sm flex justify-between font-semibold">
+                <div className="p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm flex justify-between font-semibold">
                   <span>Total Paid Now</span>
                   <span className={totalPaidSoFar > 0 ? 'text-emerald-700' : 'text-gray-400'}>
                     ₱{totalPaidSoFar.toLocaleString()}
@@ -510,7 +510,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
 
       {/* Account Details */}
       {!isEdit && (
-        <FormSection title="Account Details" inModal={inModal} colorClass="border-pink-100">
+        <FormSection title="Account Details" inModal={inModal} colorClass="border-sky-100">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Savings Account No."
@@ -524,7 +524,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
 
       {/* Account Details in edit mode */}
       {isEdit && (
-        <FormSection title="Account Details" inModal={inModal} colorClass="border-pink-100">
+        <FormSection title="Account Details" inModal={inModal} colorClass="border-sky-100">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Savings Account No."
@@ -542,7 +542,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
         <textarea
           rows={3}
           placeholder="Optional remarks..."
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
           {...register('notes')}
         />
       </div>
@@ -1258,7 +1258,7 @@ export function MemberFormContent({
 
   // Determine accent colors based on membership type
   const accentConfig = {
-    kiddy:     { label: 'Kiddy & Youth Savings', color: 'pink',   chipBg: 'bg-pink-100',   chipText: 'text-pink-700'   },
+    kiddy:     { label: 'Kiddy & Youth Savings', color: 'teal',   chipBg: 'bg-teal-100',   chipText: 'text-teal-700'   },
     associate: { label: 'Associate Member',       color: 'blue',   chipBg: 'bg-blue-100',   chipText: 'text-blue-700'   },
     regular:   { label: 'Regular / Fullpledge',   color: 'indigo', chipBg: 'bg-indigo-100', chipText: 'text-indigo-700' },
   };
@@ -1268,11 +1268,11 @@ export function MemberFormContent({
     // ── KIDDY FORM ─────────────────────────────────────────────────────────
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Kiddy header banner */}
-      <div className="p-3 bg-pink-50 border border-pink-200 rounded-xl text-sm text-pink-800 flex items-start gap-3">
-        <Baby size={16} className="flex-shrink-0 mt-0.5 text-pink-500" />
+      <div className="p-3 bg-gradient-to-r from-teal-50 via-sky-50 to-amber-50 border border-teal-100 rounded-xl text-sm text-teal-800 flex items-start gap-3">
+        <Baby size={16} className="flex-shrink-0 mt-0.5 text-teal-600" />
         <div>
           <strong>Kiddy & Youth Savings Membership</strong>
-          <span className="ml-2 text-pink-600 font-normal">
+          <span className="ml-2 text-teal-700 font-normal">
             — Requires ₱50 Membership Fee, ₱200 Regulatory Fee, and ₱50 Initial Savings Deposit.
           </span>
         </div>

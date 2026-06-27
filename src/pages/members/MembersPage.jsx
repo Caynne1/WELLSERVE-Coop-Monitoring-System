@@ -31,11 +31,11 @@ const avatarColors = [
 ];
 
 const kiddyAvatarColors = [
-  'bg-pink-100 text-pink-600',
-  'bg-rose-100 text-rose-600',
-  'bg-fuchsia-100 text-fuchsia-600',
-  'bg-purple-100 text-purple-600',
-  'bg-violet-100 text-violet-600',
+  'bg-teal-100 text-teal-700',
+  'bg-sky-100 text-sky-700',
+  'bg-amber-100 text-amber-700',
+  'bg-rose-100 text-rose-700',
+  'bg-violet-100 text-violet-700',
 ];
 
 const statusVariant = { active: 'success', inactive: 'warning', suspended: 'danger' };
@@ -43,7 +43,7 @@ const statusVariant = { active: 'success', inactive: 'warning', suspended: 'dang
 const membershipTypeClass = {
   regular:   'bg-blue-50 text-blue-700 border border-blue-200',
   associate: 'bg-purple-50 text-purple-700 border border-purple-200',
-  kiddy:     'bg-pink-50 text-pink-700 border border-pink-200',
+  kiddy:     'bg-teal-50 text-teal-700 border border-teal-200',
 };
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -485,7 +485,7 @@ export default function MembersPage() {
                 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
                 ${isActive
                   ? view.id === 'kiddy'
-                    ? 'bg-pink-500 text-white shadow-sm shadow-pink-200'
+                    ? 'bg-teal-600 text-white shadow-sm shadow-teal-200'
                     : 'bg-[#07A04E] text-white shadow-sm shadow-green-200'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }
@@ -516,7 +516,7 @@ export default function MembersPage() {
             className={`px-4 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
               statusTab === tab
                 ? isKiddyView
-                  ? 'bg-pink-100 text-pink-700 border border-pink-300'
+                  ? 'bg-teal-50 text-teal-700 border border-teal-200'
                   : 'bg-[#D6FADC] text-[#07A04E] border border-[#07A04E]/20'
                 : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
             }`}
@@ -528,9 +528,9 @@ export default function MembersPage() {
 
       {/* ── Kiddy info banner ── */}
       {isKiddyView && (
-        <div className="mt-4 flex items-start gap-3 p-3.5 bg-pink-50 border border-pink-200 rounded-xl print:hidden">
-          <Baby size={16} className="text-pink-500 flex-shrink-0 mt-0.5" />
-          <div className="text-xs text-pink-700 leading-relaxed">
+        <div className="mt-4 flex items-start gap-3 p-3.5 bg-gradient-to-r from-teal-50 via-sky-50 to-amber-50 border border-teal-100 rounded-xl print:hidden">
+          <Baby size={16} className="text-teal-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-teal-800 leading-relaxed">
             <strong>Kiddy & Youth Savings</strong> members are managed separately.
             Their member numbers use the <span className="font-mono font-semibold">KY-</span> prefix
             to avoid conflicts with regular member numbers.
@@ -660,11 +660,11 @@ export default function MembersPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : (
-          <div className={`bg-white rounded-2xl border overflow-hidden shadow-sm print:shadow-none print:rounded-none ${isKiddyView ? 'border-pink-100' : 'border-gray-100'}`}>
+          <div className={`bg-white rounded-2xl border overflow-hidden shadow-sm print:shadow-none print:rounded-none ${isKiddyView ? 'border-teal-100' : 'border-gray-100'}`}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className={`border-b ${isKiddyView ? 'bg-pink-50/60 border-pink-100' : 'bg-gray-50/80 border-gray-100'}`}>
+                  <tr className={`border-b ${isKiddyView ? 'bg-teal-50/70 border-teal-100' : 'bg-gray-50/80 border-gray-100'}`}>
                     {/* Select-all checkbox */}
                     <th className="pl-4 pr-2 py-3 w-10 print:hidden">
                       <button
@@ -688,7 +688,7 @@ export default function MembersPage() {
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${
-                          isKiddyView ? 'text-pink-500' : 'text-gray-500'
+                          isKiddyView ? 'text-teal-600' : 'text-gray-500'
                         } ${
                           ['Member No.', 'Joined', 'Status', 'Actions', 'Date of Birth'].includes(h)
                             ? 'text-center'
@@ -707,7 +707,7 @@ export default function MembersPage() {
                       <td colSpan={9} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-400">
                           {isKiddyView
-                            ? <Baby size={32} className="text-pink-200" />
+                            ? <Baby size={32} className="text-teal-200" />
                             : <Users size={32} className="text-gray-200" />
                           }
                           <p className="text-sm">
@@ -742,8 +742,8 @@ export default function MembersPage() {
                           key={member.id}
                           className={`transition-colors cursor-pointer group print:hover:bg-transparent ${
                             isSelected
-                              ? isKiddyView ? 'bg-pink-50/60 hover:bg-pink-50' : 'bg-emerald-50/60 hover:bg-emerald-50'
-                              : isKiddyView ? 'hover:bg-pink-50/30' : 'hover:bg-[#D6FADC]/30'
+                              ? isKiddyView ? 'bg-teal-50/70 hover:bg-teal-50' : 'bg-emerald-50/60 hover:bg-emerald-50'
+                              : isKiddyView ? 'hover:bg-teal-50/40' : 'hover:bg-[#D6FADC]/30'
                           }`}
                           onClick={() => navigate(`/members/${member.id}`)}
                         >
@@ -767,7 +767,7 @@ export default function MembersPage() {
                               </div>
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-pink-600' : 'group-hover:text-[#07A04E]'}`}>
+                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-teal-700' : 'group-hover:text-[#07A04E]'}`}>
                                     {member.first_name} {member.last_name}
                                   </p>
                                   {member.membership_type && (
@@ -786,7 +786,7 @@ export default function MembersPage() {
                                 )}
                                 {/* School info for kiddy */}
                                 {isKiddyView && member.occupation && (
-                                  <p className="text-xs text-pink-400 mt-0.5">{member.occupation}</p>
+                                  <p className="text-xs text-sky-600 mt-0.5">{member.occupation}</p>
                                 )}
                               </div>
                             </div>
@@ -796,7 +796,7 @@ export default function MembersPage() {
                           <td className="px-4 py-3 text-center">
                             <span className={`font-mono text-xs px-2 py-1 rounded-lg ring-1 ${
                               isKiddyView
-                                ? 'bg-pink-50 text-pink-700 ring-pink-200'
+                                ? 'bg-teal-50 text-teal-700 ring-teal-200'
                                 : 'bg-gray-100 text-gray-700 ring-gray-200'
                             }`}>
                               {member.member_no || '—'}
@@ -850,7 +850,7 @@ export default function MembersPage() {
                               <button
                                 onClick={() => navigate(`/members/${member.id}/edit`)}
                                 title="Edit member"
-                                className={`p-1.5 rounded-lg text-gray-400 transition-colors ${isKiddyView ? 'hover:text-pink-600 hover:bg-pink-50' : 'hover:text-[#07A04E] hover:bg-[#D6FADC]'}`}
+                                className={`p-1.5 rounded-lg text-gray-400 transition-colors ${isKiddyView ? 'hover:text-teal-700 hover:bg-teal-50' : 'hover:text-[#07A04E] hover:bg-[#D6FADC]'}`}
                               >
                                 <Pencil size={15} />
                               </button>

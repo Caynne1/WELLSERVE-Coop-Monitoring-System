@@ -235,7 +235,7 @@ function MembershipBreakdownCard({ memberStats }) {
   const segments = [
     { label: 'Regular',   count: regular,   color: '#7C3AED', bg: 'bg-violet-500',  light: 'bg-violet-50',  text: 'text-violet-700'  },
     { label: 'Associate', count: associate, color: '#D97706', bg: 'bg-amber-400',   light: 'bg-amber-50',   text: 'text-amber-700'   },
-    { label: 'Kiddy',     count: kiddy,     color: '#EC4899', bg: 'bg-pink-400',    light: 'bg-pink-50',    text: 'text-pink-700'    },
+    { label: 'Kiddy',     count: kiddy,     color: '#0D9488', bg: 'bg-teal-500',    light: 'bg-teal-50',    text: 'text-teal-700'    },
   ];
 
   return (
@@ -704,8 +704,8 @@ export default function ReportsPage() {
               label="Kiddy Members"
               value={memberStats?.kiddy ?? 0}
               sub={`${memberStats?.activeKiddy ?? 0} active`}
-              iconBg="bg-pink-50"
-              iconColor="#EC4899"
+              iconBg="bg-teal-50"
+              iconColor="#0D9488"
             />
           </div>
 

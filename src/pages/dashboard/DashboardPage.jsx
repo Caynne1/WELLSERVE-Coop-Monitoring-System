@@ -833,11 +833,11 @@ export default function DashboardPage() {
             label="Kiddy Members"
             value={stats?.kiddyMembers ?? 0}
             sub={
-              <span className="text-pink-500 font-medium">{stats?.activeKiddyMembers ?? 0} Active</span>
+              <span className="text-teal-600 font-medium">{stats?.activeKiddyMembers ?? 0} Active</span>
             }
             icon={<Users size={18} />}
-            accent="#EC4899"
-            accentBg="rgba(236,72,153,0.08)"
+            accent="#0D9488"
+            accentBg="rgba(13,148,136,0.08)"
             onClick={() => navigate('/members?type=kiddy')}
           />
           <SummaryCard
@@ -1026,10 +1026,10 @@ export default function DashboardPage() {
               onClick={() => navigate('/savings?type=kiddy')}
             >
               <div className="flex items-center gap-2 mb-1">
-                <Users size={13} className="text-pink-400" />
+                <Users size={13} className="text-teal-500" />
                 <p className="stat-label">Kiddy Savings</p>
               </div>
-              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-pink-600 transition-colors">
+              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-teal-700 transition-colors">
                 {formatCurrency(stats?.totalKiddySavings ?? 0)}
               </p>
               <p className="mt-1 text-xs text-gray-400">
