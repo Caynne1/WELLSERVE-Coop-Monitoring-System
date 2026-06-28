@@ -42,6 +42,7 @@ import { createPenalty } from '../../services/penaltyService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 import { createTransaction } from '../../services/transactionService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { printHtmlDocument } from '../../utils/print';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 
@@ -309,7 +310,95 @@ export default function LoansPage() {
     };
   }, [loans]);
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const rowsHtml = filtered.map(loan => {
+      const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim() || '—';
+      const dueInfo = getNextDueInfo(loan);
+
+      return `
+        <tr>
+          <td>${memberName}<br/><span>${loan.members?.member_no || '—'}</span></td>
+          <td style="text-align:right;">${formatCurrency(loan.amount || 0)}</td>
+          <td style="text-align:right;">${formatCurrency(loan.balance ?? loan.amount ?? 0)}</td>
+          <td>${titleCase(loan.loan_method)}</td>
+          <td>${frequencyLabel(loan.repayment_frequency)}</td>
+          <td>${loan.term_months || '—'}</td>
+          <td>${formatDate(loan.release_date || loan.created_at)}</td>
+          <td>${formatDate(dueInfo.dueDate)}</td>
+          <td>${titleCase(loan.status || '—')}</td>
+        </tr>
+      `;
+    }).join('');
+
+    printHtmlDocument(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8"/>
+          <title>Loans Report</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #111827; padding: 24px; }
+            .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 18px; }
+            h1 { margin: 0; font-size: 20px; letter-spacing: 0.08em; }
+            .subtitle { margin: 4px 0 0; color: #059669; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; }
+            .meta { text-align: right; font-size: 11px; color: #6b7280; line-height: 1.5; }
+            .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+            .summary div { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; }
+            .summary span { display: block; color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+            .summary strong { display: block; margin-top: 4px; font-size: 16px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th, td { border: 1px solid #e5e7eb; padding: 7px; vertical-align: top; }
+            th { background: #f3f4f6; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+            td span { color: #6b7280; font-size: 10px; }
+            @page { size: A4 landscape; margin: 12mm; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1>WELLSERVE</h1>
+              <p class="subtitle">Loans Report</p>
+            </div>
+            <div class="meta">
+              Generated: ${new Date().toLocaleString()}<br/>
+              ${filtered.length} of ${loans.length} loans
+            </div>
+          </div>
+
+          <div class="summary">
+            <div><span>Total Loans</span><strong>${stats.total}</strong></div>
+            <div><span>Total Released</span><strong>${formatCurrency(stats.totalReleased)}</strong></div>
+            <div><span>Outstanding Balance</span><strong>${formatCurrency(stats.totalOutstanding)}</strong></div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th style="text-align:right;">Amount</th>
+                <th style="text-align:right;">Balance</th>
+                <th>Method</th>
+                <th>Frequency</th>
+                <th>Term</th>
+                <th>Released</th>
+                <th>Due Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="9" style="text-align:center; padding:16px;">No loans found.</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `, {
+      width: 1200,
+      height: 900,
+      onBlocked: () => toast.error('Unable to open print preview.'),
+    });
+  }
 
   function handleExportCSV() {
     try {

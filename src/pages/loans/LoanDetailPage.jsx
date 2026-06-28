@@ -32,6 +32,7 @@ import {
   frequencyPeriodLabel,
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { printHtmlDocument } from '../../utils/print';
 import * as XLSX from 'xlsx';
 
 const statusVariant = {
@@ -444,10 +445,7 @@ export default function LoanDetailPage() {
 
   // ── PRINT: Full Loan Detail + Amortization Schedule ───────────────────────
   function handlePrint() {
-    const pw = window.open('', '_blank', 'width=1100,height=900');
-    if (!pw) { toast.error('Unable to open print preview.'); return; }
-
-    pw.document.write(`
+    printHtmlDocument(`
       <!DOCTYPE html>
       <html>
       <head>
@@ -555,22 +553,21 @@ export default function LoanDetailPage() {
         </div>
       </body>
       </html>
-    `);
-    pw.document.close();
-    pw.focus();
-    setTimeout(() => pw.print(), 400);
+    `, {
+      width: 1100,
+      height: 900,
+      delay: 400,
+      onBlocked: () => toast.error('Unable to open print preview.'),
+    });
   }
 
   // ── PRINT: Member Billing Statement ───────────────────────────────────────
   function handlePrintBillingStatement() {
-    const pw = window.open('', '_blank', 'width=900,height=900');
-    if (!pw) { toast.error('Unable to open print preview.'); return; }
-
     // Find next unpaid row for "next due" callout
     const nextDue = scheduleRows.find(r => (r.status || 'unpaid') !== 'paid');
     const paidCount = scheduleRows.filter(r => r.status === 'paid').length;
 
-    pw.document.write(`
+    printHtmlDocument(`
       <!DOCTYPE html>
       <html>
       <head>
@@ -746,10 +743,12 @@ export default function LoanDetailPage() {
         </div>
       </body>
       </html>
-    `);
-    pw.document.close();
-    pw.focus();
-    setTimeout(() => pw.print(), 400);
+    `, {
+      width: 900,
+      height: 900,
+      delay: 400,
+      onBlocked: () => toast.error('Unable to open print preview.'),
+    });
   }
 
   // ── Excel Export ──────────────────────────────────────────────────────────

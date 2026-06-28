@@ -22,6 +22,7 @@ import { getAccountStats } from '../../services/accountService';
 import { getTransactions } from '../../services/transactionService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -407,19 +408,87 @@ function DateRangePicker({ preset, customFrom, customTo, onPresetChange, onCusto
   );
 }
 
-// ── Print CSS ──────────────────────────────────────────────────────────────
+// ── Print helpers ──────────────────────────────────────────────────────────
 
-const PRINT_CSS = `
-@media print {
-  body > * { display: none !important; }
-  #wellserve-report-root { display: block !important; }
-  #wellserve-report-root * { visibility: visible !important; }
-  .no-print { display: none !important; }
-  @page { size: A4 portrait; margin: 16mm; }
-  .bg-white { background: white !important; }
-  .border { border: 1px solid #e5e7eb !important; }
+/**
+ * Build a self-contained HTML string for the report,
+ * ready to be wrapped in the WELLSERVE letterhead and sent to print.
+ */
+function buildReportHtml({
+  periodLabel, memberStats, loanStats, accountStats,
+  totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
+  cbuDeposits, savingsDeposits, transactions,
+}) {
+  const fmt = (n) =>
+    'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = (n) => Number(n ?? 0).toLocaleString();
+  const now = new Date();
+  const generated = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+    + ' at ' + now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+
+  const txRows = transactions.slice(0, 100).map(tx => {
+    const name = [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—';
+    const date = tx.transaction_date || (tx.created_at ? tx.created_at.slice(0, 10) : '—');
+    const type = (tx.type || '').replace(/_/g, ' ');
+    const cat  = tx.category || '—';
+    const amt  = fmt(tx.amount);
+    return `<tr><td>${date}</td><td style="text-transform:capitalize">${type}</td><td>${cat}</td><td>${name}</td><td style="text-align:right">${amt}</td></tr>`;
+  }).join('');
+
+  const moreTx = transactions.length > 100
+    ? `<p style="font-size:8pt;color:#6b7280;margin-top:2mm">(Showing first 100 of ${transactions.length} transactions)</p>`
+    : '';
+
+  return `
+    <h1 class="report-title">Financial Report</h1>
+    <div class="report-meta">
+      <strong>Period:</strong> ${periodLabel} &nbsp;|&nbsp;
+      <strong>Generated:</strong> ${generated} &nbsp;|&nbsp;
+      <span style="color:#b91c1c;font-weight:600">CONFIDENTIAL — AUTHORIZED USE ONLY</span>
+    </div>
+
+    <div class="section-heading">Membership Overview</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-label">Total Members</div><div class="stat-value">${num(memberStats?.total)}</div><div class="stat-sub">${num(memberStats?.active)} active</div></div>
+      <div class="stat-box"><div class="stat-label">Regular</div><div class="stat-value">${num(memberStats?.regular)}</div></div>
+      <div class="stat-box"><div class="stat-label">Associate</div><div class="stat-value">${num(memberStats?.associate)}</div></div>
+      <div class="stat-box"><div class="stat-label">Kiddy</div><div class="stat-value">${num(memberStats?.kiddy)}</div></div>
+      <div class="stat-box"><div class="stat-label">Active</div><div class="stat-value">${num(memberStats?.active)}</div></div>
+      <div class="stat-box"><div class="stat-label">Inactive</div><div class="stat-value">${num(memberStats?.inactive)}</div></div>
+    </div>
+
+    <div class="section-heading">Loan Portfolio</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-label">Total Loans</div><div class="stat-value">${num(loanStats?.total)}</div><div class="stat-sub">${num(loanStats?.active)} active</div></div>
+      <div class="stat-box"><div class="stat-label">Outstanding Balance</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.totalOutstanding)}</div></div>
+      <div class="stat-box"><div class="stat-label">Released (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalReleased)}</div></div>
+      <div class="stat-box"><div class="stat-label">Repaid (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalRepaid)}</div></div>
+    </div>
+
+    <div class="section-heading">Savings & Deposits</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-label">Total CBU Balance</div><div class="stat-value" style="font-size:10pt">${fmt(accountStats?.totalCBU)}</div></div>
+      <div class="stat-box"><div class="stat-label">Total Savings Balance</div><div class="stat-value" style="font-size:10pt">${fmt(accountStats?.totalSavings)}</div></div>
+      <div class="stat-box"><div class="stat-label">Deposits (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalDeposited)}</div></div>
+      <div class="stat-box"><div class="stat-label">Withdrawals (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalWithdrawn)}</div></div>
+      <div class="stat-box"><div class="stat-label">CBU Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(cbuDeposits)}</div></div>
+      <div class="stat-box"><div class="stat-label">Savings Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(savingsDeposits)}</div></div>
+    </div>
+
+    ${transactions.length > 0 ? `
+    <div class="section-heading">Transaction Detail</div>
+    <table>
+      <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>${txRows}</tbody>
+    </table>
+    ${moreTx}
+    ` : ''}
+
+    <div class="confidential">
+      WELLSERVE Cooperative Monitoring System — This report is for authorized personnel only.
+    </div>
+  `;
 }
-`;
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
@@ -568,15 +637,33 @@ export default function ReportsPage() {
   }
 
   function handlePrint() {
-    let styleEl = document.getElementById('ws-print-style');
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = 'ws-print-style';
-      document.head.appendChild(styleEl);
-    }
-    styleEl.innerHTML = PRINT_CSS;
-    window.print();
-    setTimeout(() => { if (styleEl) styleEl.innerHTML = ''; }, 2000);
+    const contentHtml = buildReportHtml({
+      periodLabel,
+      memberStats,
+      loanStats,
+      accountStats,
+      totalDeposited,
+      totalWithdrawn,
+      totalRepaid,
+      totalReleased,
+      cbuDeposits,
+      savingsDeposits,
+      transactions,
+    });
+
+    const fullHtml = wrapWithLetterhead(contentHtml, {
+      title: `WELLSERVE Report — ${periodLabel}`,
+    });
+
+    const win = printHtmlDocument(fullHtml, {
+      width: 900,
+      height: 1100,
+      delay: 900,
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups for this site and try again.'),
+    });
+
+    if (!win) return;
+    toast.success('Print dialog opened.');
   }
 
   const periodLabel = preset !== 'custom'
@@ -639,20 +726,6 @@ export default function ReportsPage() {
         <div className="flex justify-center py-20"><Spinner /></div>
       ) : (
         <>
-          {/* Print header — only visible when printing */}
-          <div className="hidden print-show mb-6 pb-4 border-b-2 border-gray-900">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">WELLSERVE Cooperative</h1>
-                <p className="text-sm text-gray-600 mt-0.5">Financial Report — {periodLabel}</p>
-              </div>
-              <div className="text-right text-xs text-gray-500">
-                <p>Generated: {format(new Date(), 'MMMM d, yyyy h:mm a')}</p>
-                <p className="font-semibold text-gray-700 mt-0.5">CONFIDENTIAL — FOR AUTHORIZED USE ONLY</p>
-              </div>
-            </div>
-          </div>
-
           {/* Period banner */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
             <div className="flex flex-wrap items-center gap-2">
@@ -956,11 +1029,7 @@ export default function ReportsPage() {
             )}
           </div>
 
-          {/* Print footer */}
-          <div className="hidden print-show mt-8 pt-4 border-t border-gray-200 text-xs text-gray-400 text-center">
-            <p>WELLSERVE Cooperative Monitoring System — This report is intended for authorized personnel only.</p>
-            <p className="mt-1">Generated on {format(new Date(), 'MMMM d, yyyy')} at {format(new Date(), 'h:mm a')}</p>
-          </div>
+
         </>
       )}
     </div>

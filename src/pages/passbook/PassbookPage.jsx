@@ -22,6 +22,7 @@ import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { printHtmlDocument } from '../../utils/print';
 
 const REGISTRY_STATUS_OPTIONS = [
   { value: '', label: 'All Status' },
@@ -315,6 +316,80 @@ export default function PassbookPage() {
     }
   }
 
+  function handlePrintRegistry() {
+    const rows = registryRows.map(row => `
+      <tr>
+        <td>${row.recruiter_name || 'Self'}</td>
+        <td>${STATUS_META[row.passbook_status]?.label || row.passbook_status || '—'}</td>
+        <td>${row.passbook_print_status === 'done' ? 'Done' : 'Not Yet'}</td>
+        <td>${row.cbu_account_no || '—'}</td>
+        <td>${row.savings_account_no || '—'}</td>
+        <td style="text-align:center;">${row.registry_no || '—'}</td>
+        <td>${row.last_name || '—'}</td>
+        <td>${row.first_name || '—'}</td>
+        <td>${row.middle_initial || '—'}</td>
+      </tr>
+    `).join('');
+
+    printHtmlDocument(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8"/>
+          <title>Passbook Registry</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #111827; padding: 24px; }
+            .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 18px; }
+            h1 { margin: 0; font-size: 20px; letter-spacing: 0.08em; }
+            .subtitle { margin: 4px 0 0; color: #059669; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; }
+            .meta { text-align: right; font-size: 11px; color: #6b7280; line-height: 1.5; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th, td { border: 1px solid #e5e7eb; padding: 7px; vertical-align: top; }
+            th { background: #f3f4f6; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+            @page { size: A4 landscape; margin: 12mm; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1>WELLSERVE</h1>
+              <p class="subtitle">Passbook Registry</p>
+            </div>
+            <div class="meta">
+              Generated: ${new Date().toLocaleString()}<br/>
+              ${registryRows.length} record${registryRows.length === 1 ? '' : 's'}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Referred By</th>
+                <th>Status</th>
+                <th>Print Passbook</th>
+                <th>CBU Account</th>
+                <th>Savings Account</th>
+                <th style="text-align:center;">No.</th>
+                <th>Surname</th>
+                <th>First Name</th>
+                <th>Middle Name</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="9" style="text-align:center; padding:16px;">No passbook registry rows found.</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `, {
+      width: 1200,
+      height: 900,
+      onBlocked: () => toast.error('Unable to open print preview.'),
+    });
+  }
+
   function handlePrintPassbook(type) {
     if (!selectedMember) {
       toast.error('Please select a member first.');
@@ -349,15 +424,10 @@ export default function PassbookPage() {
       `;
     }).join('');
 
-    const printWindow = window.open('', '_blank', 'width=900,height=1000');
-    if (!printWindow) {
-      toast.error('Unable to open print preview.');
-      return;
-    }
-
-    printWindow.document.write(`
+    printHtmlDocument(`
       <html>
         <head>
+          <meta charset="UTF-8"/>
           <title>${title}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 28px; color: #222; }
@@ -368,6 +438,8 @@ export default function PassbookPage() {
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
             th { background: #f6f6f6; text-align: left; }
+            @page { size: A4 portrait; margin: 12mm; }
+            @media print { body { padding: 0; } }
           </style>
         </head>
         <body>
@@ -399,11 +471,11 @@ export default function PassbookPage() {
           </table>
         </body>
       </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    `, {
+      width: 900,
+      height: 1000,
+      onBlocked: () => toast.error('Unable to open print preview.'),
+    });
   }
 
   if (loading) {
@@ -486,7 +558,7 @@ export default function PassbookPage() {
 
               <div className="flex gap-2 ml-auto">
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintRegistry}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
                 >
                   <Printer size={14} />

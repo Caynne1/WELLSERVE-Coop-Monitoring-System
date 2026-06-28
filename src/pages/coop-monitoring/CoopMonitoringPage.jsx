@@ -21,6 +21,7 @@ import {
 } from '../../services/coopFundService';
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -1042,7 +1043,37 @@ export default function CoopMonitoringPage() {
   const categories   = [...new Set(transactions.map(tx => tx.category).filter(Boolean))];
   const hasFilters   = typeFilter || catFilter || dateRange.from || dateRange.to;
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const rows = filtered.map(tx => `<tr>
+      <td style="white-space:nowrap">${tx.created_at?tx.created_at.slice(0,10):'—'}</td>
+      <td>${CATEGORY_LABEL[tx.category]||tx.category||'—'}</td>
+      <td>${tx.description||'—'}</td>
+      <td style="font-family:monospace">${tx.ref_no||'—'}</td>
+      <td style="text-align:right;font-weight:600;color:${tx.type==='cash_in'?'#065f46':'#b91c1c'}">${fmt(tx.amount)}</td>
+      <td style="text-align:center">${tx.type==='cash_in'?'Cash In':'Cash Out'}</td>
+    </tr>`).join('');
+    const totalIn  = filtered.filter(t=>t.type==='cash_in').reduce((s,t)=>s+(t.amount||0),0);
+    const totalOut = filtered.filter(t=>t.type==='cash_out').reduce((s,t)=>s+(t.amount||0),0);
+    const html = `
+      <h1 class="report-title">Cooperative Fund Monitoring</h1>
+      <div class="report-meta">Fund transactions &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:5mm">
+        <div class="stat-box"><div class="stat-label">Total Cash In</div><div class="stat-value" style="font-size:10pt;color:#065f46">${fmt(totalIn)}</div></div>
+        <div class="stat-box"><div class="stat-label">Total Cash Out</div><div class="stat-value" style="font-size:10pt;color:#b91c1c">${fmt(totalOut)}</div></div>
+        <div class="stat-box"><div class="stat-label">Net</div><div class="stat-value" style="font-size:10pt">${fmt(totalIn-totalOut)}</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Ref No.</th><th style="text-align:right">Amount</th><th style="text-align:center">Flow</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Coop Fund Monitoring — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   function handleExportCSV() {
     try {

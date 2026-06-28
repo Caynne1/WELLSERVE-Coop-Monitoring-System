@@ -26,6 +26,7 @@ import { createTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment } from '../../services/invoiceService';
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const PAYMENT_MODE_OPTIONS = [
   { value: '', label: 'Select mode of payment' },
@@ -291,7 +292,34 @@ export default function SavingsPage() {
   const totalDeposits = accounts.reduce((s, a) => s + (a.total_deposits || 0), 0);
   const activeCount = accounts.filter(a => a.status === 'active').length;
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const rows = filtered.map(acc => {
+      const name = [acc.members?.first_name, acc.members?.last_name].filter(Boolean).join(' ') || '—';
+      return `<tr>
+        <td>${name}</td>
+        <td style="text-align:center;font-family:monospace">${acc.account_no||'—'}</td>
+        <td style="text-align:right;font-weight:600;color:#1d4ed8">${fmt(acc.balance)}</td>
+        <td style="text-align:right">${fmt(acc.total_deposits)}</td>
+        <td style="text-align:right">${fmt(acc.total_withdrawals)}</td>
+        <td style="text-align:center">${acc.status||'—'}</td>
+        <td>${acc.updated_at?acc.updated_at.slice(0,10):'—'}</td>
+      </tr>`;
+    }).join('');
+    const html = `
+      <h1 class="report-title">Savings Monitoring</h1>
+      <div class="report-meta">Member savings accounts overview &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th>Member</th><th style="text-align:center">Account No.</th><th style="text-align:right">Balance</th><th style="text-align:right">Total Deposits</th><th style="text-align:right">Total Withdrawals</th><th style="text-align:center">Status</th><th>Updated</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Savings Monitoring — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   function handleExportCSV() {
     try {

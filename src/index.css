@@ -265,3 +265,54 @@
     transform: translateY(0);
   }
 }
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  #root > .flex.h-screen {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  #root > .flex.h-screen > .hidden,
+  #root > .flex.h-screen > aside,
+  #root header,
+  .no-print {
+    display: none !important;
+  }
+
+  #root > .flex.h-screen > .flex-1,
+  main {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  main > * {
+    padding: 0 !important;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

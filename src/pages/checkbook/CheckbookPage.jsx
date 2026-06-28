@@ -23,6 +23,7 @@ import {
 // [ADDED] Load approved vouchers for the optional voucher link dropdown
 import { getVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -261,7 +262,34 @@ export default function CheckbookPage() {
     }
   }
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const statusLabel = {issued:'Issued',cleared:'Cleared',voided:'Voided'};
+    const rows = filtered.map(e => `<tr>
+      <td style="font-family:monospace">${e.check_no||'—'}</td>
+      <td style="white-space:nowrap">${e.date||'—'}</td>
+      <td>${e.payee||'—'}</td>
+      <td>${e.purpose||'—'}</td>
+      <td>${e.bank||'—'}</td>
+      <td style="text-align:right;font-weight:600">${fmt(e.amount)}</td>
+      <td style="text-align:center">${statusLabel[e.status]||e.status||'—'}</td>
+    </tr>`).join('');
+    const total = filtered.reduce((s,e)=>s+(e.amount||0),0);
+    const html = `
+      <h1 class="report-title">Checkbook</h1>
+      <div class="report-meta">Issued checks register &nbsp;|&nbsp; ${filtered.length} entries &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th>Check No.</th><th>Date</th><th>Payee</th><th>Purpose</th><th>Bank</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="5" style="text-align:right;font-weight:600;padding:4pt 6pt">Total</td><td style="text-align:right;font-weight:700;padding:4pt 6pt">${fmt(total)}</td><td></td></tr></tfoot>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Checkbook — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   function handleExportCSV() {
     try {

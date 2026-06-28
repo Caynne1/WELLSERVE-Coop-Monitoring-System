@@ -5,6 +5,8 @@ import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
 import { getTransactions, subscribeToTransactions } from '../../services/transactionService';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
+
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 
@@ -47,7 +49,36 @@ export default function TransactionsPage() {
     );
   });
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const rows = filtered.map(tx => {
+      const name = [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—';
+      const isIn = ['deposit','loan_release','membership_payment'].includes(tx.type);
+      return `<tr>
+        <td style="text-transform:capitalize">${(tx.type||'').replace(/_/g,' ')}</td>
+        <td>${tx.category||'—'}</td>
+        <td>${name}</td>
+        <td style="text-align:right;font-weight:600;color:${isIn?'#065f46':'#b91c1c'}">${fmt(tx.amount)}</td>
+        <td>${tx.payment_mode||'—'}</td>
+        <td>${tx.assisted_by||'—'}</td>
+        <td style="max-width:180px;overflow:hidden">${tx.notes||tx.payment_mode_note||'—'}</td>
+        <td style="white-space:nowrap">${tx.created_at?tx.created_at.slice(0,10):'—'}</td>
+      </tr>`;
+    }).join('');
+    const html = `
+      <h1 class="report-title">Transactions</h1>
+      <div class="report-meta">All financial transactions &nbsp;|&nbsp; <strong>${filtered.length}</strong> records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Assisted By</th><th>Notes</th><th>Created</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Transactions — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   function handleExportCSV() {
     try {

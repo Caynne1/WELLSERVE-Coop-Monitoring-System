@@ -24,6 +24,7 @@ import {
   recordTimeDepositPayment,
 } from '../../services/timeDepositService';
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -82,6 +83,33 @@ function StatusBadge({ status }) {
 }
 
 function StatCard({ icon, label, value, sub, bg, textColor }) {
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const rows = filtered.map(td => `<tr>
+      <td>${td.name||'—'}</td>
+      <td>${td.address||'—'}</td>
+      <td style="text-align:right;font-weight:600">${fmt(td.amount)}</td>
+      <td style="text-align:center">${td.terms||'—'} mo.</td>
+      <td style="text-align:center">${td.interest_rate||'—'}%</td>
+      <td style="white-space:nowrap">${td.date_applied||'—'}</td>
+      <td style="white-space:nowrap">${td.termination_date||'—'}</td>
+      <td style="text-align:center">${td.status||'—'}</td>
+    </tr>`).join('');
+    const html = `
+      <h1 class="report-title">Time Deposits</h1>
+      <div class="report-meta">Time deposit register &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th>Name</th><th>Address</th><th style="text-align:right">Amount</th><th style="text-align:center">Terms</th><th style="text-align:center">Rate</th><th>Date Applied</th><th>Termination</th><th style="text-align:center">Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Time Deposits — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
       <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
@@ -769,7 +797,7 @@ export default function TimeDepositPage() {
             <Button
               variant="outline"
               icon={<Printer size={14} />}
-              onClick={() => window.print()}
+              onClick={handlePrint}
             >
               Print
             </Button>

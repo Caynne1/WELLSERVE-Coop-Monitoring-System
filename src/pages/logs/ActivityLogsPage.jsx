@@ -8,6 +8,7 @@ import { getLogs, subscribeToLogs, trackActivity } from '../../services/logServi
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 import { formatDateTime } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ─── Module badge colours ─────────────────────────────────────────────────────
 const MODULE_COLORS = {
@@ -179,7 +180,28 @@ export default function ActivityLogsPage() {
     }
   };
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const rows = logs.map(log => `<tr>
+      <td style="white-space:nowrap">${log.created_at ? new Date(log.created_at).toLocaleString('en-PH') : '—'}</td>
+      <td style="text-transform:capitalize">${(log.action||'').replace(/_/g,' ')}</td>
+      <td style="text-transform:capitalize">${log.module||'—'}</td>
+      <td style="max-width:200px">${log.description||'—'}</td>
+      <td>${log.user_name||log.profiles?.email||'—'}</td>
+    </tr>`).join('');
+    const html = `
+      <h1 class="report-title">Activity Logs</h1>
+      <div class="report-meta">System audit trail &nbsp;|&nbsp; ${logs.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th>Date &amp; Time</th><th>Action</th><th>Module</th><th>Description</th><th>User</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Activity Logs — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (

@@ -25,6 +25,7 @@ import { getExpenses } from '../../services/expenseService';
 import { getMembers } from '../../services/memberService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -198,7 +199,33 @@ export default function VouchersPage() {
 
   // ── Form helpers ────────────────────────────────────────────────────────────
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const statusLabel = {draft:'Draft',approved:'Approved',voided:'Voided'};
+    const kindLabel = {expense:'Expense',member_withdrawal:'Member Withdrawal'};
+    const rows = filtered.map(v => `<tr>
+      <td style="text-align:center;font-family:monospace">${v.voucher_no||'—'}</td>
+      <td style="text-align:center">${kindLabel[v.voucher_kind]||v.voucher_kind||'—'}</td>
+      <td style="text-align:center;white-space:nowrap">${v.date||'—'}</td>
+      <td>${v.payee||'—'}</td>
+      <td>${v.purpose||'—'}</td>
+      <td style="text-align:right;font-weight:600">${fmt(v.amount)}</td>
+      <td style="text-align:center">${statusLabel[v.status]||v.status||'—'}</td>
+    </tr>`).join('');
+    const html = `
+      <h1 class="report-title">Vouchers</h1>
+      <div class="report-meta">Payment voucher registry &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th style="text-align:center">Voucher No.</th><th style="text-align:center">Type</th><th style="text-align:center">Date</th><th>Payee</th><th>Purpose</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Vouchers — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   function handleExportCSV() {
     try {

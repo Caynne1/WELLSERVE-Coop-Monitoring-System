@@ -48,6 +48,7 @@ import { createInvoiceForPayment, createInvoice } from '../../services/invoiceSe
 import { trackActivity } from '../../services/logService';
 
 import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const TABS = [
   { id: 'overview',        label: 'Overview',       icon: User },
@@ -311,7 +312,46 @@ export default function MemberDetailPage() {
   }
 
   function handlePrint() {
-    window.print();
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const cbuAcc = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
+    const savAcc = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
+    const activeLoans = loans.filter(l => l.status === 'active');
+    const loanRows = activeLoans.map(l => `<tr>
+      <td>${l.loan_no||'—'}</td>
+      <td style="text-transform:capitalize">${(l.loan_type||'').replace(/_/g,' ')}</td>
+      <td style="text-align:right;font-weight:600">${fmt(l.principal_amount)}</td>
+      <td style="text-align:right;color:#b91c1c">${fmt(l.outstanding_balance)}</td>
+      <td style="text-align:center">${l.status||'—'}</td>
+    </tr>`).join('');
+    const html = `
+      <h1 class="report-title">Member Record</h1>
+      <div class="report-meta">Generated: ${new Date().toLocaleString('en-PH')} &nbsp;|&nbsp; <strong>CONFIDENTIAL</strong></div>
+      <div class="section-heading">Personal Information</div>
+      <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
+        <div class="stat-box"><div class="stat-label">Full Name</div><div class="stat-value" style="font-size:12pt">${member?.first_name||''} ${member?.last_name||''}</div></div>
+        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${member?.member_no||'—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Type</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.membership_type||'—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.status||'—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Contact</div><div class="stat-value" style="font-size:11pt">${member?.contact_no||'—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${member?.date_joined||member?.created_at?.slice(0,10)||'—'}</div></div>
+      </div>
+      <div class="section-heading">Account Balances</div>
+      <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
+        <div class="stat-box"><div class="stat-label">CBU Balance</div><div class="stat-value" style="font-size:12pt">${fmt(cbuAcc?.balance)}</div></div>
+        <div class="stat-box"><div class="stat-label">Savings Balance</div><div class="stat-value" style="font-size:12pt">${fmt(savAcc?.balance)}</div></div>
+      </div>
+      ${activeLoans.length > 0 ? `
+      <div class="section-heading">Active Loans</div>
+      <table>
+        <thead><tr><th>Loan No.</th><th>Type</th><th style="text-align:right">Principal</th><th style="text-align:right">Outstanding</th><th style="text-align:center">Status</th></tr></thead>
+        <tbody>${loanRows}</tbody>
+      </table>` : ''}
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:`Member — ${member?.first_name||''} ${member?.last_name||''}`}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
   }
 
   async function refreshEverything() {

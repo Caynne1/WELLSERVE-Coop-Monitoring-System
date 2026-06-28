@@ -18,6 +18,7 @@ import {
   voidExpense,
 } from '../../services/expenseService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -224,7 +225,32 @@ export default function ExpensesPage() {
     }
   }
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const total = filtered.reduce((s,e) => s + (e.amount||0), 0);
+    const rows = filtered.map(e => `<tr>
+      <td style="text-align:center;white-space:nowrap">${e.date||'—'}</td>
+      <td>${e.description||'—'}</td>
+      <td style="text-align:center;text-transform:capitalize">${e.category||'—'}</td>
+      <td>${e.payee||'—'}</td>
+      <td style="text-align:right;font-weight:600">${fmt(e.amount)}</td>
+      <td style="text-align:center;text-transform:capitalize">${e.status||'—'}</td>
+    </tr>`).join('');
+    const html = `
+      <h1 class="report-title">Expenses</h1>
+      <div class="report-meta">Cooperative operational expenses &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Total: ${fmt(total)} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <table>
+        <thead><tr><th style="text-align:center">Date</th><th>Description</th><th style="text-align:center">Category</th><th>Payee</th><th style="text-align:right">Amount</th><th style="text-align:center">Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="4" style="text-align:right;font-weight:600;padding:4pt 6pt">Total Expenses</td><td style="text-align:right;font-weight:700;color:#b91c1c;padding:4pt 6pt">${fmt(total)}</td><td></td></tr></tfoot>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Expenses — WELLSERVE'}), {
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
 
   function handleExportCSV() {
     try {

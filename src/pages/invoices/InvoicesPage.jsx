@@ -20,6 +20,7 @@ import {
   voidInvoice,
 } from '../../services/invoiceService';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -287,66 +288,91 @@ export default function InvoicesPage() {
   }
 
   function handlePrintPreview() {
-    const rowsHtml = filtered.map(invoice => `
-      <tr>
-        <td style="padding:8px;border:1px solid #ddd;">${invoice.invoice_no || '—'}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${formatDate(invoice.date)}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${getAccountNoDisplay(invoice)}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${invoice.payee || '—'}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${invoice.purpose || '—'}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others'}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${getPaymentMode(invoice)}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${formatCurrency(invoice.amount)}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${STATUS_LABEL[invoice.status] || invoice.status}</td>
-      </tr>
-    `).join('');
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const totalAmount = filtered.reduce((s, inv) => s + (inv.amount || 0), 0);
+    const unpaidTotal = filtered.filter(inv => inv.status === 'unpaid').reduce((s, inv) => s + (inv.amount || 0), 0);
+    const paidTotal   = filtered.filter(inv => inv.status === 'paid').reduce((s, inv) => s + (inv.amount || 0), 0);
 
-    const printWindow = window.open('', '_blank', 'width=1200,height=800');
-    if (!printWindow) {
-      toast.error('Unable to open print preview.');
-      return;
-    }
+    const rows = filtered.map(invoice => {
+      const memberLine = invoice.members
+        ? `<br/><span style="font-size:8pt;color:#07A04E;font-family:monospace">${invoice.members.first_name||''} ${invoice.members.last_name||''}${invoice.members.member_no ? ' · ' + invoice.members.member_no : ''}</span>`
+        : '';
+      const statusColor = invoice.status === 'paid' ? '#065f46' : invoice.status === 'voided' ? '#6b7280' : '#b45309';
+      return `<tr${invoice.status === 'voided' ? ' style="opacity:0.5"' : ''}>
+        <td style="font-family:monospace;font-size:8.5pt;font-weight:600">${invoice.invoice_no||'—'}</td>
+        <td style="white-space:nowrap">${formatDate(invoice.date)}</td>
+        <td style="font-family:monospace;font-size:8.5pt">${getAccountNoDisplay(invoice)}</td>
+        <td>${invoice.payee||'—'}${memberLine}</td>
+        <td style="max-width:160px">${invoice.purpose||'—'}</td>
+        <td style="white-space:nowrap">${PAYMENT_TYPE_LABEL[invoice.payment_type]||'Others'}</td>
+        <td>${getPaymentMode(invoice)}</td>
+        <td style="text-align:right;font-weight:600">${fmt(invoice.amount)}</td>
+        <td style="text-align:center;font-weight:600;color:${statusColor}">${STATUS_LABEL[invoice.status]||invoice.status}</td>
+      </tr>`;
+    }).join('');
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Invoice Print Preview</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #222; }
-            h1 { margin: 0 0 4px; }
-            p { margin: 0 0 16px; color: #666; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th { background: #f5f5f5; text-align: left; padding: 8px; border: 1px solid #ddd; }
-            td { vertical-align: top; }
-          </style>
-        </head>
-        <body>
-          <h1>Invoice Report</h1>
-          <p>Generated: ${new Date().toLocaleString()}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Invoice No.</th>
-                <th>Date</th>
-                <th>Account No.</th>
-                <th>Payee</th>
-                <th>Purpose</th>
-                <th>Payment Type</th>
-                <th>Mode of Payment</th>
-                <th>Amount</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml || '<tr><td colspan="9" style="padding:12px;border:1px solid #ddd;">No invoices found.</td></tr>'}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `);
+    const html = `
+      <h1 class="report-title">Sales Invoice Report</h1>
+      <div class="report-meta">
+        ${filtered.length} invoice${filtered.length !== 1 ? 's' : ''} &nbsp;|&nbsp;
+        Generated: ${new Date().toLocaleString('en-PH')} &nbsp;|&nbsp;
+        <strong style="color:#b91c1c">CONFIDENTIAL — AUTHORIZED USE ONLY</strong>
+      </div>
 
-    printWindow.document.close();
-    printWindow.focus();
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:5mm">
+        <div class="stat-box">
+          <div class="stat-label">Total Invoiced</div>
+          <div class="stat-value" style="font-size:11pt">${fmt(totalAmount)}</div>
+          <div class="stat-sub">${filtered.length} records</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total Collected</div>
+          <div class="stat-value" style="font-size:11pt;color:#065f46">${fmt(paidTotal)}</div>
+          <div class="stat-sub">${filtered.filter(i=>i.status==='paid').length} paid</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total Unpaid</div>
+          <div class="stat-value" style="font-size:11pt;color:#b45309">${fmt(unpaidTotal)}</div>
+          <div class="stat-sub">${filtered.filter(i=>i.status==='unpaid').length} pending</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice No.</th>
+            <th>Date</th>
+            <th>Account No.</th>
+            <th>Payee / Member</th>
+            <th>Purpose</th>
+            <th>Payment Type</th>
+            <th>Mode of Payment</th>
+            <th style="text-align:right">Amount</th>
+            <th style="text-align:center">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || '<tr><td colspan="9" style="text-align:center;padding:8pt;color:#9ca3af">No invoices found.</td></tr>'}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="7" style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">Grand Total</td>
+            <td style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">${fmt(totalAmount)}</td>
+            <td style="border-top:1.5pt solid #1a3d2b"></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+
+    const win = printHtmlDocument(wrapWithLetterhead(html, { title: 'Sales Invoice Report — WELLSERVE' }), {
+      width: 1100,
+      height: 900,
+      delay: 900,
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups for this site and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
   }
 
   function handleExportCSV() {
