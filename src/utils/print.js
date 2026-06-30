@@ -194,4 +194,4 @@ export function printHtmlDocument(html, options = {}) {
   }
 
   return printWindow;
-}
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

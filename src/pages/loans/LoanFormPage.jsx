@@ -54,6 +54,21 @@ const LOAN_METHOD_OPTS = [
   { value: 'straight', label: 'Straight' },
 ];
 
+// WELLSERVE loan products — per the approved loan products sheet.
+// Selecting a product auto-fills the interest rate & method below;
+// the encoder can still override them manually if a special case requires it.
+const LOAN_PRODUCTS = [
+  { value: '',                       label: 'Select loan product...' },
+  { value: 'beneficial_straight',    label: 'Beneficial Loan — 2.5% Straight (CBU-Based)',                     rate: '2.5', method: 'straight' },
+  { value: 'beneficial_diminishing', label: 'Beneficial Loan — 3.0% Diminishing (CBU-Based)',                  rate: '3.0', method: 'diminishing' },
+  { value: 'productive',             label: 'WELLife Productive Loan — 2.5% Straight (Business, w/ Co-Maker)', rate: '2.5', method: 'straight' },
+  { value: 'providential',           label: 'Providential Loan — 3.0% (HMO & Memorial Plans, w/ Co-Maker)',    rate: '3.0', method: 'diminishing' },
+  { value: 'financing',              label: 'Financing Loan — 3.0% (Motorcycle/Gadgets/Appliances, w/ Co-Maker)', rate: '3.0', method: 'diminishing' },
+  { value: 'custom',                 label: 'Custom / Other (set rate & method manually)' },
+];
+
+const LOAN_PRODUCT_MAP = Object.fromEntries(LOAN_PRODUCTS.map(p => [p.value, p]));
+
 const PAYMENT_MODE_OPTS = [
   { value: '',              label: 'Select mode of payment' },
   { value: 'Cash',          label: 'Cash' },
@@ -114,6 +129,7 @@ export default function LoanFormPage() {
   } = useForm({
     defaultValues: {
       member_id: '',
+      loan_product: '',
       amount: '',
       interest_rate: '2.5',
       term_months: '',
@@ -142,6 +158,7 @@ export default function LoanFormPage() {
   });
 
   const watchedAmount = useWatch({ control, name: 'amount' });
+  const watchedProduct = useWatch({ control, name: 'loan_product' });
   const watchedRate = useWatch({ control, name: 'interest_rate' });
   const watchedTerm = useWatch({ control, name: 'term_months' });
   const watchedFrequency = useWatch({ control, name: 'repayment_frequency' });
@@ -196,6 +213,16 @@ export default function LoanFormPage() {
     watchedNotarialFee,
     watchedInsuranceManualAmount,
   ]);
+
+  // Auto-fill interest rate & method when a loan product is selected.
+  useEffect(() => {
+    if (!watchedProduct || watchedProduct === 'custom') return;
+    const cfg = LOAN_PRODUCT_MAP[watchedProduct];
+    if (!cfg) return;
+    setValue('interest_rate', cfg.rate);
+    setValue('loan_method', cfg.method);
+    setPreviewReady(false);
+  }, [watchedProduct, setValue]);
 
   useEffect(() => {
     const proposal = parseFloat(watchedProposal || watchedAmount || 0) || 0;
@@ -665,6 +692,12 @@ export default function LoanFormPage() {
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Select
+              label="Loan Product"
+              options={LOAN_PRODUCTS}
+              {...register('loan_product')}
+            />
+
             <Input
               label="Loan Amount"
               type="number"
