@@ -147,17 +147,16 @@ export default function LoanFormPage() {
       regular_savings: '',
       total_loan_payable: '',
 
-      service_fee_percent: '2',
+      service_fee_percent: '2.5',
       cbu_retention_percent: '2.5',
-      notarial_fee: '200',
+      notarial_fee: '300',
       insurance_manual_amount: '',
 
-      cbu_per_period: '25',
-      savings_per_period: '25',
+      cbu_per_period: '0',
+      savings_per_period: '0',
     },
   });
 
-  const watchedAmount = useWatch({ control, name: 'amount' });
   const watchedProduct = useWatch({ control, name: 'loan_product' });
   const watchedRate = useWatch({ control, name: 'interest_rate' });
   const watchedTerm = useWatch({ control, name: 'term_months' });
@@ -175,7 +174,7 @@ export default function LoanFormPage() {
   const watchedSavingsPerPeriod = useWatch({ control, name: 'savings_per_period' });
 
   const preview = useMemo(() => {
-    const amount = parseFloat(watchedAmount || 0);
+    const amount = parseFloat(watchedProposal || 0);
     const termMonths = parseInt(watchedTerm || 0, 10);
     const monthlyInterestRate = parseFloat(watchedRate || 0);
 
@@ -187,20 +186,18 @@ export default function LoanFormPage() {
       amount,
       termMonths,
       monthlyInterestRate,
-      paymentFrequency: watchedFrequency || 'weekly',
+      paymentFrequency: watchedFrequency || 'monthly',
       loanMethod: watchedMethod || 'diminishing',
       startDate: watchedReleaseDate || new Date(),
-      cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 25) || 0,
-      savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 25) || 0,
+      cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
+      savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
       serviceFeePercent: parseFloat(watchedServiceFeePercent || 2) || 0,
       cbuRetentionPercent: parseFloat(watchedCbuRetentionPercent || 2.5) || 0,
-      notarialFee: parseFloat(watchedNotarialFee || 200) || 0,
-      insuranceMode: 'manual',
+      notarialFee: parseFloat(watchedNotarialFee || 0) || 0,
       insuranceAmount: parseFloat(watchedInsuranceManualAmount || 0) || 0,
-      insuranceFixedRatePercent: 0,
     });
   }, [
-    watchedAmount,
+    watchedProposal,
     watchedTerm,
     watchedRate,
     watchedFrequency,
@@ -225,14 +222,16 @@ export default function LoanFormPage() {
   }, [watchedProduct, setValue]);
 
   useEffect(() => {
-    const proposal = parseFloat(watchedProposal || watchedAmount || 0) || 0;
+    const proposal = parseFloat(watchedProposal || 0) || 0;
     const serviceFee = proposal * ((parseFloat(watchedServiceFeePercent || 2) || 0) / 100);
     setValue('service_fee', serviceFee ? round2(serviceFee).toFixed(2) : '');
+
+    // Keep hidden amount field in sync with proposal
+    setValue('amount', watchedProposal || '');
 
     setPreviewReady(false);
   }, [
     watchedProposal,
-    watchedAmount,
     watchedServiceFeePercent,
     watchedRate,
     watchedTerm,
@@ -378,12 +377,12 @@ export default function LoanFormPage() {
       return;
     }
 
-    const amount = parseFloat(values.amount || 0);
+    const amount = parseFloat(values.loan_proposal || 0);
     const termMonths = parseInt(values.term_months || 0, 10);
     const monthlyInterestRate = parseFloat(values.interest_rate || 0);
 
     if (amount <= 0) {
-      toast.error('Loan amount must be greater than zero.');
+      toast.error('Loan Proposal (amount) must be greater than zero.');
       return;
     }
 
@@ -432,7 +431,7 @@ export default function LoanFormPage() {
         phone: memberProfile.phone,
       });
 
-      const principalAmount = parseFloat(values.amount || 0);
+      const principalAmount = parseFloat(values.loan_proposal || values.amount || 0);
       const regularSavings = parseFloat(values.regular_savings || 0) || 0;
 
       const payload = {
@@ -691,77 +690,109 @@ export default function LoanFormPage() {
             Loan Details
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Select
-              label="Loan Product"
-              options={LOAN_PRODUCTS}
-              {...register('loan_product')}
-            />
+          {/* Row 1: Loan Product | Loan Proposal | Monthly Interest Rate */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Select
+                label="Loan Product"
+                options={LOAN_PRODUCTS}
+                {...register('loan_product')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-fills rate &amp; method</p>
+            </div>
 
-            <Input
-              label="Loan Amount"
-              type="number"
-              step="0.01"
-              required
-              error={errors.amount?.message}
-              {...register('amount', {
-                required: 'Amount is required',
-                min: { value: 1, message: 'Must be > 0' },
-              })}
-            />
+            <div>
+              <Input
+                label="Loan Proposal"
+                type="number"
+                step="0.01"
+                required
+                error={errors.loan_proposal?.message}
+                {...register('loan_proposal', {
+                  required: 'Loan Proposal is required',
+                  min: { value: 1, message: 'Must be > 0' },
+                })}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Principal amount to be released</p>
+            </div>
 
-            <Input
-              label="Monthly Interest Rate (%)"
-              type="number"
-              step="0.01"
-              {...register('interest_rate')}
-            />
-
-            <Input
-              label="Term (months)"
-              type="number"
-              {...register('term_months')}
-            />
-
-            <Input
-              label="Release Date"
-              type="date"
-              {...register('release_date')}
-            />
-
-            <Select
-              label="Payment Frequency"
-              options={FREQUENCY_OPTS}
-              {...register('repayment_frequency')}
-            />
-
-            <Select
-              label="Loan Method"
-              options={LOAN_METHOD_OPTS}
-              {...register('loan_method')}
-            />
-
-            <Select
-              label="Status"
-              options={STATUS_OPTS}
-              {...register('status')}
-            />
-
-            <Input
-              label="Purpose"
-              {...register('purpose')}
-            />
-
-            <Input
-              label="Preview Payment / Period"
-              readOnly
-              value={preview ? formatCurrency(preview.summary.payment_per_period) : ''}
-            />
+            <div>
+              <Input
+                label="Monthly Interest Rate (%)"
+                type="number"
+                step="0.01"
+                {...register('interest_rate')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-set by product</p>
+            </div>
           </div>
 
-          <input type="hidden" {...register('monthly_amortization')} />
+          {/* Row 2: Term (months) | Release Date | Payment Frequency */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Input
+                label="Term (months)"
+                type="number"
+                {...register('term_months')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Number of months</p>
+            </div>
 
-          <div className="mt-4">
+            <div>
+              <Input
+                label="Release Date"
+                type="date"
+                {...register('release_date')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Date of loan release</p>
+            </div>
+
+            <div>
+              <Select
+                label="Payment Frequency"
+                options={FREQUENCY_OPTS}
+                {...register('repayment_frequency')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">How often payments are made</p>
+            </div>
+          </div>
+
+          {/* Row 3: Loan Method | Purpose | Preview Payment / Period */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Select
+                label="Loan Method"
+                options={LOAN_METHOD_OPTS}
+                {...register('loan_method')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-set by product</p>
+            </div>
+
+            <div>
+              <Input
+                label="Purpose"
+                placeholder="Optional"
+                {...register('purpose')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Optional</p>
+            </div>
+
+            <div>
+              <Input
+                label="Preview Payment / Period"
+                readOnly
+                value={preview ? formatCurrency(preview.summary.payment_per_period) : ''}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-calculated — read only</p>
+            </div>
+          </div>
+
+          {/* Hidden field for monthly amortization and amount (synced from loan_proposal) */}
+          <input type="hidden" {...register('monthly_amortization')} />
+          <input type="hidden" {...register('amount')} />
+
+          {/* Notes — full width */}
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
             <textarea
               rows={3}
@@ -769,88 +800,115 @@ export default function LoanFormPage() {
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               {...register('notes')}
             />
+            <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Optional — internal use only</p>
           </div>
         </section>
 
         <section className="bg-gray-50 border border-gray-100 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
             <FileSpreadsheet size={15} className="text-gray-400" />
-            <h3 className="text-sm font-semibold text-gray-700">Loan Deductions & Onboarding</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Loan Deductions &amp; Onboarding</h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Input
-              label="Loan Proposal"
-              type="number"
-              step="0.01"
-              {...register('loan_proposal')}
-            />
+          {/* Row 1: Service Fee % | Service Fee Amount | CBU Retention % */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Input
+                label="Service Fee %"
+                type="number"
+                step="0.01"
+                {...register('service_fee_percent')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">The service fee should be 2.5%</p>
+            </div>
 
-            <Input
-              label="Service Fee %"
-              type="number"
-              step="0.01"
-              {...register('service_fee_percent')}
-            />
+            <div>
+              <Input
+                label="Service Fee Amount"
+                type="number"
+                step="0.01"
+                readOnly
+                {...register('service_fee')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Conversion of the service fee — read only</p>
+            </div>
 
-            <Input
-              label="Service Fee Amount"
-              type="number"
-              step="0.01"
-              readOnly
-              {...register('service_fee')}
-            />
+            <div>
+              <Input
+                label="CBU Retention %"
+                type="number"
+                step="0.01"
+                {...register('cbu_retention_percent')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-set — read only</p>
+            </div>
+          </div>
 
-            <Input
-              label="CBU Retention %"
-              type="number"
-              step="0.01"
-              {...register('cbu_retention_percent')}
-            />
+          {/* Row 2: Legal Fees (Notarial) | CLPI (Insurance) | Regular Savings */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Input
+                label="Legal Fees"
+                type="number"
+                step="0.01"
+                {...register('notarial_fee')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">This is the notarial fee</p>
+            </div>
 
-            <Input
-              label="Notarial Fee"
-              type="number"
-              step="0.01"
-              {...register('notarial_fee')}
-            />
+            <div>
+              <Input
+                label="CLPI (Insurance Amount)"
+                type="number"
+                step="0.01"
+                {...register('insurance_manual_amount')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">This is the insurance amount</p>
+            </div>
 
-            <Input
-              label="Insurance Amount"
-              type="number"
-              step="0.01"
-              {...register('insurance_manual_amount')}
-            />
+            <div>
+              <Input
+                label="Regular Savings"
+                type="number"
+                step="0.01"
+                {...register('regular_savings')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Member's regular savings</p>
+            </div>
+          </div>
 
-            <Input
-              label="Regular Savings"
-              type="number"
-              step="0.01"
-              {...register('regular_savings')}
-            />
+          {/* Row 3: CBU per Period | Savings per Period | Total Loan Payable */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Input
+                label="CBU per Period"
+                type="number"
+                step="0.01"
+                {...register('cbu_per_period')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">CBU contribution per payment period</p>
+            </div>
 
-            <Input
-              label="CBU per Period"
-              type="number"
-              step="0.01"
-              {...register('cbu_per_period')}
-            />
+            <div>
+              <Input
+                label="Savings per Period"
+                type="number"
+                step="0.01"
+                {...register('savings_per_period')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Savings per payment period</p>
+            </div>
 
-            <Input
-              label="Savings per Period"
-              type="number"
-              step="0.01"
-              {...register('savings_per_period')}
-            />
-
-            <Input
-              label="Total Loan Payable"
-              type="number"
-              step="0.01"
-              readOnly
-              {...register('total_loan_payable')}
-            />
-
+            <div>
+              <Input
+                label="Total Loan Payable"
+                type="number"
+                step="0.01"
+                readOnly
+                {...register('total_loan_payable')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-calculated — read only</p>
+            </div>
           </div>
         </section>
 
@@ -891,12 +949,17 @@ export default function LoanFormPage() {
                   value={String(preview.summary.number_of_payments)}
                 />
                 <CalcCard
-                  label="Rate / Period"
-                  value={`${preview.summary.rate_per_period_percent}%`}
+                  label="Monthly Rate"
+                  value={`${preview.summary.rate_per_period}%`}
                 />
                 <CalcCard
-                  label="Payment / Period"
+                  label="Loan Payment / Period"
                   value={formatCurrency(preview.summary.payment_per_period)}
+                  highlight
+                />
+                <CalcCard
+                  label="Total / Period (w/ CBU+Savings)"
+                  value={formatCurrency(preview.summary.payment_per_period_total)}
                   highlight
                 />
                 <CalcCard

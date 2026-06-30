@@ -14,6 +14,13 @@ import {
   Printer,
   Download,
   Upload,
+  LayoutGrid,
+  TrendingUp,
+  TrendingDown,
+  Briefcase,
+  Heart,
+  Bike,
+  Sliders,
 } from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
@@ -90,6 +97,16 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'Bank Transfer', label: 'Bank Transfer' },
   { value: 'Check', label: 'Check' },
   { value: 'Others', label: 'Others' },
+];
+
+const PRODUCT_TABS = [
+  { value: 'all',                    label: 'All Products',           icon: LayoutGrid },
+  { value: 'beneficial_straight',    label: 'Beneficial (Straight)',  icon: TrendingUp },
+  { value: 'beneficial_diminishing', label: 'Beneficial (Dim.)',      icon: TrendingDown },
+  { value: 'productive',             label: 'WELLife Productive',     icon: Briefcase },
+  { value: 'providential',           label: 'Providential',           icon: Heart },
+  { value: 'financing',              label: 'Financing',              icon: Bike },
+  { value: 'custom',                 label: 'Custom / Other',         icon: Sliders },
 ];
 
 function titleCase(value) {
@@ -196,6 +213,7 @@ export default function LoansPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [productFilter, setProductFilter] = useState('all');
 
   const [payModal, setPayModal] = useState({
     open: false,
@@ -293,9 +311,12 @@ export default function LoansPage() {
         matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays < 0;
       }
 
-      return matchesSearch && matchesFrequency && matchesMethod && matchesDue;
+      const matchesProduct =
+        productFilter === 'all' || (loan.loan_product || '') === productFilter;
+
+      return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesProduct;
     });
-  }, [loans, search, frequencyFilter, methodFilter, dueFilter]);
+  }, [loans, search, frequencyFilter, methodFilter, dueFilter, productFilter]);
 
   const stats = useMemo(() => {
     const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'ongoing');
@@ -459,7 +480,43 @@ export default function LoansPage() {
         />
       </div>
 
-      <div className="mt-5 mb-4 flex items-center justify-between gap-4 flex-wrap">
+      {/* Product Tabs */}
+      <div className="mt-5 flex gap-2 flex-wrap print:hidden">
+        {PRODUCT_TABS.map(tab => {
+          const Icon = tab.icon;
+          const count = tab.value === 'all'
+            ? loans.length
+            : loans.filter(l => (l.loan_product || '') === tab.value).length;
+          const isActive = productFilter === tab.value;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => setProductFilter(tab.value)}
+              className={`
+                flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
+                ${isActive
+                  ? 'bg-[#07A04E] text-white shadow-sm shadow-green-200'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }
+              `}
+            >
+              <Icon size={15} />
+              {tab.label}
+              <span className={`
+                text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center
+                ${isActive
+                  ? 'bg-white/20 text-white'
+                  : 'bg-gray-200 text-gray-500'
+                }
+              `}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
             <Search
