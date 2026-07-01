@@ -41,7 +41,7 @@ const navGroups = [
       { to: '/loans',              icon: CreditCard,      label: 'Loans',              permKey: 'loans' },
       { to: '/cbu',                icon: PiggyBank,       label: 'CBU',                permKey: 'cbu' },
       { to: '/savings',            icon: Wallet,          label: 'Savings',            permKey: 'savings' },
-      { to: '/time-deposit',       icon: Landmark,        label: 'Time Deposit',       permKey: 'time_deposit' },
+    //  { to: '/time-deposit',       icon: Landmark,        label: 'Time Deposit',       permKey: 'time_deposit' },
       { to: '/savings-booster',    icon: Sprout,          label: 'Savings Booster',    permKey: 'savings_booster' },
     ],
   },
