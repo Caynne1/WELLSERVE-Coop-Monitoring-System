@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Receipt, Search, Plus, Pencil, Ban, Eye,
-  DollarSign, CheckCircle, Clock, X, Printer, Download,
+  CheckCircle, Clock, X, Printer, Download,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Badge from '../../components/ui/Badge';
@@ -458,7 +459,7 @@ export default function InvoicesPage() {
           bg="bg-green-50"
         />
         <SummaryCard
-          icon={<DollarSign size={20} className="text-red-500" />}
+          icon={<PesoSign size={20} className="text-red-500" />}
           label="Paid Records"
           value={paidList.length}
           bg="bg-red-50"

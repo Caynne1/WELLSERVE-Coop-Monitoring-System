@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Landmark, Plus, Search, Pencil, Trash2, CreditCard,
   ChevronLeft, ChevronRight, RefreshCw, X, Receipt,
-  Calendar, TrendingUp, Users, DollarSign, ChevronUp,
+  Calendar, TrendingUp, Users, ChevronUp,
   ChevronDown, Ban, Printer, FileDown, TrendingDown,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Modal from '../../components/ui/Modal';
@@ -843,7 +844,7 @@ export default function TimeDepositPage() {
               textColor="text-emerald-700"
             />
             <StatCard
-              icon={<DollarSign size={22} className="text-blue-600" />}
+              icon={<PesoSign size={22} className="text-blue-600" />}
               label="Total Deposit Amount"
               value={formatCurrency(stats.totalAmt)}
               sub="Sum of all amounts"

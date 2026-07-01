@@ -7,10 +7,10 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   AlertTriangle,
-  DollarSign,
   RefreshCw,
   Clock,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeDashboard } from '../../hooks/useRealtimeDashboard';
 import { formatCurrency, formatRelativeTime } from '../../utils/formatters';
@@ -882,7 +882,7 @@ export default function DashboardPage() {
         <div className="app-card p-4 flex items-center justify-between border-emerald-100 bg-gradient-to-r from-emerald-50 to-white">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
-              <DollarSign size={18} className="text-emerald-700" />
+              <PesoSign size={18} className="text-emerald-700" />
             </div>
             <div>
               <p className="stat-label">Total Income</p>

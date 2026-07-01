@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   BookOpen, Search, Plus, Pencil, Ban, Eye,
-  DollarSign, CheckCircle, Hash, Printer, Download,
+  CheckCircle, Hash, Printer, Download,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -342,7 +343,7 @@ export default function CheckbookPage() {
           bg="bg-green-50"
         />
         <SummaryCard
-          icon={<DollarSign size={20} className="text-blue-600" />}
+          icon={<PesoSign size={20} className="text-blue-600" />}
           label="Total Outstanding"
           value={formatCurrency(totalIssued)}
           bg="bg-blue-50"

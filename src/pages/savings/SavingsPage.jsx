@@ -7,11 +7,11 @@ import {
   TrendingUp,
   TrendingDown,
   Users,
-  DollarSign,
   Plus,
   Printer,
   Download,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -346,7 +346,7 @@ export default function SavingsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
         <SummaryCard
-          icon={<DollarSign size={20} className="text-blue-600" />}
+          icon={<PesoSign size={20} className="text-blue-600" />}
           label="Total Savings Balance"
           value={formatCurrency(totalBalance)}
           bg="bg-blue-50"

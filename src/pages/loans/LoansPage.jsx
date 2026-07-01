@@ -9,7 +9,6 @@ import {
   Calendar,
   Wallet,
   Layers3,
-  DollarSign,
   AlertCircle,
   Printer,
   Download,
@@ -22,6 +21,7 @@ import {
   Bike,
   Sliders,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import LoanImportModal from '../../components/shared/LoanImportModal';
@@ -730,7 +730,7 @@ export default function LoansPage() {
                                 title="Pay loan"
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-green-700 bg-green-50 hover:bg-green-100 transition-colors text-xs font-medium"
                               >
-                                <DollarSign size={13} />
+                                <PesoSign size={13} />
                                 Pay
                               </button>
                             )}
@@ -1301,7 +1301,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
               loading={saving}
               variant="finance"
               onClick={handleSubmit}
-              icon={<DollarSign size={15} />}
+              icon={<PesoSign size={15} />}
             >
               Post Payment
             </Button>

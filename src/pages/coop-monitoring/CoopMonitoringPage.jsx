@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  TrendingUp, TrendingDown, DollarSign,
-  RefreshCw, ArrowUpRight, ArrowDownRight,
+  TrendingUp, TrendingDown,  RefreshCw, ArrowUpRight, ArrowDownRight,
   LayoutDashboard, Plus, AlertTriangle, Calendar,
   X, Printer, Download,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -1122,7 +1122,7 @@ export default function CoopMonitoringPage() {
           {/* ── Stat Cards ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 mb-6">
             <StatCard
-              icon={<DollarSign size={22} className="text-emerald-600" />}
+              icon={<PesoSign size={22} className="text-emerald-600" />}
               label="Current Fund Balance"
               value={formatCurrency(fund.balance)}
               sub="Cash In minus Cash Out"
@@ -1358,7 +1358,7 @@ export default function CoopMonitoringPage() {
                     <tr>
                       <td colSpan={6} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-400">
-                          <DollarSign size={32} className="text-gray-200" />
+                          <PesoSign size={32} className="text-gray-200" />
                           <p className="text-sm">
                             {hasFilters
                               ? 'No transactions match your filters.'

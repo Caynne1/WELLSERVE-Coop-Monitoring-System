@@ -3,9 +3,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, User, CreditCard, PiggyBank, Wallet, ArrowLeftRight,
   Edit, Phone, Mail, MapPin, Calendar, Hash, Plus, TrendingUp,
-  TrendingDown, Clock, AlertCircle, DollarSign, Shield, Download, BadgeAlert,
+  TrendingDown, Clock, AlertCircle, Shield, Download, BadgeAlert,
   Printer, Upload,
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
 
 import Spinner from '../../components/ui/Spinner';
@@ -990,7 +991,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 
       <div className="flex justify-end gap-3 mt-6">
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} variant="finance" onClick={handleSubmit} icon={<DollarSign size={15} />}>
+        <Button loading={loading} variant="finance" onClick={handleSubmit} icon={<PesoSign size={15} />}>
           Post Payment
         </Button>
       </div>
@@ -2155,7 +2156,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={() => setPayOpen(false)} disabled={paySaving}>Cancel</Button>
-          <Button variant="finance" loading={paySaving} onClick={handlePayment} icon={<DollarSign size={14} />}>
+          <Button variant="finance" loading={paySaving} onClick={handlePayment} icon={<PesoSign size={14} />}>
             Record Payment
           </Button>
         </div>
@@ -2557,7 +2558,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <Button variant="outline" onClick={() => setPayTarget(null)} disabled={paying}>Cancel</Button>
-              <Button variant="finance" loading={paying} onClick={handlePay} icon={<DollarSign size={14} />}>
+              <Button variant="finance" loading={paying} onClick={handlePay} icon={<PesoSign size={14} />}>
                 Record Payment
               </Button>
             </div>
@@ -2895,7 +2896,7 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
                 e.stopPropagation();
                 onPay(loan);
               }}
-              icon={<DollarSign size={13} />}
+              icon={<PesoSign size={13} />}
             >
               Pay
             </Button>

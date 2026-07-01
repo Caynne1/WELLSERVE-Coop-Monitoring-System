@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
-  ArrowLeft, Save, UserPlus, DollarSign, Archive, CheckCircle,
+  ArrowLeft, Save, UserPlus, Archive, CheckCircle,
   ChevronRight, User, Users, Baby, Star
 } from 'lucide-react';
+import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -454,7 +455,7 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
           {/* Onboarding Payment */}
           <div className="mt-4 p-4 rounded-xl border bg-white border-teal-100 space-y-4">
             <div className="flex items-center gap-2 text-teal-800">
-              <DollarSign size={15} />
+              <PesoSign size={15} />
               <h4 className="text-sm font-semibold">Onboarding Payment</h4>
             </div>
 
@@ -1533,7 +1534,7 @@ export function MemberFormContent({
             <div className="sm:col-span-2 mt-2">
               <div className="p-4 rounded-xl border bg-green-50/40 border-green-100">
                 <div className="flex items-center gap-2 mb-3 text-green-800">
-                  <DollarSign size={16} />
+                  <PesoSign size={16} />
                   <h4 className="text-sm font-semibold">Onboarding Payment Option</h4>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
