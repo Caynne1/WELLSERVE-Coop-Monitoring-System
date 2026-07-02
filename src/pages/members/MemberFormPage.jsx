@@ -35,7 +35,7 @@ import { supabase } from '../../services/supabase';
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
-  { value: 'suspended', label: 'Suspended' },
+  { value: 'closed', label: 'Closed Account' },
 ];
 
 const MEMBERSHIP_TYPE_OPTIONS = [

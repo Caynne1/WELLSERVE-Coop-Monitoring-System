@@ -38,7 +38,8 @@ const kiddyAvatarColors = [
   'bg-violet-100 text-violet-700',
 ];
 
-const statusVariant = { active: 'success', inactive: 'warning', suspended: 'danger' };
+const statusVariant = { active: 'success', inactive: 'warning', closed: 'dark' };
+const statusLabel = { active: 'Active', inactive: 'Inactive', closed: 'Closed Account' };
 
 const membershipTypeClass = {
   regular:   'bg-blue-50 text-blue-700 border border-blue-200',
@@ -58,7 +59,7 @@ const MEMBER_VIEWS = [
 
 function BulkToolbar({
   selectedCount, totalCount, onClearSelection, onSelectAll,
-  onBulkExport, onBulkActivate, onBulkDeactivate, onBulkDelete, statusTab,
+  onBulkExport, onBulkActivate, onBulkDeactivate, onBulkClose, onBulkDelete, statusTab,
 }) {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
 
@@ -110,6 +111,12 @@ function BulkToolbar({
                   className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-left text-amber-700 hover:bg-amber-50 transition-colors"
                 >
                   <UserX size={14} /> Set Inactive
+                </button>
+                <button
+                  onClick={() => { onBulkClose(); setShowStatusMenu(false); }}
+                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <UserX size={14} /> Set Closed Account
                 </button>
               </div>
             </>
@@ -264,7 +271,7 @@ export default function MembersPage() {
       const matchesStatus =
         statusTab === 'active'
           ? (m.status || 'active') === 'active'
-          : m.status === 'inactive';
+          : m.status === statusTab;
 
       let matchesYear = true;
       if (yearFilter !== 'all') {
@@ -507,9 +514,9 @@ export default function MembersPage() {
         })}
       </div>
 
-      {/* ── Status Tabs: Active | Inactive (below view tabs) ── */}
+      {/* ── Status Tabs: Active | Inactive | Closed Account (below view tabs) ── */}
       <div className="mt-3 flex gap-2 print:hidden">
-        {['active', 'inactive'].map(tab => (
+        {['active', 'inactive', 'closed'].map(tab => (
           <button
             key={tab}
             onClick={() => setStatusTab(tab)}
@@ -521,7 +528,7 @@ export default function MembersPage() {
                 : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
             }`}
           >
-            {tab === 'active' ? 'Active' : 'Inactive'}
+            {statusLabel[tab]}
           </button>
         ))}
       </div>
@@ -630,6 +637,7 @@ export default function MembersPage() {
             onBulkExport={handleBulkExport}
             onBulkActivate={() => setConfirmBulkStatus('active')}
             onBulkDeactivate={() => setConfirmBulkStatus('inactive')}
+            onBulkClose={() => setConfirmBulkStatus('closed')}
             onBulkDelete={() => setConfirmBulkDelete(true)}
             statusTab={statusTab}
           />
@@ -650,7 +658,7 @@ export default function MembersPage() {
           </div>
           <div className="text-right">
             <p className="text-sm font-semibold text-gray-800">{isKiddyView ? 'Kiddy & Youth Members Report' : 'Members Report'}</p>
-            <p className="text-xs text-gray-500">Status: {statusTab === 'active' ? 'Active' : 'Inactive'}</p>
+            <p className="text-xs text-gray-500">Status: {statusLabel[statusTab]}</p>
             {!isKiddyView && <p className="text-xs text-gray-500">Type: {typeFilter === 'all' ? 'All' : typeFilter}</p>}
             <p className="text-xs text-gray-500">Year Joined: {yearFilter === 'all' ? 'All Years' : yearFilter}</p>
             <p className="text-xs text-gray-500">Generated: {new Date().toLocaleString()}</p>
@@ -715,9 +723,11 @@ export default function MembersPage() {
                               ? 'No members match your filters.'
                               : statusTab === 'inactive'
                                 ? `No inactive ${isKiddyView ? 'Kiddy & Youth' : ''} members.`
-                                : isKiddyView
-                                  ? 'No Kiddy & Youth members yet.'
-                                  : 'No members yet.'
+                                : statusTab === 'closed'
+                                  ? `No closed account ${isKiddyView ? 'Kiddy & Youth' : ''} members.`
+                                  : isKiddyView
+                                    ? 'No Kiddy & Youth members yet.'
+                                    : 'No members yet.'
                             }
                           </p>
                           {!search && typeFilter === 'all' && yearFilter === 'all' && statusTab === 'active' && (
@@ -833,7 +843,7 @@ export default function MembersPage() {
                           {/* Status */}
                           <td className="px-4 py-3 text-center">
                             <Badge variant={statusVariant[member.status] || 'default'} dot>
-                              {member.status || 'active'}
+                              {statusLabel[member.status] || 'Active'}
                             </Badge>
                           </td>
 
@@ -854,7 +864,7 @@ export default function MembersPage() {
                               >
                                 <Pencil size={15} />
                               </button>
-                              {member.status === 'inactive' && (
+                              {(member.status === 'inactive' || member.status === 'closed') && (
                                 <button
                                   onClick={() => handleReactivate(member)}
                                   disabled={reactivatingId === member.id}
@@ -936,10 +946,10 @@ export default function MembersPage() {
 
       <ConfirmDialog
         open={!!confirmBulkStatus}
-        title={`Set ${selectedCount} Member${selectedCount !== 1 ? 's' : ''} to ${confirmBulkStatus === 'active' ? 'Active' : 'Inactive'}`}
-        message={`Change the status of ${selectedCount} selected member${selectedCount !== 1 ? 's' : ''} to "${confirmBulkStatus}"?`}
-        confirmLabel={`Set ${confirmBulkStatus === 'active' ? 'Active' : 'Inactive'}`}
-        confirmVariant={confirmBulkStatus === 'active' ? 'success' : 'warning'}
+        title={`Set ${selectedCount} Member${selectedCount !== 1 ? 's' : ''} to ${statusLabel[confirmBulkStatus] || confirmBulkStatus}`}
+        message={`Change the status of ${selectedCount} selected member${selectedCount !== 1 ? 's' : ''} to "${statusLabel[confirmBulkStatus] || confirmBulkStatus}"?`}
+        confirmLabel={`Set ${statusLabel[confirmBulkStatus] || confirmBulkStatus}`}
+        confirmVariant={confirmBulkStatus === 'active' ? 'success' : confirmBulkStatus === 'closed' ? 'finance' : 'warning'}
         loading={bulkStatusChanging}
         onConfirm={() => executeBulkStatusChange(confirmBulkStatus)}
         onCancel={() => { if (!bulkStatusChanging) setConfirmBulkStatus(null); }}

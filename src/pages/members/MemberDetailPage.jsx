@@ -407,8 +407,8 @@ export default function MemberDetailPage() {
                     {member.member_no}
                   </span>
                 )}
-                <Badge variant={member.status === 'active' ? 'success' : 'warning'}>
-                  {member.status || 'active'}
+                <Badge variant={member.status === 'active' ? 'success' : member.status === 'closed' ? 'dark' : 'warning'}>
+                  {member.status === 'closed' ? 'Closed Account' : (member.status || 'active')}
                 </Badge>
                 {displayMembershipType && (
                   <Badge variant={displayMembershipType === 'regular' ? 'info' : 'default'}>
@@ -2772,7 +2772,7 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
           <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
           <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
           <InfoRow icon={Wallet} label="Savings Account No." value={savingsAccount?.account_no || '—'} />
-          <InfoRow icon={User} label="Status" value={member.status || 'active'} />
+          <InfoRow icon={User} label="Status" value={member.status === 'closed' ? 'Closed Account' : (member.status || 'active')} />
           {member.notes && <InfoRow icon={User} label="Notes" value={member.notes} />}
         </div>
       </div>
