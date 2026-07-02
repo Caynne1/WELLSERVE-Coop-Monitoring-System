@@ -34,7 +34,6 @@ import { useAuth } from '../../context/AuthContext';
 import {
   generateLoanPreview,
   frequencyDisplayLabel,
-  compareWeeklyConventions,
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
@@ -46,8 +45,7 @@ const STATUS_OPTS = [
 ];
 
 const FREQUENCY_OPTS = [
-  { value: 'weekly', label: 'Weekly (Calendar — 52wk/yr, ~13 payments for 3mo)' },
-  { value: 'weekly_fixed4', label: 'Weekly (Fixed 4wks/mo — matches worksheet, 12 payments for 3mo)' },
+  { value: 'weekly_fixed4', label: 'Weekly' },
   { value: 'semi_monthly', label: 'Quencena (Semi-Monthly)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
@@ -229,7 +227,7 @@ export default function LoanFormPage() {
       status: 'active',
       purpose: '',
       notes: '',
-      repayment_frequency: 'weekly',
+      repayment_frequency: 'weekly_fixed4',
       loan_method: 'diminishing',
 
       loan_proposal: '',
@@ -394,23 +392,6 @@ export default function LoanFormPage() {
   ]);
 
   const proposalAmount = parseFloat(watchedProposal || 0) || 0;
-
-  const weeklyComparison = useMemo(() => {
-    if (watchedFrequency !== 'weekly' && watchedFrequency !== 'weekly_fixed4') return null;
-    const amount = parseFloat(watchedProposal || 0) || 0;
-    const termMonths = parseInt(watchedTerm || 0, 10) || 0;
-    const monthlyInterestRate = parseFloat(watchedRate || 0) || 0;
-    if (amount <= 0 || termMonths <= 0) return null;
-    return compareWeeklyConventions({
-      amount,
-      termMonths,
-      monthlyInterestRate,
-      loanMethod: watchedMethod || 'diminishing',
-      startDate: watchedReleaseDate || new Date(),
-      cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
-      savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
-    });
-  }, [watchedFrequency, watchedProposal, watchedTerm, watchedRate, watchedMethod, watchedReleaseDate, watchedCbuPerPeriod, watchedSavingsPerPeriod]);
 
   const chargeRows = useMemo(() => {
     const rows = [
@@ -1204,30 +1185,6 @@ export default function LoanFormPage() {
               <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">How often payments are made</p>
             </div>
           </div>
-
-          {weeklyComparison && (
-            <div className="mb-4 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3">
-              <p className="text-xs text-indigo-800 font-medium mb-2">
-                Weekly convention comparison — currently using{' '}
-                {watchedFrequency === 'weekly_fixed4' ? '"Fixed 4wks/mo"' : '"Calendar 52wk/yr"'}
-              </p>
-              <div className="grid grid-cols-2 gap-3 text-[11px]">
-                <div className={`rounded-md p-2 border ${watchedFrequency === 'weekly' ? 'border-indigo-400 bg-white' : 'border-transparent'}`}>
-                  <p className="text-indigo-700 font-medium">Calendar (52wk/yr)</p>
-                  <p className="text-gray-600">{weeklyComparison.calendar.numPayments} payments × {formatCurrency(weeklyComparison.calendar.paymentPerPeriod)}</p>
-                  <p className="text-gray-400">Total interest: {formatCurrency(weeklyComparison.calendar.totalInterest)}</p>
-                </div>
-                <div className={`rounded-md p-2 border ${watchedFrequency === 'weekly_fixed4' ? 'border-indigo-400 bg-white' : 'border-transparent'}`}>
-                  <p className="text-indigo-700 font-medium">Fixed 4wks/mo</p>
-                  <p className="text-gray-600">{weeklyComparison.fixed4.numPayments} payments × {formatCurrency(weeklyComparison.fixed4.paymentPerPeriod)}</p>
-                  <p className="text-gray-400">Total interest: {formatCurrency(weeklyComparison.fixed4.totalInterest)}</p>
-                </div>
-              </div>
-              <p className="text-[10px] text-indigo-600 mt-2">
-                "Fixed 4wks/mo" matches the coop's printed worksheet exactly. "Calendar" is mathematically accurate to real elapsed time but spreads the total over one extra payment per quarter.
-              </p>
-            </div>
-          )}
 
           {/* Row 3: Loan Method | Purpose | Preview Payment / Period */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
