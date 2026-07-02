@@ -74,6 +74,12 @@ export function computePaymentByFrequency(monthlyPayment = 0, frequency = 'month
 /**
  * generateLoanPreview — used by LoanFormPage for live computation preview.
  * Accepts legacy flat params and delegates to the engine.
+ *
+ * `extraDeductionItems` accepts any additional { label, type, value|amount }
+ * entries (penalty due, annual dues, CBU completion, petty cash, membership
+ * upgrade fees, custom "other charges", etc.) so the preview's Total
+ * Deductions / Net Proceeds always match whatever is actually toggled on
+ * in the UI — instead of silently omitting them.
  */
 export function generateLoanPreview({
   amount = 0,
@@ -91,6 +97,7 @@ export function generateLoanPreview({
   loanInsurance = 0,
   previousLoanBalance = 0,
   annualDues = 0,
+  extraDeductionItems = [],
 } = {}) {
   const scheduleResult = computeSchedule({
     amount,
@@ -113,6 +120,11 @@ export function generateLoanPreview({
   if (notarialFee)          deductionItems.push({ label: 'Notarial Fee',                  type: 'fixed', amount: safeNum(notarialFee) });
   if (previousLoanBalance)  deductionItems.push({ label: 'Previous Loan Balance',        type: 'fixed', amount: safeNum(previousLoanBalance) });
   if (annualDues)           deductionItems.push({ label: 'Annual Dues',                   type: 'fixed', amount: safeNum(annualDues) });
+
+  (extraDeductionItems || []).forEach(item => {
+    const amt = safeNum(item.amount ?? item.value);
+    if (amt) deductionItems.push({ ...item, amount: amt });
+  });
 
   const deductions = computeDeductions({ loanAmount: principal, deductions: deductionItems });
   const summary    = buildScheduleSummary(scheduleResult.schedule, {

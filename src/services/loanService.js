@@ -114,6 +114,7 @@ const LOAN_COLUMNS = [
 
   'loan_proposal', 'service_fee', 'share_capital', 'loan_insurance', 'regular_savings',
   'total_loan_payable', 'previous_loan_balance', 'annual_dues',
+  'penalty_due', 'petty_cash', 'cbu_completion',
 
   'service_fee_percent', 'cbu_retention_percent', 'notarial_fee', 'insurance_mode',
   'insurance_fixed_rate_percent', 'insurance_manual_amount', 'cbu_per_period',
@@ -121,6 +122,15 @@ const LOAN_COLUMNS = [
 
   'team_leader_name', 'team_leader_id_no', 'team_leader_account_no', 'team_leader_mobile',
   'deduction_payment_mode',
+
+  // Associate → Regular membership upgrade bundle (deducted from first loan)
+  'membership_upgrade_included', 'membership_regulatory_fee',
+  'membership_initial_savings', 'membership_vip_card',
+
+  // Co-maker details (required for Productive / Providential / Financing loans,
+  // and Beneficial loans above the 14K tier — see loan products deck)
+  'co_maker_required', 'co_maker_name', 'co_maker_member_no',
+  'co_maker_relationship', 'co_maker_contact_no',
 
   'preview_summary_json', 'preview_deductions_json', 'preview_schedule_json',
 ];
