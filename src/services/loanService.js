@@ -108,7 +108,7 @@ function buildScheduleSummary(schedule, loanParams = {}) {
 }
 
 const LOAN_COLUMNS = [
-  'member_id', 'loan_no', 'amount', 'balance', 'interest_rate', 'term_months',
+  'member_id', 'loan_no', 'loan_type', 'amount', 'balance', 'interest_rate', 'term_months',
   'monthly_amortization', 'release_date', 'due_date', 'status', 'purpose', 'notes',
   'repayment_frequency', 'loan_method', 'source',
 

@@ -876,6 +876,7 @@ export default function LoanDetailPage() {
             {[
               ['Member', memberName || '—'],
               ['Member No.', loan.members?.member_no || '—'],
+              ['Loan Type', <Badge key="loan_type" variant={loan.loan_type === 'existing' ? 'warning' : 'success'}>{loan.loan_type === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
               ['Loan Principal', formatCurrency(loan.amount)],
               ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(loan.balance ?? loan.amount)}</span>],
               ['Monthly Interest Rate', loan.interest_rate ? `${(parseFloat(loan.interest_rate) / 12).toFixed(2)}%` : '—'],

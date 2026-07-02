@@ -45,7 +45,8 @@ const STATUS_OPTS = [
 ];
 
 const FREQUENCY_OPTS = [
-  { value: 'weekly_fixed4', label: 'Weekly' },
+  { value: 'weekly',        label: 'Weekly (Old)' },
+  { value: 'weekly_fixed4', label: 'Weekly (New)' },
   { value: 'semi_monthly', label: 'Quencena (Semi-Monthly)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
@@ -61,17 +62,29 @@ const LOAN_METHOD_OPTS = [
 // WELLSERVE loan products — per the approved loan products sheet.
 // Selecting a product auto-fills the interest rate & method below;
 // the encoder can still override them manually if a special case requires it.
+//
+// `rate` is the current/updated interest rate — used for New Loans.
+// `previousRate` is the rate that was in effect before the coop's most
+// recent rate update — used for Existing/Ongoing loans being re-encoded,
+// so they keep the rate they were originally released under. Update
+// `previousRate` to match `rate` (or remove the distinction) once every
+// existing loan under the old rate has been fully re-encoded.
 const LOAN_PRODUCTS = [
   { value: '',                       label: 'Select loan product...' },
-  { value: 'beneficial_straight',    label: 'Beneficial Loan — 2.5% Straight (CBU-Based)',                     rate: '2.5', method: 'straight' },
-  { value: 'beneficial_diminishing', label: 'Beneficial Loan — 3.0% Diminishing (CBU-Based)',                  rate: '3.0', method: 'diminishing' },
-  { value: 'productive',             label: 'WELLife Productive Loan — 2.5% Straight (Business, w/ Co-Maker)', rate: '2.5', method: 'straight' },
-  { value: 'providential',           label: 'Providential Loan — 3.0% (HMO & Memorial Plans, w/ Co-Maker)',    rate: '3.0', method: 'diminishing' },
-  { value: 'financing',              label: 'Financing Loan — 3.0% (Motorcycle/Gadgets/Appliances, w/ Co-Maker)', rate: '3.0', method: 'diminishing' },
+  { value: 'beneficial_straight',    label: 'Beneficial Loan — 2.5% Straight (CBU-Based)',                     rate: '2.5', previousRate: '2.5', method: 'straight' },
+  { value: 'beneficial_diminishing', label: 'Beneficial Loan — 3.0% Diminishing (CBU-Based)',                  rate: '3.0', previousRate: '3.0', method: 'diminishing' },
+  { value: 'productive',             label: 'WELLife Productive Loan — 2.5% Straight (Business, w/ Co-Maker)', rate: '2.5', previousRate: '2.5', method: 'straight' },
+  { value: 'providential',           label: 'Providential Loan — 3.0% (HMO & Memorial Plans, w/ Co-Maker)',    rate: '3.0', previousRate: '3.0', method: 'diminishing' },
+  { value: 'financing',              label: 'Financing Loan — 3.0% (Motorcycle/Gadgets/Appliances, w/ Co-Maker)', rate: '3.0', previousRate: '3.0', method: 'diminishing' },
   { value: 'custom',                 label: 'Custom / Other (set rate & method manually)' },
 ];
 
 const LOAN_PRODUCT_MAP = Object.fromEntries(LOAN_PRODUCTS.map(p => [p.value, p]));
+
+const LOAN_TYPE_OPTS = [
+  { value: 'existing', label: 'Existing / Ongoing Loan — previous interest rate' },
+  { value: 'new',      label: 'New Loan — updated interest rate' },
+];
 
 // Beneficial Loan CBU-eligibility tiers — per "WELLSERVE-Details-for-System"
 // deck, Slides 5-6. `requiresCoMaker` starts at the 20K tier per the deck.
@@ -218,6 +231,7 @@ export default function LoanFormPage() {
   } = useForm({
     defaultValues: {
       member_id: '',
+      loan_type: 'new',
       loan_product: '',
       amount: '',
       interest_rate: '2.5',
@@ -264,6 +278,7 @@ export default function LoanFormPage() {
     },
   });
 
+  const watchedLoanType = useWatch({ control, name: 'loan_type' });
   const watchedProduct = useWatch({ control, name: 'loan_product' });
   const watchedRate = useWatch({ control, name: 'interest_rate' });
   const watchedTerm = useWatch({ control, name: 'term_months' });
@@ -553,10 +568,13 @@ export default function LoanFormPage() {
     if (!watchedProduct || watchedProduct === 'custom') return;
     const cfg = LOAN_PRODUCT_MAP[watchedProduct];
     if (!cfg) return;
-    setValue('interest_rate', cfg.rate);
+    // Existing/Ongoing loans keep the rate that was in effect when they were
+    // originally released; New loans use the coop's current, updated rate.
+    const rateToUse = watchedLoanType === 'existing' ? (cfg.previousRate ?? cfg.rate) : cfg.rate;
+    setValue('interest_rate', rateToUse);
     setValue('loan_method', cfg.method);
     setPreviewReady(false);
-  }, [watchedProduct, setValue]);
+  }, [watchedProduct, watchedLoanType, setValue]);
 
   useEffect(() => {
     const proposal = parseFloat(watchedProposal || 0) || 0;
@@ -608,8 +626,15 @@ export default function LoanFormPage() {
 
   useEffect(() => {
     async function bootstrapCreate() {
+      if (isEdit) return;
+
+      const loanTypeParam = searchParams.get('loan_type');
+      if (loanTypeParam === 'existing' || loanTypeParam === 'new') {
+        setValue('loan_type', loanTypeParam);
+      }
+
       const memberId = searchParams.get('member');
-      if (!memberId || isEdit) return;
+      if (!memberId) return;
 
       try {
         const member = await getMemberById(memberId);
@@ -625,6 +650,7 @@ export default function LoanFormPage() {
 
         reset({
           member_id: data.member_id,
+          loan_type: data.loan_type || 'new',
           amount: data.amount || '',
           interest_rate: data.interest_rate || '2.5',
           term_months: data.term_months || '',
@@ -1097,9 +1123,36 @@ export default function LoanFormPage() {
         )}
 
         <section className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4 pb-2 border-b border-gray-100">
-            Loan Details
-          </h3>
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Loan Details
+            </h3>
+            <span
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                watchedLoanType === 'existing'
+                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}
+            >
+              {watchedLoanType === 'existing' ? 'Existing / Ongoing Loan' : 'New Loan'}
+            </span>
+          </div>
+
+          {/* Row 0: Loan Type */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Select
+                label="Loan Type"
+                options={LOAN_TYPE_OPTS}
+                {...register('loan_type')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
+                {watchedLoanType === 'existing'
+                  ? 'Uses the previous interest rate for this product.'
+                  : 'Uses the current, updated interest rate for this product.'}
+              </p>
+            </div>
+          </div>
 
           {/* Row 1: Loan Product | Loan Proposal | Monthly Interest Rate */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">

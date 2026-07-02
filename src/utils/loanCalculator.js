@@ -9,8 +9,10 @@
 
 import {
   round2,
+  round4,
   safeNum,
   computeNumberOfPayments,
+  computeWeeklyTotalPeriods,
   getRatePerPeriod,
   advanceDueDate,
   toDateStr,
@@ -28,8 +30,9 @@ import {
 
 // ── Named re-exports (legacy names used across the codebase) ──────────────────
 
-export { round2, safeNum, toDateStr };
+export { round2, round4, safeNum, toDateStr };
 export { computeNumberOfPayments, computeNumberOfPayments as computeDisplayPeriods };
+export { computeWeeklyTotalPeriods };
 export { getRatePerPeriod, advanceDueDate };
 export { computeSchedule as generateLoanSchedule };
 export { computeDeductions as computeLoanDeductions };

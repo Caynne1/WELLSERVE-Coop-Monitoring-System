@@ -64,6 +64,11 @@ export function round2(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
 
+/** Round to 4 decimal places. */
+export function round4(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
+}
+
 /** Safe number — returns 0 for NaN/null/undefined. */
 export function safeNum(value, fallback = 0) {
   const n = Number(value);
@@ -71,6 +76,22 @@ export function safeNum(value, fallback = 0) {
 }
 
 // ── Frequency helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Exact (unrounded-to-whole-period) total number of weekly periods, per
+ * WELLSERVE's printed worksheet formula:
+ *   TOTAL = Term (months) × 30 / 7   (kept to 4 decimal places)
+ * This TOTAL is used as the divisor for the fixed principal amortization
+ * per period (Loan Amount ÷ TOTAL), while the actual number of scheduled
+ * installments is the ceiling of TOTAL (see computeNumberOfPayments).
+ * Applies ONLY to the 'weekly' (Old) frequency — 'weekly_fixed4' (New)
+ * keeps its original interest-bearing calendar formula, unchanged.
+ */
+export function computeWeeklyTotalPeriods(termMonths) {
+  const months = safeNum(termMonths);
+  if (months <= 0) return 0;
+  return round4((months * 30) / 7);
+}
 
 /**
  * Number of payment periods for a given term and frequency.
@@ -81,6 +102,10 @@ export function safeNum(value, fallback = 0) {
 export function computeNumberOfPayments(termMonths, frequency = 'monthly') {
   const months = safeNum(termMonths);
   if (months <= 0) return 0;
+  if (frequency === 'weekly') {
+    const total = computeWeeklyTotalPeriods(months);
+    return Math.max(1, Math.ceil(total));
+  }
   const cfg = FREQUENCY[frequency] || FREQUENCY.monthly;
   return Math.max(1, Math.round(months * (cfg.periodsPerYear / 12)));
 }
@@ -137,7 +162,8 @@ export function toDateStr(d) {
 /** Display label for a frequency. */
 export function frequencyLabel(frequency) {
   const map = {
-    weekly: 'Weekly',
+    weekly: 'Weekly (Old)',
+    weekly_fixed4: 'Weekly (New)',
     semi_monthly: 'Quencena',
     monthly: 'Monthly',
     chattel: 'Chattel',
@@ -151,6 +177,7 @@ export function frequencyLabel(frequency) {
 export function periodLabel(frequency) {
   const map = {
     weekly: 'week',
+    weekly_fixed4: 'week',
     semi_monthly: 'quencena',
     monthly: 'month',
     chattel: 'month',
@@ -212,7 +239,24 @@ export function computeSchedule({
     };
   }
 
-  const fixedPrincipalAmort = round2(principal / numPayments);
+  // WELLSERVE worksheet formula for the 'weekly' (Old) frequency:
+  //   TOTAL = Term (months) × 30 / 7
+  //   Payment / Period = Loan Amount ÷ TOTAL   (no separate interest added)
+  // Division uses the full-precision TOTAL (not pre-rounded to 4 decimals)
+  // so the resulting per-period payment rounds correctly to 2 decimals.
+  // The actual number of scheduled installments is ceil(TOTAL) — see
+  // computeNumberOfPayments — since a schedule needs whole rows, but the
+  // payment divisor itself stays at full precision.
+  // 'weekly_fixed4' (New) and all other frequencies are unaffected: the
+  // divisor is simply the (integer) number of payments, and interest is
+  // still computed normally.
+  const isOldWeeklyFrequency = frequency === 'weekly';
+  const weeklyTotalExact = safeNum(termMonths) * 30 / 7; // full precision, not pre-rounded
+  const principalDivisor = (isOldWeeklyFrequency && numPaymentsOverride == null)
+    ? Math.max(weeklyTotalExact, 0.0001)
+    : numPayments;
+
+  const fixedPrincipalAmort = round2(principal / principalDivisor);
   let runningBalance = principal;
 
   let sumPrincipal = 0;
@@ -227,10 +271,15 @@ export function computeSchedule({
     // Last period absorbs rounding remainder
     const principalAmort = (i === numPayments) ? round2(beginBalance) : fixedPrincipalAmort;
 
-    // Interest on beginning balance (diminishing) or original principal (straight)
-    const interest = method === 'straight'
-      ? round2(principal * ratePerPeriod)
-      : round2(beginBalance * ratePerPeriod);
+    // Interest on beginning balance (diminishing) or original principal (straight).
+    // The 'weekly' (Old) frequency follows WELLSERVE's worksheet formula, where
+    // the per-period payment is simply Loan Amount ÷ TOTAL with no separate
+    // interest line added on top — so interest is not charged per period here.
+    const interest = isOldWeeklyFrequency
+      ? 0
+      : method === 'straight'
+        ? round2(principal * ratePerPeriod)
+        : round2(beginBalance * ratePerPeriod);
 
     const loanTotal = round2(principalAmort + interest);
     const totalDue = round2(loanTotal + cbu + savings);

@@ -25,6 +25,7 @@ import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import LoanImportModal from '../../components/shared/LoanImportModal';
+import LoanTypeModal from '../../components/shared/LoanTypeModal';
 
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
@@ -213,6 +214,7 @@ export default function LoansPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [loanTypeModalOpen, setLoanTypeModalOpen] = useState(false);
   const [productFilter, setProductFilter] = useState('all');
 
   const [payModal, setPayModal] = useState({
@@ -452,7 +454,7 @@ export default function LoansPage() {
             <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImportOpen(true)}>
               Import Excel
             </Button>
-            <Button icon={<Plus size={15} />} onClick={() => navigate('/loans/new')}>
+            <Button icon={<Plus size={15} />} onClick={() => setLoanTypeModalOpen(true)}>
               New Loan
             </Button>
           </div>
@@ -801,6 +803,12 @@ export default function LoansPage() {
         onClose={() => setImportOpen(false)}
         userId={user?.id}
         onImported={fetchLoans}
+      />
+
+      <LoanTypeModal
+        open={loanTypeModalOpen}
+        onClose={() => setLoanTypeModalOpen(false)}
+        onContinue={(loanType) => navigate(`/loans/new?loan_type=${loanType}`)}
       />
     </div>
   );
