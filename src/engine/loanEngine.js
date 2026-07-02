@@ -44,7 +44,12 @@ export const LOAN_STATUS = {
 
 /** Frequency configuration: periods per year, date-advance unit */
 const FREQUENCY = {
-  weekly:      { periodsPerYear: 52, advance: (d, n) => { d.setDate(d.getDate() + 7 * n); return d; } },
+  // Calendar-accurate: 52 weeks / 12 months ≈ 4.33 weeks per month.
+  // A 3-month loan = 13 payments. Mathematically matches real elapsed time.
+  weekly:        { periodsPerYear: 52, advance: (d, n) => { d.setDate(d.getDate() + 7 * n); return d; } },
+  // Fixed-4-weeks-per-month: 48 weeks / 12 months = 4 weeks per month exactly.
+  // A 3-month loan = 12 payments. Matches WELLSERVE's printed worksheet convention.
+  weekly_fixed4: { periodsPerYear: 48, advance: (d, n) => { d.setDate(d.getDate() + 7 * n); return d; } },
   semi_monthly:{ periodsPerYear: 24, advance: (d, n) => { d.setDate(d.getDate() + 15 * n); return d; } },
   monthly:     { periodsPerYear: 12, advance: (d, n) => { d.setMonth(d.getMonth() + n); return d; } },
   chattel:     { periodsPerYear: 12, advance: (d, n) => { d.setMonth(d.getMonth() + n); return d; } },

@@ -62,6 +62,7 @@ export function computePaymentByFrequency(monthlyPayment = 0, frequency = 'month
   const p = safeNum(monthlyPayment);
   const map = {
     weekly:       round2((p * 12) / 52),
+    weekly_fixed4: round2(p / 4),
     semi_monthly: round2(p / 2),
     monthly:      p,
     chattel:      p,
@@ -69,6 +70,37 @@ export function computePaymentByFrequency(monthlyPayment = 0, frequency = 'month
     yearly:       round2(p * 12),
   };
   return map[frequency] ?? p;
+}
+
+/**
+ * compareWeeklyConventions — computes the weekly installment under both
+ * weekly conventions (calendar 52wk/yr vs fixed-4wks/month) side by side,
+ * so an encoder can compare against the coop's printed worksheet.
+ */
+export function compareWeeklyConventions({
+  amount = 0,
+  termMonths = 0,
+  monthlyInterestRate = DEFAULT_MONTHLY_RATE,
+  loanMethod = 'diminishing',
+  startDate = new Date(),
+  cbuPerPeriod = 0,
+  savingsPerPeriod = 0,
+} = {}) {
+  const base = { amount, termMonths, monthlyRatePercent: monthlyInterestRate, method: loanMethod, startDate, cbuPerPeriod, savingsPerPeriod };
+  const calendar = computeSchedule({ ...base, frequency: 'weekly' });
+  const fixed4 = computeSchedule({ ...base, frequency: 'weekly_fixed4' });
+  return {
+    calendar: {
+      numPayments: calendar.totals?.number_of_payments || 0,
+      paymentPerPeriod: calendar.totals?.payment_per_period || 0,
+      totalInterest: calendar.totals?.interest || 0,
+    },
+    fixed4: {
+      numPayments: fixed4.totals?.number_of_payments || 0,
+      paymentPerPeriod: fixed4.totals?.payment_per_period || 0,
+      totalInterest: fixed4.totals?.interest || 0,
+    },
+  };
 }
 
 /**

@@ -34,6 +34,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   generateLoanPreview,
   frequencyDisplayLabel,
+  compareWeeklyConventions,
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
@@ -45,7 +46,8 @@ const STATUS_OPTS = [
 ];
 
 const FREQUENCY_OPTS = [
-  { value: 'weekly', label: 'Weekly' },
+  { value: 'weekly', label: 'Weekly (Calendar — 52wk/yr, ~13 payments for 3mo)' },
+  { value: 'weekly_fixed4', label: 'Weekly (Fixed 4wks/mo — matches worksheet, 12 payments for 3mo)' },
   { value: 'semi_monthly', label: 'Quencena (Semi-Monthly)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
@@ -237,8 +239,8 @@ export default function LoanFormPage() {
       regular_savings_percent: '',
       total_loan_payable: '',
 
-      service_fee_percent: '2.5',
-      cbu_retention_percent: '2.5',
+      service_fee_percent: '3.5',
+      cbu_retention_percent: '5.0',
       share_capital: '',
       notarial_fee: '300',
       insurance_manual_amount: '',
@@ -358,7 +360,7 @@ export default function LoanFormPage() {
       startDate: watchedReleaseDate || new Date(),
       cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
       savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
-      serviceFeePercent: chargeIncluded.service_fee ? (parseFloat(watchedServiceFeePercent || 2) || 0) : 0,
+      serviceFeePercent: chargeIncluded.service_fee ? (parseFloat(watchedServiceFeePercent || 3.5) || 0) : 0,
       shareCapital: chargeIncluded.cbu_retention ? (parseFloat(watchedShareCapital || 0) || 0) : 0,
       regularSavings: chargeIncluded.regular_savings ? (parseFloat(watchedRegularSavings || 0) || 0) : 0,
       loanInsurance: chargeIncluded.insurance ? (parseFloat(watchedInsuranceManualAmount || 0) || 0) : 0,
@@ -392,6 +394,23 @@ export default function LoanFormPage() {
   ]);
 
   const proposalAmount = parseFloat(watchedProposal || 0) || 0;
+
+  const weeklyComparison = useMemo(() => {
+    if (watchedFrequency !== 'weekly' && watchedFrequency !== 'weekly_fixed4') return null;
+    const amount = parseFloat(watchedProposal || 0) || 0;
+    const termMonths = parseInt(watchedTerm || 0, 10) || 0;
+    const monthlyInterestRate = parseFloat(watchedRate || 0) || 0;
+    if (amount <= 0 || termMonths <= 0) return null;
+    return compareWeeklyConventions({
+      amount,
+      termMonths,
+      monthlyInterestRate,
+      loanMethod: watchedMethod || 'diminishing',
+      startDate: watchedReleaseDate || new Date(),
+      cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
+      savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
+    });
+  }, [watchedFrequency, watchedProposal, watchedTerm, watchedRate, watchedMethod, watchedReleaseDate, watchedCbuPerPeriod, watchedSavingsPerPeriod]);
 
   const chargeRows = useMemo(() => {
     const rows = [
@@ -560,7 +579,7 @@ export default function LoanFormPage() {
 
   useEffect(() => {
     const proposal = parseFloat(watchedProposal || 0) || 0;
-    const serviceFee = proposal * ((parseFloat(watchedServiceFeePercent || 2) || 0) / 100);
+    const serviceFee = proposal * ((parseFloat(watchedServiceFeePercent || 3.5) || 0) / 100);
     setValue('service_fee', serviceFee ? round2(serviceFee).toFixed(2) : '');
 
     const cbuRetention = proposal * ((parseFloat(watchedCbuRetentionPercent || 0) || 0) / 100);
@@ -643,8 +662,8 @@ export default function LoanFormPage() {
           regular_savings_percent: data.regular_savings_percent || '',
           total_loan_payable: data.total_loan_payable || '',
 
-          service_fee_percent: data.service_fee_percent || '2',
-          cbu_retention_percent: data.cbu_retention_percent || '2.5',
+          service_fee_percent: data.service_fee_percent || '3.5',
+          cbu_retention_percent: data.cbu_retention_percent || '5.0',
           share_capital: data.share_capital || '',
           notarial_fee: data.notarial_fee || '200',
           insurance_manual_amount: data.insurance_manual_amount || data.loan_insurance || '',
@@ -836,8 +855,8 @@ export default function LoanFormPage() {
         loan_proposal: parseFloat(values.loan_proposal || principalAmount) || principalAmount,
         repayment_frequency: values.repayment_frequency,
         loan_method: values.loan_method,
-        service_fee_percent: parseFloat(values.service_fee_percent || 2) || 0,
-        cbu_retention_percent: parseFloat(values.cbu_retention_percent || 2.5) || 0,
+        service_fee_percent: parseFloat(values.service_fee_percent || 3.5) || 0,
+        cbu_retention_percent: parseFloat(values.cbu_retention_percent || 5.0) || 0,
         share_capital: chargeIncluded.cbu_retention ? (parseFloat(values.share_capital || 0) || 0) : 0,
         notarial_fee: chargeIncluded.notarial_fee ? (parseFloat(values.notarial_fee || 200) || 0) : 0,
         insurance_mode: 'manual',
@@ -1185,6 +1204,30 @@ export default function LoanFormPage() {
               <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">How often payments are made</p>
             </div>
           </div>
+
+          {weeklyComparison && (
+            <div className="mb-4 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3">
+              <p className="text-xs text-indigo-800 font-medium mb-2">
+                Weekly convention comparison — currently using{' '}
+                {watchedFrequency === 'weekly_fixed4' ? '"Fixed 4wks/mo"' : '"Calendar 52wk/yr"'}
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
+                <div className={`rounded-md p-2 border ${watchedFrequency === 'weekly' ? 'border-indigo-400 bg-white' : 'border-transparent'}`}>
+                  <p className="text-indigo-700 font-medium">Calendar (52wk/yr)</p>
+                  <p className="text-gray-600">{weeklyComparison.calendar.numPayments} payments × {formatCurrency(weeklyComparison.calendar.paymentPerPeriod)}</p>
+                  <p className="text-gray-400">Total interest: {formatCurrency(weeklyComparison.calendar.totalInterest)}</p>
+                </div>
+                <div className={`rounded-md p-2 border ${watchedFrequency === 'weekly_fixed4' ? 'border-indigo-400 bg-white' : 'border-transparent'}`}>
+                  <p className="text-indigo-700 font-medium">Fixed 4wks/mo</p>
+                  <p className="text-gray-600">{weeklyComparison.fixed4.numPayments} payments × {formatCurrency(weeklyComparison.fixed4.paymentPerPeriod)}</p>
+                  <p className="text-gray-400">Total interest: {formatCurrency(weeklyComparison.fixed4.totalInterest)}</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-indigo-600 mt-2">
+                "Fixed 4wks/mo" matches the coop's printed worksheet exactly. "Calendar" is mathematically accurate to real elapsed time but spreads the total over one extra payment per quarter.
+              </p>
+            </div>
+          )}
 
           {/* Row 3: Loan Method | Purpose | Preview Payment / Period */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
@@ -1629,11 +1672,11 @@ export default function LoanFormPage() {
                           'No.',
                           'Principal',
                           'Principal Amort.',
-                          watchedFrequency === 'semi_monthly' ? 'Quencena' : watchedFrequency === 'weekly' ? 'Weekly' : watchedFrequency === 'yearly' ? 'Yearly' : 'Monthly',
+                          watchedFrequency === 'semi_monthly' ? 'Quencena' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly' : watchedFrequency === 'yearly' ? 'Yearly' : 'Monthly',
                           'Loan Total',
                           'CBU',
                           'Savings',
-                          watchedFrequency === 'semi_monthly' ? 'Kinsenas' : watchedFrequency === 'weekly' ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : 'Monthly Total',
+                          watchedFrequency === 'semi_monthly' ? 'Kinsenas' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : 'Monthly Total',
                           'Due Date',
                         ].map(h => (
                           <th
