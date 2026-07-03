@@ -54,6 +54,23 @@ const FREQUENCY_OPTS = [
   { value: 'chattel', label: 'Chattel' },
 ];
 
+// Payment Frequency options depend on the selected Loan Type, since only
+// some frequencies have the "new formula" implemented in the loan engine
+// (see src/engine/loanEngine.js — computeSchedule / computeNumberOfPayments).
+// 'weekly' is the only frequency still on the old worksheet formula
+// (TOTAL = Term x 30/7). Every other frequency already uses the new,
+// standard declining-balance formula.
+//
+// Existing/Old loans: only the old-formula frequency is available for now.
+const OLD_FORMULA_FREQUENCY_VALUES = ['weekly'];
+// New loans: every frequency that already has the new formula implemented.
+const NEW_FORMULA_FREQUENCY_VALUES = FREQUENCY_OPTS
+  .map(o => o.value)
+  .filter(v => !OLD_FORMULA_FREQUENCY_VALUES.includes(v));
+
+const OLD_LOAN_FREQUENCY_OPTS = FREQUENCY_OPTS.filter(o => OLD_FORMULA_FREQUENCY_VALUES.includes(o.value));
+const NEW_LOAN_FREQUENCY_OPTS = FREQUENCY_OPTS.filter(o => NEW_FORMULA_FREQUENCY_VALUES.includes(o.value));
+
 const LOAN_METHOD_OPTS = [
   { value: 'diminishing', label: 'Diminishing' },
   { value: 'straight', label: 'Straight' },
@@ -575,6 +592,22 @@ export default function LoanFormPage() {
     setValue('loan_method', cfg.method);
     setPreviewReady(false);
   }, [watchedProduct, watchedLoanType, setValue]);
+
+  // Payment Frequency options are scoped to the selected Loan Type — Old/
+  // Existing loans only offer frequencies still using the old formula
+  // (currently just Weekly), New loans only offer frequencies with the new
+  // formula already implemented. If the currently selected frequency isn't
+  // valid for the newly selected loan type, fall back to that list's first
+  // option.
+  const frequencyOptions = watchedLoanType === 'existing' ? OLD_LOAN_FREQUENCY_OPTS : NEW_LOAN_FREQUENCY_OPTS;
+
+  useEffect(() => {
+    const allowedValues = watchedLoanType === 'existing' ? OLD_FORMULA_FREQUENCY_VALUES : NEW_FORMULA_FREQUENCY_VALUES;
+    if (watchedFrequency && !allowedValues.includes(watchedFrequency)) {
+      setValue('repayment_frequency', allowedValues[0]);
+      setPreviewReady(false);
+    }
+  }, [watchedLoanType, watchedFrequency, setValue]);
 
   useEffect(() => {
     const proposal = parseFloat(watchedProposal || 0) || 0;
@@ -1232,10 +1265,14 @@ export default function LoanFormPage() {
             <div>
               <Select
                 label="Payment Frequency"
-                options={FREQUENCY_OPTS}
+                options={frequencyOptions}
                 {...register('repayment_frequency')}
               />
-              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">How often payments are made</p>
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
+                {watchedLoanType === 'existing'
+                  ? 'Old loans: only old-formula frequencies are available.'
+                  : 'How often payments are made'}
+              </p>
             </div>
           </div>
 
