@@ -1564,7 +1564,7 @@ export default function LoanFormPage() {
 
             <div className="w-full sm:w-64 space-y-1.5">
               <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>Total Charges</span>
+                <span>Total Deductions</span>
                 <span className="font-medium text-gray-700">{formatCurrency(totalCharges)}</span>
               </div>
               <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mt-2">
