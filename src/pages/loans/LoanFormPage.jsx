@@ -46,7 +46,8 @@ const STATUS_OPTS = [
 
 const FREQUENCY_OPTS = [
   { value: 'weekly',        label: 'Weekly (Old)' },
-  { value: 'weekly_fixed4', label: 'Weekly (New)' },
+  { value: 'weekly_fixed4', label: 'Weekly' },
+  { value: 'monthly_old',  label: 'Monthly (Old)' },
   { value: 'semi_monthly', label: 'Quencena (Semi-Monthly)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
@@ -57,12 +58,13 @@ const FREQUENCY_OPTS = [
 // Payment Frequency options depend on the selected Loan Type, since only
 // some frequencies have the "new formula" implemented in the loan engine
 // (see src/engine/loanEngine.js — computeSchedule / computeNumberOfPayments).
-// 'weekly' is the only frequency still on the old worksheet formula
-// (TOTAL = Term x 30/7). Every other frequency already uses the new,
-// standard declining-balance formula.
+// 'weekly' and 'monthly_old' are still on the old worksheet formula
+// (Payment / Period = Loan Amount / Number of Payments, no separate
+// interest line). Every other frequency already uses the new, standard
+// declining-balance formula.
 //
-// Existing/Old loans: only the old-formula frequency is available for now.
-const OLD_FORMULA_FREQUENCY_VALUES = ['weekly'];
+// Existing/Old loans: only the old-formula frequencies are available for now.
+const OLD_FORMULA_FREQUENCY_VALUES = ['weekly', 'monthly_old'];
 // New loans: every frequency that already has the new formula implemented.
 const NEW_FORMULA_FREQUENCY_VALUES = FREQUENCY_OPTS
   .map(o => o.value)

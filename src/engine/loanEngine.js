@@ -52,6 +52,12 @@ const FREQUENCY = {
   weekly_fixed4: { periodsPerYear: 48, advance: (d, n) => { d.setDate(d.getDate() + 7 * n); return d; } },
   semi_monthly:{ periodsPerYear: 24, advance: (d, n) => { d.setDate(d.getDate() + 15 * n); return d; } },
   monthly:     { periodsPerYear: 12, advance: (d, n) => { d.setMonth(d.getMonth() + n); return d; } },
+  // 'monthly_old' — WELLSERVE's old worksheet formula for monthly loans:
+  // Payment / Period = Loan Amount / Number of Payments (no separate
+  // interest line added, same as the old 'weekly' convention). Same
+  // calendar advance and periods-per-year as 'monthly' — only the
+  // principal/interest treatment in computeSchedule differs.
+  monthly_old: { periodsPerYear: 12, advance: (d, n) => { d.setMonth(d.getMonth() + n); return d; } },
   chattel:     { periodsPerYear: 12, advance: (d, n) => { d.setMonth(d.getMonth() + n); return d; } },
   quarterly:   { periodsPerYear:  4, advance: (d, n) => { d.setMonth(d.getMonth() + 3 * n); return d; } },
   yearly:      { periodsPerYear:  1, advance: (d, n) => { d.setFullYear(d.getFullYear() + n); return d; } },
@@ -166,6 +172,7 @@ export function frequencyLabel(frequency) {
     weekly_fixed4: 'Weekly (New)',
     semi_monthly: 'Quencena',
     monthly: 'Monthly',
+    monthly_old: 'Monthly (Old)',
     chattel: 'Chattel',
     quarterly: 'Quarterly',
     yearly: 'Yearly',
@@ -180,6 +187,7 @@ export function periodLabel(frequency) {
     weekly_fixed4: 'week',
     semi_monthly: 'quencena',
     monthly: 'month',
+    monthly_old: 'month',
     chattel: 'month',
     quarterly: 'quarter',
     yearly: 'year',
@@ -247,10 +255,16 @@ export function computeSchedule({
   // The actual number of scheduled installments is ceil(TOTAL) — see
   // computeNumberOfPayments — since a schedule needs whole rows, but the
   // payment divisor itself stays at full precision.
+  //
+  // 'monthly_old' follows the same "no separate interest" worksheet
+  // convention, but uses the plain (integer) number of payments as the
+  // divisor — Payment / Period = Loan Amount / Number of Payments.
+  //
   // 'weekly_fixed4' (New) and all other frequencies are unaffected: the
   // divisor is simply the (integer) number of payments, and interest is
   // still computed normally.
   const isOldWeeklyFrequency = frequency === 'weekly';
+  const isOldNoInterestFrequency = isOldWeeklyFrequency || frequency === 'monthly_old';
   const weeklyTotalExact = safeNum(termMonths) * 30 / 7; // full precision, not pre-rounded
   const principalDivisor = (isOldWeeklyFrequency && numPaymentsOverride == null)
     ? Math.max(weeklyTotalExact, 0.0001)
@@ -272,10 +286,11 @@ export function computeSchedule({
     const principalAmort = (i === numPayments) ? round2(beginBalance) : fixedPrincipalAmort;
 
     // Interest on beginning balance (diminishing) or original principal (straight).
-    // The 'weekly' (Old) frequency follows WELLSERVE's worksheet formula, where
-    // the per-period payment is simply Loan Amount ÷ TOTAL with no separate
-    // interest line added on top — so interest is not charged per period here.
-    const interest = isOldWeeklyFrequency
+    // The 'weekly' and 'monthly_old' (Old) frequencies follow WELLSERVE's
+    // worksheet formula, where the per-period payment is simply Loan Amount
+    // ÷ Number of Payments with no separate interest line added on top —
+    // so interest is not charged per period here.
+    const interest = isOldNoInterestFrequency
       ? 0
       : method === 'straight'
         ? round2(principal * ratePerPeriod)
