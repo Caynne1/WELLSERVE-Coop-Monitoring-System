@@ -113,8 +113,10 @@ const LOAN_COLUMNS = [
   'repayment_frequency', 'loan_method', 'source',
 
   'loan_proposal', 'service_fee', 'share_capital', 'loan_insurance', 'regular_savings',
-  'total_loan_payable', 'previous_loan_balance', 'annual_dues',
-  'penalty_due', 'petty_cash', 'cbu_completion',
+  'regular_savings_percent',
+  'total_loan_payable', 'previous_loan_balance', 'annual_dues', 'annual_dues_percent',
+  'penalty_due', 'penalty_due_percent', 'petty_cash', 'petty_cash_percent',
+  'cbu_completion', 'cbu_completion_percent',
 
   'service_fee_percent', 'cbu_retention_percent', 'notarial_fee', 'insurance_mode',
   'insurance_fixed_rate_percent', 'insurance_manual_amount', 'cbu_per_period',

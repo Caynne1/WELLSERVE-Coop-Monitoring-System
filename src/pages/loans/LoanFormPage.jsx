@@ -224,6 +224,18 @@ export default function LoanFormPage() {
     setChargeIncluded(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
+  const [chargeTypeMode, setChargeTypeMode] = useState({
+    regular_savings: 'percent',
+    penalty_due: 'fixed',
+    annual_dues: 'fixed',
+    cbu_completion: 'fixed',
+    petty_cash: 'fixed',
+  });
+
+  function setChargeType(key, mode) {
+    setChargeTypeMode(prev => ({ ...prev, [key]: mode }));
+  }
+
   function addOtherCharge() {
     setOtherCharges(prev => [
       ...prev,
@@ -280,9 +292,13 @@ export default function LoanFormPage() {
       savings_per_period: '0',
 
       penalty_due: '',
+      penalty_due_percent: '',
       annual_dues: '',
+      annual_dues_percent: '',
       petty_cash: '',
+      petty_cash_percent: '',
       cbu_completion: '',
+      cbu_completion_percent: '',
 
       // Associate → Regular membership upgrade bundle
       membership_regulatory_fee: '1000',
@@ -319,9 +335,13 @@ export default function LoanFormPage() {
   const watchedSavingsPerPeriod = useWatch({ control, name: 'savings_per_period' });
 
   const watchedPettyCash = useWatch({ control, name: 'petty_cash' });
+  const watchedPettyCashPercent = useWatch({ control, name: 'petty_cash_percent' });
   const watchedPenaltyDue = useWatch({ control, name: 'penalty_due' });
+  const watchedPenaltyDuePercent = useWatch({ control, name: 'penalty_due_percent' });
   const watchedAnnualDues = useWatch({ control, name: 'annual_dues' });
+  const watchedAnnualDuesPercent = useWatch({ control, name: 'annual_dues_percent' });
   const watchedCbuCompletion = useWatch({ control, name: 'cbu_completion' });
+  const watchedCbuCompletionPercent = useWatch({ control, name: 'cbu_completion_percent' });
 
   const watchedMembershipRegulatoryFee = useWatch({ control, name: 'membership_regulatory_fee' });
   const watchedMembershipInitialSavings = useWatch({ control, name: 'membership_initial_savings' });
@@ -473,51 +493,71 @@ export default function LoanFormPage() {
         key: 'regular_savings',
         label: 'Regular Savings',
         subtitle: "Member's regular savings deposit",
-        typeLabel: 'Percentage',
-        isPercent: true,
-        rateValue: watchedRegularSavingsPercent,
+        typeLabel: chargeTypeMode.regular_savings === 'percent' ? 'Percentage' : 'Fixed Amount',
+        isPercent: chargeTypeMode.regular_savings === 'percent',
+        typeSelectable: true,
+        percentField: 'regular_savings_percent',
+        rateValue: chargeTypeMode.regular_savings === 'percent' ? watchedRegularSavingsPercent : watchedRegularSavings,
         amount: parseFloat(watchedRegularSavings || 0) || 0,
-        calcText: `${parseFloat(watchedRegularSavingsPercent || 0) || 0}% × ${formatCurrency(proposalAmount)}`,
+        calcText: chargeTypeMode.regular_savings === 'percent'
+          ? `${parseFloat(watchedRegularSavingsPercent || 0) || 0}% × ${formatCurrency(proposalAmount)}`
+          : 'Fixed Amount',
       },
       {
         key: 'penalty_due',
         label: 'Penalty Due',
         subtitle: 'Optional — penalty amount due on this loan',
-        typeLabel: 'Fixed Amount',
-        isPercent: false,
-        rateValue: watchedPenaltyDue,
+        typeLabel: chargeTypeMode.penalty_due === 'percent' ? 'Percentage' : 'Fixed Amount',
+        isPercent: chargeTypeMode.penalty_due === 'percent',
+        typeSelectable: true,
+        percentField: 'penalty_due_percent',
+        rateValue: chargeTypeMode.penalty_due === 'percent' ? watchedPenaltyDuePercent : watchedPenaltyDue,
         amount: parseFloat(watchedPenaltyDue || 0) || 0,
-        calcText: 'Fixed Amount',
+        calcText: chargeTypeMode.penalty_due === 'percent'
+          ? `${parseFloat(watchedPenaltyDuePercent || 0) || 0}% × ${formatCurrency(proposalAmount)}`
+          : 'Fixed Amount',
       },
       {
         key: 'annual_dues',
         label: 'Annual Due',
         subtitle: 'Optional — annual membership due',
-        typeLabel: 'Fixed Amount',
-        isPercent: false,
-        rateValue: watchedAnnualDues,
+        typeLabel: chargeTypeMode.annual_dues === 'percent' ? 'Percentage' : 'Fixed Amount',
+        isPercent: chargeTypeMode.annual_dues === 'percent',
+        typeSelectable: true,
+        percentField: 'annual_dues_percent',
+        rateValue: chargeTypeMode.annual_dues === 'percent' ? watchedAnnualDuesPercent : watchedAnnualDues,
         amount: parseFloat(watchedAnnualDues || 0) || 0,
-        calcText: 'Fixed Amount',
+        calcText: chargeTypeMode.annual_dues === 'percent'
+          ? `${parseFloat(watchedAnnualDuesPercent || 0) || 0}% × ${formatCurrency(proposalAmount)}`
+          : 'Fixed Amount',
       },
       {
         key: 'cbu_completion',
         label: 'CBU Completion',
         subtitle: "Optional — amount to complete member's required CBU",
-        typeLabel: 'Fixed Amount',
-        isPercent: false,
-        rateValue: watchedCbuCompletion,
+        typeLabel: chargeTypeMode.cbu_completion === 'percent' ? 'Percentage' : 'Fixed Amount',
+        isPercent: chargeTypeMode.cbu_completion === 'percent',
+        typeSelectable: true,
+        percentField: 'cbu_completion_percent',
+        rateValue: chargeTypeMode.cbu_completion === 'percent' ? watchedCbuCompletionPercent : watchedCbuCompletion,
         amount: parseFloat(watchedCbuCompletion || 0) || 0,
-        calcText: 'Fixed Amount',
+        calcText: chargeTypeMode.cbu_completion === 'percent'
+          ? `${parseFloat(watchedCbuCompletionPercent || 0) || 0}% × ${formatCurrency(proposalAmount)}`
+          : 'Fixed Amount',
       },
       {
         key: 'petty_cash',
         label: 'Petty Cash',
         subtitle: 'Optional — petty cash release for this loan',
-        typeLabel: 'Fixed Amount',
-        isPercent: false,
-        rateValue: watchedPettyCash,
+        typeLabel: chargeTypeMode.petty_cash === 'percent' ? 'Percentage' : 'Fixed Amount',
+        isPercent: chargeTypeMode.petty_cash === 'percent',
+        typeSelectable: true,
+        percentField: 'petty_cash_percent',
+        rateValue: chargeTypeMode.petty_cash === 'percent' ? watchedPettyCashPercent : watchedPettyCash,
         amount: parseFloat(watchedPettyCash || 0) || 0,
-        calcText: 'Fixed Amount',
+        calcText: chargeTypeMode.petty_cash === 'percent'
+          ? `${parseFloat(watchedPettyCashPercent || 0) || 0}% × ${formatCurrency(proposalAmount)}`
+          : 'Fixed Amount',
       },
       {
         key: 'membership_regulatory_fee',
@@ -563,9 +603,14 @@ export default function LoanFormPage() {
     watchedRegularSavings,
     watchedRegularSavingsPercent,
     watchedPenaltyDue,
+    watchedPenaltyDuePercent,
     watchedAnnualDues,
+    watchedAnnualDuesPercent,
     watchedCbuCompletion,
+    watchedCbuCompletionPercent,
     watchedPettyCash,
+    watchedPettyCashPercent,
+    chargeTypeMode,
     watchedMembershipRegulatoryFee,
     watchedMembershipInitialSavings,
     watchedMembershipVipCard,
@@ -623,8 +668,27 @@ export default function LoanFormPage() {
     const clpi = (proposal / 1000) * 1.1 * termMonths;
     setValue('insurance_manual_amount', clpi ? round2(clpi).toFixed(2) : '');
 
-    const regularSavingsAmt = proposal * ((parseFloat(watchedRegularSavingsPercent || 0) || 0) / 100);
-    setValue('regular_savings', regularSavingsAmt ? round2(regularSavingsAmt).toFixed(2) : '');
+    if (chargeTypeMode.regular_savings === 'percent') {
+      const regularSavingsAmt = proposal * ((parseFloat(watchedRegularSavingsPercent || 0) || 0) / 100);
+      setValue('regular_savings', regularSavingsAmt ? round2(regularSavingsAmt).toFixed(2) : '');
+    }
+
+    if (chargeTypeMode.penalty_due === 'percent') {
+      const amt = proposal * ((parseFloat(watchedPenaltyDuePercent || 0) || 0) / 100);
+      setValue('penalty_due', amt ? round2(amt).toFixed(2) : '');
+    }
+    if (chargeTypeMode.annual_dues === 'percent') {
+      const amt = proposal * ((parseFloat(watchedAnnualDuesPercent || 0) || 0) / 100);
+      setValue('annual_dues', amt ? round2(amt).toFixed(2) : '');
+    }
+    if (chargeTypeMode.cbu_completion === 'percent') {
+      const amt = proposal * ((parseFloat(watchedCbuCompletionPercent || 0) || 0) / 100);
+      setValue('cbu_completion', amt ? round2(amt).toFixed(2) : '');
+    }
+    if (chargeTypeMode.petty_cash === 'percent') {
+      const amt = proposal * ((parseFloat(watchedPettyCashPercent || 0) || 0) / 100);
+      setValue('petty_cash', amt ? round2(amt).toFixed(2) : '');
+    }
 
     // Keep hidden amount field in sync with proposal
     setValue('amount', watchedProposal || '');
@@ -643,6 +707,11 @@ export default function LoanFormPage() {
     watchedCbuRetentionPercent,
     watchedNotarialFee,
     watchedRegularSavingsPercent,
+    watchedPenaltyDuePercent,
+    watchedAnnualDuesPercent,
+    watchedCbuCompletionPercent,
+    watchedPettyCashPercent,
+    chargeTypeMode,
     setValue,
   ]);
 
@@ -713,9 +782,13 @@ export default function LoanFormPage() {
           savings_per_period: data.savings_per_period || '25',
 
           penalty_due: data.penalty_due || '',
+          penalty_due_percent: data.penalty_due_percent || '',
           annual_dues: data.annual_dues || '',
+          annual_dues_percent: data.annual_dues_percent || '',
           petty_cash: data.petty_cash || '',
+          petty_cash_percent: data.petty_cash_percent || '',
           cbu_completion: data.cbu_completion || '',
+          cbu_completion_percent: data.cbu_completion_percent || '',
 
           membership_regulatory_fee: data.membership_regulatory_fee || '1000',
           membership_initial_savings: data.membership_initial_savings || '500',
@@ -725,6 +798,16 @@ export default function LoanFormPage() {
           co_maker_member_no: data.co_maker_member_no || '',
           co_maker_relationship: data.co_maker_relationship || '',
           co_maker_contact_no: data.co_maker_contact_no || '',
+        });
+
+        setChargeTypeMode({
+          regular_savings: parseFloat(data.regular_savings_percent || 0) > 0
+            ? 'percent'
+            : (parseFloat(data.regular_savings || 0) > 0 ? 'fixed' : 'percent'),
+          penalty_due: parseFloat(data.penalty_due_percent || 0) > 0 ? 'percent' : 'fixed',
+          annual_dues: parseFloat(data.annual_dues_percent || 0) > 0 ? 'percent' : 'fixed',
+          cbu_completion: parseFloat(data.cbu_completion_percent || 0) > 0 ? 'percent' : 'fixed',
+          petty_cash: parseFloat(data.petty_cash_percent || 0) > 0 ? 'percent' : 'fixed',
         });
 
         setChargeIncluded(prev => ({
@@ -905,13 +988,17 @@ export default function LoanFormPage() {
         insurance_fixed_rate_percent: 0,
         insurance_manual_amount: chargeIncluded.insurance ? (parseFloat(values.insurance_manual_amount || 0) || 0) : 0,
         regular_savings: regularSavings,
-        regular_savings_percent: parseFloat(values.regular_savings_percent || 0) || 0,
+        regular_savings_percent: chargeTypeMode.regular_savings === 'percent' ? (parseFloat(values.regular_savings_percent || 0) || 0) : 0,
         cbu_per_period: parseFloat(values.cbu_per_period || 25) || 0,
         savings_per_period: parseFloat(values.savings_per_period || 25) || 0,
         penalty_due: chargeIncluded.penalty_due ? (parseFloat(values.penalty_due || 0) || 0) : 0,
+        penalty_due_percent: chargeTypeMode.penalty_due === 'percent' ? (parseFloat(values.penalty_due_percent || 0) || 0) : 0,
         annual_dues: chargeIncluded.annual_dues ? (parseFloat(values.annual_dues || 0) || 0) : 0,
+        annual_dues_percent: chargeTypeMode.annual_dues === 'percent' ? (parseFloat(values.annual_dues_percent || 0) || 0) : 0,
         petty_cash: chargeIncluded.petty_cash ? (parseFloat(values.petty_cash || 0) || 0) : 0,
+        petty_cash_percent: chargeTypeMode.petty_cash === 'percent' ? (parseFloat(values.petty_cash_percent || 0) || 0) : 0,
         cbu_completion: chargeIncluded.cbu_completion ? (parseFloat(values.cbu_completion || 0) || 0) : 0,
+        cbu_completion_percent: chargeTypeMode.cbu_completion === 'percent' ? (parseFloat(values.cbu_completion_percent || 0) || 0) : 0,
 
         membership_upgrade_included: membershipUpgradeIncluded,
         membership_regulatory_fee: chargeIncluded.membership_regulatory_fee ? (parseFloat(values.membership_regulatory_fee || 0) || 0) : 0,
@@ -1442,13 +1529,26 @@ export default function LoanFormPage() {
                         <div className="text-[11px] text-gray-400">{row.subtitle}</div>
                       </td>
                       <td className="py-3 pr-4 align-top">
-                        <span className="inline-flex items-center text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
-                          {row.typeLabel}
-                        </span>
+                        {row.typeSelectable ? (
+                          <select
+                            value={chargeTypeMode[row.key]}
+                            onChange={e => setChargeType(row.key, e.target.value)}
+                            disabled={!included}
+                            className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 disabled:opacity-60"
+                          >
+                            <option value="fixed">Fixed Amount</option>
+                            <option value="percent">Percentage</option>
+                          </select>
+                        ) : (
+                          <span className="inline-flex items-center text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
+                            {row.typeLabel}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 pr-4 align-top">
                         <div className="relative w-24">
                           <input
+                            key={`${row.key}-${row.typeSelectable ? chargeTypeMode[row.key] : 'fixed'}`}
                             type="number"
                             step="0.01"
                             disabled={!included}
@@ -1459,8 +1559,7 @@ export default function LoanFormPage() {
                               row.key === 'cbu_retention' ? 'cbu_retention_percent' :
                               row.key === 'notarial_fee' ? 'notarial_fee' :
                               row.key === 'insurance' ? 'insurance_manual_amount' :
-                              row.key === 'regular_savings' ? 'regular_savings_percent' :
-                              row.key === 'petty_cash' ? 'petty_cash' :
+                              row.typeSelectable ? (row.isPercent ? row.percentField : row.key) :
                               row.key
                             )}
                           />
