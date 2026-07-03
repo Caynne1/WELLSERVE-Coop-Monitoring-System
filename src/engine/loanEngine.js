@@ -51,6 +51,13 @@ const FREQUENCY = {
   // A 3-month loan = 12 payments. Matches WELLSERVE's printed worksheet convention.
   weekly_fixed4: { periodsPerYear: 48, advance: (d, n) => { d.setDate(d.getDate() + 7 * n); return d; } },
   semi_monthly:{ periodsPerYear: 24, advance: (d, n) => { d.setDate(d.getDate() + 15 * n); return d; } },
+  // 'semi_monthly_old' — WELLSERVE's old worksheet formula for quencena
+  // (semi-monthly) loans: Payment / Period = Loan Amount / Number of
+  // Payments (no separate interest line added, same as the old 'weekly'
+  // and 'monthly_old' convention). Same calendar advance and
+  // periods-per-year as 'semi_monthly' — only the principal/interest
+  // treatment in computeSchedule differs.
+  semi_monthly_old: { periodsPerYear: 24, advance: (d, n) => { d.setDate(d.getDate() + 15 * n); return d; } },
   monthly:     { periodsPerYear: 12, advance: (d, n) => { d.setMonth(d.getMonth() + n); return d; } },
   // 'monthly_old' — WELLSERVE's old worksheet formula for monthly loans:
   // Payment / Period = Loan Amount / Number of Payments (no separate
@@ -171,6 +178,7 @@ export function frequencyLabel(frequency) {
     weekly: 'Weekly (Old)',
     weekly_fixed4: 'Weekly (New)',
     semi_monthly: 'Quencena',
+    semi_monthly_old: 'Quencena (Old)',
     monthly: 'Monthly',
     monthly_old: 'Monthly (Old)',
     chattel: 'Chattel',
@@ -186,6 +194,7 @@ export function periodLabel(frequency) {
     weekly: 'week',
     weekly_fixed4: 'week',
     semi_monthly: 'quencena',
+    semi_monthly_old: 'quencena',
     monthly: 'month',
     monthly_old: 'month',
     chattel: 'month',
@@ -264,7 +273,7 @@ export function computeSchedule({
   // divisor is simply the (integer) number of payments, and interest is
   // still computed normally.
   const isOldWeeklyFrequency = frequency === 'weekly';
-  const isOldNoInterestFrequency = isOldWeeklyFrequency || frequency === 'monthly_old';
+  const isOldNoInterestFrequency = isOldWeeklyFrequency || frequency === 'monthly_old' || frequency === 'semi_monthly_old';
   const weeklyTotalExact = safeNum(termMonths) * 30 / 7; // full precision, not pre-rounded
   const principalDivisor = (isOldWeeklyFrequency && numPaymentsOverride == null)
     ? Math.max(weeklyTotalExact, 0.0001)

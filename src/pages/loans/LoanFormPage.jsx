@@ -48,6 +48,7 @@ const FREQUENCY_OPTS = [
   { value: 'weekly',        label: 'Weekly (Old)' },
   { value: 'weekly_fixed4', label: 'Weekly' },
   { value: 'monthly_old',  label: 'Monthly (Old)' },
+  { value: 'semi_monthly_old', label: 'Quencena (Old)' },
   { value: 'semi_monthly', label: 'Quencena (Semi-Monthly)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
@@ -58,13 +59,13 @@ const FREQUENCY_OPTS = [
 // Payment Frequency options depend on the selected Loan Type, since only
 // some frequencies have the "new formula" implemented in the loan engine
 // (see src/engine/loanEngine.js — computeSchedule / computeNumberOfPayments).
-// 'weekly' and 'monthly_old' are still on the old worksheet formula
-// (Payment / Period = Loan Amount / Number of Payments, no separate
-// interest line). Every other frequency already uses the new, standard
-// declining-balance formula.
+// 'weekly', 'monthly_old', and 'semi_monthly_old' are still on the old
+// worksheet formula (Payment / Period = Loan Amount / Number of Payments,
+// no separate interest line). Every other frequency already uses the new,
+// standard declining-balance formula.
 //
 // Existing/Old loans: only the old-formula frequencies are available for now.
-const OLD_FORMULA_FREQUENCY_VALUES = ['weekly', 'monthly_old'];
+const OLD_FORMULA_FREQUENCY_VALUES = ['weekly', 'monthly_old', 'semi_monthly_old'];
 // New loans: every frequency that already has the new formula implemented.
 const NEW_FORMULA_FREQUENCY_VALUES = FREQUENCY_OPTS
   .map(o => o.value)
@@ -1820,11 +1821,11 @@ export default function LoanFormPage() {
                           'No.',
                           'Principal',
                           'Principal Amort.',
-                          watchedFrequency === 'semi_monthly' ? 'Quencena' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly' : watchedFrequency === 'yearly' ? 'Yearly' : 'Monthly',
+                          (watchedFrequency === 'semi_monthly' || watchedFrequency === 'semi_monthly_old') ? 'Quencena' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly' : watchedFrequency === 'yearly' ? 'Yearly' : 'Monthly',
                           'Loan Total',
                           'CBU',
                           'Savings',
-                          watchedFrequency === 'semi_monthly' ? 'Kinsenas' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : 'Monthly Total',
+                          (watchedFrequency === 'semi_monthly' || watchedFrequency === 'semi_monthly_old') ? 'Kinsenas' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : 'Monthly Total',
                           'Due Date',
                         ].map(h => (
                           <th

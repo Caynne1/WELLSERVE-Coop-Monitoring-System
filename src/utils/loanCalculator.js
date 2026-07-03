@@ -45,7 +45,7 @@ export { DEFAULT_MONTHLY_RATE, LOAN_SOURCE, LOAN_STATUS };
 
 /** Payments per year for a given frequency. */
 export function getPaymentsPerYear(frequency = 'monthly') {
-  const map = { weekly: 52, semi_monthly: 24, monthly: 12, chattel: 12, quarterly: 4, yearly: 1 };
+  const map = { weekly: 52, semi_monthly: 24, semi_monthly_old: 24, monthly: 12, chattel: 12, quarterly: 4, yearly: 1 };
   return map[frequency] || 12;
 }
 
@@ -67,6 +67,7 @@ export function computePaymentByFrequency(monthlyPayment = 0, frequency = 'month
     weekly:       round2((p * 12) / 52),
     weekly_fixed4: round2(p / 4),
     semi_monthly: round2(p / 2),
+    semi_monthly_old: round2(p / 2),
     monthly:      p,
     chattel:      p,
     quarterly:    round2(p * 3),
