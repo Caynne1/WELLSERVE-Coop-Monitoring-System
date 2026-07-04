@@ -44,6 +44,18 @@ const MEMBERSHIP_TYPE_OPTIONS = [
   { value: 'kiddy', label: 'Kiddy Savings' },
 ];
 
+// Old membership has no Kiddy breakdown, so the type list is narrowed when
+// "Old / Historical Membership" is selected.
+const MEMBERSHIP_TYPE_OPTIONS_OLD = MEMBERSHIP_TYPE_OPTIONS.filter(o => o.value !== 'kiddy');
+
+// Record type — mirrors the Loan Type selector pattern in LoanFormPage:
+// Old/Historical members use the previous, already-settled fee breakdown;
+// New members use the current fee structure with live onboarding payments.
+const RECORD_TYPE_OPTS = [
+  { value: 'new_member', label: 'New Membership — current fee structure' },
+  { value: 'old_member', label: 'Old / Historical Membership — previous fee structure' },
+];
+
 const PAYMENT_OPTION_OPTIONS = [
   { value: 'none', label: 'No payment yet' },
   { value: 'partial', label: 'Partial payment' },
@@ -684,6 +696,14 @@ export function MemberFormContent({
   useEffect(() => {
     if (isEdit) loadMember();
   }, [memberId]);
+
+  // Old / Historical membership has no Kiddy breakdown — fall back to
+  // Associate if the user switches record type while Kiddy is selected.
+  useEffect(() => {
+    if (isOldMember && membershipType === 'kiddy') {
+      setValue('membership_type', 'associate');
+    }
+  }, [isOldMember, membershipType, setValue]);
 
   useEffect(() => {
     if (!breakdown?.items || isEdit || isOldMember) return;
@@ -1332,19 +1352,55 @@ export function MemberFormContent({
           <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
           <span>
             Register the member and optionally post initial onboarding payments at the same time.
-            Historical records are only added via <strong>Import Members</strong>.
+            Use <strong>Record Type</strong> below to encode a historical (pre-system) membership instead.
           </span>
         </div>
       )}
 
-      {/* Old member badge in edit */}
-      {isEdit && recordType === 'old_member' && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-          <Archive size={14} />
-          <span className="font-medium">Historical Record — Old Member</span>
-          <span className="text-amber-600 text-xs">· Encoded from pre-system records</span>
+      {/* Record Type — Old / Historical vs New Membership */}
+      <section className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-700">
+            Record Type
+          </h3>
+          <span
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1 ${
+              isOldMember
+                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            }`}
+          >
+            {isOldMember && <Archive size={11} />}
+            {isOldMember ? 'Old / Historical Membership' : 'New Membership'}
+          </span>
         </div>
-      )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            {isEdit ? (
+              <>
+                <Input label="Record Type" value={isOldMember ? 'Old / Historical Membership' : 'New Membership'} readOnly />
+                <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
+                  Record type is set at registration and can't be changed after the member is created.
+                </p>
+              </>
+            ) : (
+              <>
+                <Select
+                  label="Record Type"
+                  options={RECORD_TYPE_OPTS}
+                  {...register('record_type')}
+                />
+                <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
+                  {isOldMember
+                    ? 'Encoded from pre-system records — marked fully paid using the previous fee structure.'
+                    : 'Registered going forward — uses the current fee structure with live onboarding payments.'}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Personal Information */}
       <FormSection title="Personal Information" inModal={inModal}>
@@ -1408,7 +1464,7 @@ export function MemberFormContent({
           <Select label="Status" options={STATUS_OPTIONS} {...register('status')} />
           <Select
             label="Membership Type"
-            options={MEMBERSHIP_TYPE_OPTIONS}
+            options={isOldMember ? MEMBERSHIP_TYPE_OPTIONS_OLD : MEMBERSHIP_TYPE_OPTIONS}
             {...register('membership_type', { required: 'Membership type is required' })}
           />
 

@@ -1433,6 +1433,11 @@ const MEMBERSHIP_FEES = {
 function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, cbuAccount, savingsAccount, onRefresh, memberRecordType }) {
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupType, setSetupType] = useState('associate');
+  // Defaults to the member's actual record type, but stays overridable —
+  // mirrors the Loan Type selector pattern in LoanFormPage.
+  const [setupRecordType, setSetupRecordType] = useState(
+    memberRecordType === 'old_member' ? 'old_member' : 'new_member'
+  );
   const [setupSaving, setSetupSaving] = useState(false);
 
   const [payOpen, setPayOpen] = useState(false);
@@ -1465,7 +1470,9 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
     : storedFeeRequired;
   const feeBalance = Math.max(0, effectiveFeeRequired - feePaid);
   const isFullyPaid = membership != null && feeBalance <= 0;
-  const setupFees = MEMBERSHIP_FEES[setupType] || MEMBERSHIP_FEES.associate;
+  const isSetupNewMember = setupRecordType === 'new_member';
+  const setupFeeKey = isSetupNewMember ? `new_${setupType}` : setupType;
+  const setupFees = MEMBERSHIP_FEES[setupFeeKey] || MEMBERSHIP_FEES.associate;
 
   // Parse per-component totals from JSON stored in payment notes.
   // Old format:  { entry, cbu, savings }          — discriminated by presence of 'entry' key
@@ -1549,14 +1556,18 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         member_id: memberId,
         membership_type: setupType,
         fee_required: setupFees.total,
-        fee_paid_now: 0,
+        fee_paid_now: isSetupNewMember ? 0 : setupFees.total,
+        is_historical: !isSetupNewMember,
+        notes: isSetupNewMember
+          ? null
+          : `Historical record — membership fully paid before system. Breakdown: Entry ${formatCurrency(setupFees.entry)}, CBU ${formatCurrency(setupFees.cbu)}, Savings ${formatCurrency(setupFees.savings)}`,
         created_by: userId,
       });
       trackActivity({
         userId,
         module: 'member',
         action: 'create',
-        description: `Set up ${setupType} membership for member (${memberName}), total fee: ${formatCurrency(setupFees.total)}`,
+        description: `Set up ${isSetupNewMember ? 'new' : 'old / historical'} ${setupType} membership for member (${memberName}), total fee: ${formatCurrency(setupFees.total)}`,
       });
       toast.success('Membership record created.');
       setSetupOpen(false);
@@ -1808,6 +1819,34 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
         <Modal open={setupOpen} onClose={() => setSetupOpen(false)} title="Set Up Membership" size="md">
           <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">Record Type</label>
+              <span
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1 ${
+                  isSetupNewMember
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}
+              >
+                {isSetupNewMember ? 'New Membership' : 'Old / Historical Membership'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <select
+                value={setupRecordType}
+                onChange={e => setSetupRecordType(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white"
+              >
+                <option value="new_member">New Membership — current fee structure</option>
+                <option value="old_member">Old / Historical Membership — previous fee structure</option>
+              </select>
+              <p className="text-[11px] text-gray-400">
+                {isSetupNewMember
+                  ? 'Ledger starts unpaid — use "Record Payment" to log onboarding payments.'
+                  : 'Marked fully paid immediately using the previous fee structure — no payment record needed.'}
+              </p>
+            </div>
+
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">Membership Type</label>
               <select
@@ -1827,7 +1866,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
               </p>
               <div className="divide-y divide-gray-100">
                 {[
-                  ['Membership Entry', setupFees.entry],
+                  [isSetupNewMember ? 'Membership Fees' : 'Membership Entry', setupFees.entry],
                   ['Initial CBU', setupFees.cbu],
                   ['Initial Savings', setupFees.savings],
                 ].map(([label, amount]) => (
@@ -1844,7 +1883,9 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             </div>
 
             <p className="text-xs text-gray-400">
-              Use "Record Payment" after setup to log partial or full payments.
+              {isSetupNewMember
+                ? 'Use "Record Payment" after setup to log partial or full payments.'
+                : 'Historical records are recorded as fully paid at setup — no further payment needed.'}
             </p>
           </div>
 
