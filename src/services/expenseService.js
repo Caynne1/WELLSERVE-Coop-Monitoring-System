@@ -5,8 +5,9 @@ import { supabase } from './supabase';
 // Prevents accidental injection of joined/computed fields.
 
 const EXPENSE_COLUMNS = [
-  'date', 'description', 'category', 'amount',
+  'date', 'description', 'category', 'category_other', 'amount',
   'payee', 'notes', 'status', 'created_by',
+  'approved_by', 'approved_at', 'voucher_id', 'voucher_no',
 ];
 
 function sanitizeExpensePayload(payload) {
@@ -69,6 +70,40 @@ export async function voidExpense(id) {
   const { data, error } = await supabase
     .from('expenses')
     .update({ status: 'voided' })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ── Approval workflow ─────────────────────────────────────────────────────────
+// Expenses must go through 'pending' → 'approved' before a voucher can be
+// created for them. approveExpense() only flips the status/audit fields;
+// the caller (ExpensesPage) is responsible for creating the linked voucher
+// and then calling linkExpenseVoucher() to stamp the reference back on.
+
+export async function approveExpense(id, approvedBy) {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({
+      status: 'approved',
+      approved_by: approvedBy ?? null,
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Stamps the auto-created voucher's id/number back onto the expense row so
+// the Expenses table can show a "Voucher" reference without an extra join.
+export async function linkExpenseVoucher(id, voucherId, voucherNo) {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({ voucher_id: voucherId, voucher_no: voucherNo })
     .eq('id', id)
     .select()
     .single();

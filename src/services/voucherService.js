@@ -153,6 +153,28 @@ export async function createVoucher(payload) {
   return data;
 }
 
+// helper specifically for the Expenses approval flow — auto-creates a draft
+// voucher the moment an expense is approved, so it's ready to be picked up
+// in the Vouchers module for disbursement.
+export async function createVoucherFromExpense(expense, createdBy) {
+  const categoryLabel = expense.category === 'others'
+    ? (expense.category_other || 'Others')
+    : expense.category;
+
+  return createVoucher({
+    date: expense.date,
+    payee: expense.payee,
+    purpose: expense.description || categoryLabel,
+    amount: expense.amount,
+    notes: expense.notes || undefined,
+    expense_id: expense.id,
+    created_by: createdBy ?? null,
+    // The expense approval IS the approval — the voucher shouldn't need a
+    // second, separate approval step in the Vouchers module.
+    status: 'approved',
+  });
+}
+
 // helper specifically for member-account withdrawals
 export async function createMemberWithdrawalVoucher(payload) {
   const voucher_no = payload?.voucher_no?.trim() || await generateVoucherNo();
