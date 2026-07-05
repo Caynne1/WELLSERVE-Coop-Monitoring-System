@@ -108,14 +108,23 @@ export async function createAccount(payload) {
 }
 
 export async function updateAccount(id, payload) {
+  if (!id) {
+    throw new Error('No account was found to update — the account record may be missing for this member.');
+  }
+
   const { data, error } = await supabase
     .from('accounts')
     .update(payload)
     .eq('id', id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) {
+    throw new Error(
+      'Could not update this account — it may have been deleted, or its ID no longer matches a real record.'
+    );
+  }
   return data;
 }
 

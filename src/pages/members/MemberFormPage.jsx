@@ -1027,80 +1027,105 @@ export function MemberFormContent({
           }
         }
 
-        const newMember = await createMember({ ...payload, record_type: 'new_member' });
-        const newMemberId = newMember.id;
-        const memberName = `${newMember.first_name || ''} ${newMember.last_name || ''}`.trim();
+        // ── Atomicity guard ──────────────────────────────────────────
+        // Kiddy registration is several sequential inserts (member → accounts
+        // → membership → transaction → invoice). If any step after the member
+        // is created fails (e.g. a DB constraint rejecting the membership
+        // row), we must not leave an orphaned member behind with no
+        // membership record — that half-saved state is exactly what caused
+        // the "member saved despite the error" bug and the downstream
+        // "Cannot coerce the result to a single JSON object" error when
+        // trying to record a payment for that member later.
+        let newMemberId = null;
+        try {
+          const newMember = await createMember({ ...payload, record_type: 'new_member' });
+          newMemberId = newMember.id;
+          const memberName = `${newMember.first_name || ''} ${newMember.last_name || ''}`.trim();
 
-        await initializeMemberAccounts(newMemberId);
-        const accounts = await getAccountsByMemberId(newMemberId);
-        const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
+          await initializeMemberAccounts(newMemberId);
+          const accounts = await getAccountsByMemberId(newMemberId);
+          const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
-        if (savingsAccount && values.savings_account_no) {
-          await updateAccount(savingsAccount.id, { account_no: values.savings_account_no });
-        }
+          if (savingsAccount && values.savings_account_no) {
+            await updateAccount(savingsAccount.id, { account_no: values.savings_account_no });
+          }
 
-        const refreshedAccounts = await getAccountsByMemberId(newMemberId);
-        const refreshedSavingsAccount = refreshedAccounts.find(a => String(a.account_type).toLowerCase() === 'savings');
+          const refreshedAccounts = await getAccountsByMemberId(newMemberId);
+          const refreshedSavingsAccount = refreshedAccounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
-        const paymentModeNote = [values.payment_reference?.trim(), values.payment_notes?.trim()].filter(Boolean).join(' | ') || null;
+          const paymentModeNote = [values.payment_reference?.trim(), values.payment_notes?.trim()].filter(Boolean).join(' | ') || null;
 
-        let kiddyInitPaymentNotes = null;
-        if (kiddyTotalPaid > 0) {
-          kiddyInitPaymentNotes = JSON.stringify({ kiddy_savings: kiddySavingsPaid });
-        }
+          let kiddyInitPaymentNotes = null;
+          if (kiddyTotalPaid > 0) {
+            kiddyInitPaymentNotes = JSON.stringify({ kiddy_savings: kiddySavingsPaid });
+          }
 
-        const kiddyMembershipRecord = await createMembership({
-          member_id: newMemberId,
-          membership_type: 'kiddy',
-          fee_required: total,
-          fee_paid_now: kiddyTotalPaid,
-          payment_notes: kiddyInitPaymentNotes,
-          created_by: user.id,
-        });
-
-        if (kiddySavingsPaid > 0) {
-          if (!refreshedSavingsAccount) throw new Error('Savings account not found after member initialization.');
-          await createTransaction({
+          const kiddyMembershipRecord = await createMembership({
             member_id: newMemberId,
-            account_id: refreshedSavingsAccount.id,
-            category: 'savings',
-            type: 'deposit',
-            amount: kiddySavingsPaid,
-            reference: values.payment_reference?.trim() || refreshedSavingsAccount.account_no || null,
-            notes: [kiddyItem.label, values.payment_notes?.trim()].filter(Boolean).join(' — '),
+            membership_type: 'kiddy',
+            fee_required: total,
+            fee_paid_now: kiddyTotalPaid,
+            payment_notes: kiddyInitPaymentNotes,
             created_by: user.id,
-            transaction_date: paymentDate,
-            payment_mode: values.payment_mode,
-            payment_mode_note: paymentModeNote,
           });
-        }
 
-        if (kiddyTotalPaid > 0) {
-          await createInvoiceStrict(
-            {
-              invoice_no: values.invoice_no.trim(),
-              payment_type: 'membership',
+          if (kiddySavingsPaid > 0) {
+            if (!refreshedSavingsAccount) throw new Error('Savings account not found after member initialization.');
+            await createTransaction({
               member_id: newMemberId,
-              member_name: memberName || 'Member',
-              amount: kiddyTotalPaid,
-              purpose: `${kiddyItem.label}: ${formatCurrency(kiddySavingsPaid)}`,
-              ref_id: kiddyMembershipRecord?.id || null,
+              account_id: refreshedSavingsAccount.id,
+              category: 'savings',
+              type: 'deposit',
+              amount: kiddySavingsPaid,
+              reference: values.payment_reference?.trim() || refreshedSavingsAccount.account_no || null,
+              notes: [kiddyItem.label, values.payment_notes?.trim()].filter(Boolean).join(' — '),
               created_by: user.id,
-              date: paymentDate,
+              transaction_date: paymentDate,
               payment_mode: values.payment_mode,
               payment_mode_note: paymentModeNote,
-              notes: [`${kiddyItem.label}: ${formatCurrency(kiddySavingsPaid)}`, values.payment_notes?.trim() || null].filter(Boolean).join(' | '),
-            },
-            'Kiddy savings onboarding payment'
-          );
+            });
+          }
+
+          if (kiddyTotalPaid > 0) {
+            await createInvoiceStrict(
+              {
+                invoice_no: values.invoice_no.trim(),
+                payment_type: 'membership',
+                member_id: newMemberId,
+                member_name: memberName || 'Member',
+                amount: kiddyTotalPaid,
+                purpose: `${kiddyItem.label}: ${formatCurrency(kiddySavingsPaid)}`,
+                ref_id: kiddyMembershipRecord?.id || null,
+                created_by: user.id,
+                date: paymentDate,
+                payment_mode: values.payment_mode,
+                payment_mode_note: paymentModeNote,
+                notes: [`${kiddyItem.label}: ${formatCurrency(kiddySavingsPaid)}`, values.payment_notes?.trim() || null].filter(Boolean).join(' | '),
+              },
+              'Kiddy savings onboarding payment'
+            );
+          }
+
+          toast.success('Kiddy Savings member added successfully.');
+          trackActivity({ userId: user?.id, module: 'member', action: 'create', description: `Added new Kiddy Savings member: ${values.first_name} ${values.last_name}` });
+
+          if (inModal) { onCreated?.(newMemberId); onClose?.(); }
+          else navigate(`/members/${newMemberId}`);
+          return;
+        } catch (kiddyErr) {
+          // Roll back the partially-created member so a failed registration
+          // never leaves a half-saved record behind.
+          if (newMemberId) {
+            try {
+              await supabase.from('accounts').delete().eq('member_id', newMemberId);
+              await supabase.from('member_memberships').delete().eq('member_id', newMemberId);
+              await supabase.from('members').delete().eq('id', newMemberId);
+            } catch (rollbackErr) {
+              console.error('[MemberFormPage] rollback failed after Kiddy registration error:', rollbackErr);
+            }
+          }
+          throw kiddyErr;
         }
-
-        toast.success('Kiddy Savings member added successfully.');
-        trackActivity({ userId: user?.id, module: 'member', action: 'create', description: `Added new Kiddy Savings member: ${values.first_name} ${values.last_name}` });
-
-        if (inModal) { onCreated?.(newMemberId); onClose?.(); }
-        else navigate(`/members/${newMemberId}`);
-        return;
       }
 
       // ── NEW MEMBER FLOW (Associate & Regular) ──────────────────────

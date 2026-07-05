@@ -59,14 +59,20 @@ function assertMembershipType(type) {
 }
 
 export async function getMembershipByMemberId(memberId) {
+  // Historically a member could end up with zero membership rows (a failed
+  // registration step that still left the member record saved) or, in rare
+  // cases, more than one. `.maybeSingle()` throws a cryptic "Cannot coerce
+  // the result to a single JSON object" error in either of those cases, so
+  // we fetch defensively instead and just take the most recent row.
   const { data, error } = await supabase
     .from('member_memberships')
     .select('*')
     .eq('member_id', memberId)
-    .maybeSingle();
+    .order('created_at', { ascending: false })
+    .limit(1);
 
   if (error) throw error;
-  return data;
+  return (data && data[0]) || null;
 }
 
 export async function getMembershipPayments(memberMembershipId) {
@@ -187,9 +193,16 @@ export async function recordMembershipPayment(
     .from('member_memberships')
     .select('id, fee_required, fee_paid')
     .eq('id', memberMembershipId)
-    .single();
+    .maybeSingle();
 
   if (fetchError) throw fetchError;
+  if (!membership) {
+    throw new Error(
+      'This member does not have a membership record to apply a payment to. ' +
+      'This can happen if registration failed partway through — please verify ' +
+      'the member\'s membership was set up correctly before recording a payment.'
+    );
+  }
 
   const currentPaid = parseFloat(membership.fee_paid) || 0;
   const required = parseFloat(membership.fee_required) || 0;
@@ -214,9 +227,11 @@ export async function recordMembershipPayment(
     PAYMENT_COLUMNS
   );
 
-  const { error: paymentError } = await supabase
+  const { data: paymentRow, error: paymentError } = await supabase
     .from('membership_payments')
-    .insert(paymentPayload);
+    .insert(paymentPayload)
+    .select()
+    .maybeSingle();
 
   if (paymentError) throw paymentError;
 
@@ -225,11 +240,17 @@ export async function recordMembershipPayment(
     .update({ fee_paid: newFeePaid })
     .eq('id', memberMembershipId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (updateError) throw updateError;
+  if (!updated) {
+    throw new Error('Could not update the membership record after recording the payment.');
+  }
 
-  return updated;
+  // Expose the inserted payment row's id (non-breaking addition) so callers
+  // that need to compensate/roll back a failed multi-step operation can
+  // delete this specific payment record.
+  return { ...updated, _paymentId: paymentRow?.id || null };
 }
 
 export async function patchMembershipFeeRequired(memberMembershipId, newFeeRequired) {

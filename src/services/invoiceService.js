@@ -125,9 +125,12 @@ async function insertInvoiceRow(clean) {
     .from('invoices')
     .insert(clean)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) {
+    throw new Error('The invoice was not saved — no row was returned after insert.');
+  }
   return data;
 }
 
@@ -393,185 +396,257 @@ export async function createMultiCategoryInvoice({
   const memberName = [member.first_name, member.last_name].filter(Boolean).join(' ') || 'Member';
   const created = [];
 
-  for (const entry of entries) {
-    const amount = Number(entry.amount) || 0;
-    if (amount <= 0) continue;
+  // Every side effect performed below (transaction rows, account balance
+  // changes, membership fee updates, the kiddy_savings_type sync, etc.) is
+  // recorded here as a compensating action. If any later step in this same
+  // invoice save fails — including the final invoice insert — we run these
+  // in reverse to undo everything that already happened, so a failed
+  // invoice never leaves a deposit or payment "stuck" on the member's
+  // account with nothing to show for it.
+  const rollbacks = [];
 
-    let ref_id = entry.ref_id || null;
-    let account_id = null;
-    let purpose = entry.purpose;
-
-    if (entry.category === 'membership') {
-      if (!entry.membership) throw new Error('Membership record not found for this member.');
-      await recordMembershipPayment(
-        entry.membership.id, member.id, amount, effectivePaymentDate, notes, created_by
-      );
-      ref_id = entry.membership.id;
-      purpose = purpose || 'Membership Fee Payment';
-    }
-
-    if (entry.category === 'loan') {
-      if (!entry.loan) throw new Error('Loan record not found for this member.');
-      if (amount > (entry.loan.balance || 0)) {
-        throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
+  async function runRollbacks() {
+    for (const undo of rollbacks.reverse()) {
+      try {
+        await undo();
+      } catch (rollbackErr) {
+        console.error('[createMultiCategoryInvoice] rollback step failed:', rollbackErr);
       }
-      await createTransaction({
-        member_id: member.id,
-        loan_id: entry.loan.id,
-        category: 'loan',
-        type: 'loan_payment',
-        amount,
-        reference: siNo,
-        notes,
-        created_by,
-        transaction_date: effectivePaymentDate,
-        payment_mode,
-        payment_mode_note,
-      });
-      await applyLoanPaymentToSchedule(entry.loan.id, amount);
-      ref_id = entry.loan.id;
-      purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;
     }
-
-    if (entry.category === 'cbu' || entry.category === 'savings') {
-      if (!entry.account) throw new Error(`No ${entry.category.toUpperCase()} account found for this member.`);
-
-      // Kiddy & Youth Savings members carry a sub-type (Regular Savings
-      // Account vs Educational Savings Account) chosen on the invoice form.
-      // Label the deposit under that sub-type and keep the member's on-file
-      // savings type in sync if it was changed here.
-      const isKiddySavings = entry.category === 'savings' && member.membership_type === 'kiddy';
-      const kiddySavingsType = isKiddySavings ? (entry.kiddySavingsType || member.kiddy_savings_type || 'regular_savings') : null;
-      const kiddySavingsLabel = kiddySavingsType === 'educational_savings'
-        ? 'Educational Savings Account'
-        : 'Regular Savings Account';
-
-      await createTransaction({
-        member_id: member.id,
-        account_id: entry.account.id,
-        category: entry.category,
-        type: 'deposit',
-        amount,
-        reference: siNo,
-        notes: isKiddySavings ? [kiddySavingsLabel, notes].filter(Boolean).join(' — ') : notes,
-        created_by,
-        transaction_date: effectivePaymentDate,
-        payment_mode,
-        payment_mode_note,
-      });
-      // The transaction row alone doesn't move the needle on the account's
-      // own balance/total_deposits — those are the fields the CBU/Savings
-      // pages and the Member Dashboard tabs actually display, so they must
-      // be updated here too, or the deposit will look like it "disappeared"
-      // even though it was recorded.
-      await updateAccount(entry.account.id, {
-        balance: (entry.account.balance || 0) + amount,
-        total_deposits: (entry.account.total_deposits || 0) + amount,
-        updated_at: new Date().toISOString(),
-      });
-
-      if (isKiddySavings && kiddySavingsType && kiddySavingsType !== member.kiddy_savings_type) {
-        await updateMember(member.id, { kiddy_savings_type: kiddySavingsType });
-        member.kiddy_savings_type = kiddySavingsType;
-      }
-
-      account_id = entry.account.id;
-      ref_id = entry.account.id;
-      purpose = purpose || (isKiddySavings
-        ? `${kiddySavingsLabel} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`
-        : `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`);
-    }
-
-    if (entry.category === 'time_deposit') {
-      if (!entry.timeDeposit) throw new Error('Time Deposit record not found for this member.');
-      await recordTimeDepositPayment({
-        time_deposit_id: entry.timeDeposit.id,
-        amount,
-        payment_date: effectivePaymentDate,
-        si_number: siNo,
-        created_by,
-      });
-      // Time Deposit payments live in their own `time_deposit_payments`
-      // ledger (see timeDepositService.js) rather than an `amount` running
-      // balance, but the member's Transactions tab and dashboard read from
-      // the shared `transactions` table — so a transaction row is written
-      // here too, exactly like CBU/Savings, or the deposit wouldn't show up
-      // in the member's general transaction history.
-      await createTransaction({
-        member_id: member.id,
-        category: 'time_deposit',
-        type: 'deposit',
-        amount,
-        reference: siNo,
-        notes,
-        created_by,
-        transaction_date: effectivePaymentDate,
-        payment_mode,
-        payment_mode_note,
-      });
-      ref_id = entry.timeDeposit.id;
-      purpose = purpose || `Time Deposit Payment${entry.timeDeposit.name ? ` — ${entry.timeDeposit.name}` : ''}`;
-    }
-
-    if (entry.category === 'savings_booster') {
-      if (!entry.booster) throw new Error('Savings Booster enrollment not found for this member.');
-      const { data: updatedBooster, error: boosterErr } = await supabase
-        .from('savings_booster')
-        .update({
-          total_deposited: (entry.booster.total_deposited || 0) + amount,
-          weeks_deposited: (entry.booster.weeks_deposited || 0) + 1,
-          last_deposit_date: effectivePaymentDate,
-        })
-        .eq('id', entry.booster.id)
-        .select()
-        .single();
-      if (boosterErr) throw boosterErr;
-
-      await createTransaction({
-        member_id: member.id,
-        category: 'savings_booster',
-        type: 'deposit',
-        amount,
-        reference: siNo,
-        notes,
-        created_by,
-        transaction_date: effectivePaymentDate,
-        payment_mode,
-        payment_mode_note,
-      });
-      ref_id = updatedBooster?.id || entry.booster.id;
-      purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
-    }
-
-    // NOTE: intentionally bypasses createInvoiceForPayment's own duplicate
-    // check here — the SI# was already validated once above and is reused
-    // on purpose across every category in this same invoice. Re-checking per
-    // line item would find the row we just inserted for the first category
-    // and incorrectly reject the second one as a "duplicate".
-    const clean = buildPaymentInvoicePayload({
-      invoice_no: siNo,
-      payment_type: entry.category === 'loan' ? 'loan_payment' : entry.category,
-      member_id: member.id,
-      member_name: memberName,
-      amount,
-      purpose,
-      ref_id,
-      account_id,
-      notes,
-      created_by,
-      date,
-      payment_mode,
-      payment_mode_note,
-    });
-    clean.payment_date = effectivePaymentDate;
-
-    const invoiceRow = await insertInvoiceRow(clean);
-    created.push(invoiceRow);
   }
 
-  if (created.length === 0) {
-    throw new Error('Select at least one payment category with an amount greater than zero.');
-  }
+  try {
+    for (const entry of entries) {
+      const amount = Number(entry.amount) || 0;
+      if (amount <= 0) continue;
 
-  return created;
+      let ref_id = entry.ref_id || null;
+      let account_id = null;
+      let purpose = entry.purpose;
+
+      if (entry.category === 'membership') {
+        if (!entry.membership) throw new Error('Membership record not found for this member.');
+        const priorFeePaid = parseFloat(entry.membership.fee_paid) || 0;
+        const result = await recordMembershipPayment(
+          entry.membership.id, member.id, amount, effectivePaymentDate, notes, created_by
+        );
+        rollbacks.push(async () => {
+          if (result?._paymentId) {
+            await supabase.from('membership_payments').delete().eq('id', result._paymentId);
+          }
+          await supabase.from('member_memberships').update({ fee_paid: priorFeePaid }).eq('id', entry.membership.id);
+        });
+        ref_id = entry.membership.id;
+        purpose = purpose || 'Membership Fee Payment';
+      }
+
+      if (entry.category === 'loan') {
+        if (!entry.loan) throw new Error('Loan record not found for this member.');
+        if (amount > (entry.loan.balance || 0)) {
+          throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
+        }
+        const loanTx = await createTransaction({
+          member_id: member.id,
+          loan_id: entry.loan.id,
+          category: 'loan',
+          type: 'loan_payment',
+          amount,
+          reference: siNo,
+          notes,
+          created_by,
+          transaction_date: effectivePaymentDate,
+          payment_mode,
+          payment_mode_note,
+        });
+        rollbacks.push(async () => {
+          await supabase.from('transactions').delete().eq('id', loanTx.id);
+        });
+        await applyLoanPaymentToSchedule(entry.loan.id, amount);
+        ref_id = entry.loan.id;
+        purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;
+      }
+
+      if (entry.category === 'cbu' || entry.category === 'savings') {
+        if (!entry.account) throw new Error(`No ${entry.category.toUpperCase()} account found for this member.`);
+
+        // Kiddy & Youth Savings members carry a sub-type (Regular Savings
+        // Account vs Educational Savings Account) chosen on the invoice form.
+        // Label the deposit under that sub-type and keep the member's on-file
+        // savings type in sync if it was changed here.
+        const isKiddySavings = entry.category === 'savings' && member.membership_type === 'kiddy';
+        const kiddySavingsType = isKiddySavings ? (entry.kiddySavingsType || member.kiddy_savings_type || 'regular_savings') : null;
+        const kiddySavingsLabel = kiddySavingsType === 'educational_savings'
+          ? 'Educational Savings Account'
+          : 'Regular Savings Account';
+
+        const depositTx = await createTransaction({
+          member_id: member.id,
+          account_id: entry.account.id,
+          category: entry.category,
+          type: 'deposit',
+          amount,
+          reference: siNo,
+          notes: isKiddySavings ? [kiddySavingsLabel, notes].filter(Boolean).join(' — ') : notes,
+          created_by,
+          transaction_date: effectivePaymentDate,
+          payment_mode,
+          payment_mode_note,
+        });
+        rollbacks.push(async () => {
+          await supabase.from('transactions').delete().eq('id', depositTx.id);
+        });
+
+        // The transaction row alone doesn't move the needle on the account's
+        // own balance/total_deposits — those are the fields the CBU/Savings
+        // pages and the Member Dashboard tabs actually display, so they must
+        // be updated here too, or the deposit will look like it "disappeared"
+        // even though it was recorded.
+        const priorBalance = entry.account.balance || 0;
+        const priorTotalDeposits = entry.account.total_deposits || 0;
+        await updateAccount(entry.account.id, {
+          balance: priorBalance + amount,
+          total_deposits: priorTotalDeposits + amount,
+          updated_at: new Date().toISOString(),
+        });
+        rollbacks.push(async () => {
+          await supabase.from('accounts').update({
+            balance: priorBalance,
+            total_deposits: priorTotalDeposits,
+          }).eq('id', entry.account.id);
+        });
+
+        if (isKiddySavings && kiddySavingsType && kiddySavingsType !== member.kiddy_savings_type) {
+          const priorSavingsType = member.kiddy_savings_type;
+          await updateMember(member.id, { kiddy_savings_type: kiddySavingsType });
+          member.kiddy_savings_type = kiddySavingsType;
+          rollbacks.push(async () => {
+            await supabase.from('members').update({ kiddy_savings_type: priorSavingsType }).eq('id', member.id);
+          });
+        }
+
+        account_id = entry.account.id;
+        ref_id = entry.account.id;
+        purpose = purpose || (isKiddySavings
+          ? `${kiddySavingsLabel} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`
+          : `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`);
+      }
+
+      if (entry.category === 'time_deposit') {
+        if (!entry.timeDeposit) throw new Error('Time Deposit record not found for this member.');
+        await recordTimeDepositPayment({
+          time_deposit_id: entry.timeDeposit.id,
+          amount,
+          payment_date: effectivePaymentDate,
+          si_number: siNo,
+          created_by,
+        });
+        // Time Deposit payments live in their own `time_deposit_payments`
+        // ledger (see timeDepositService.js) rather than an `amount` running
+        // balance, but the member's Transactions tab and dashboard read from
+        // the shared `transactions` table — so a transaction row is written
+        // here too, exactly like CBU/Savings, or the deposit wouldn't show up
+        // in the member's general transaction history.
+        const tdTx = await createTransaction({
+          member_id: member.id,
+          category: 'time_deposit',
+          type: 'deposit',
+          amount,
+          reference: siNo,
+          notes,
+          created_by,
+          transaction_date: effectivePaymentDate,
+          payment_mode,
+          payment_mode_note,
+        });
+        rollbacks.push(async () => {
+          await supabase.from('transactions').delete().eq('id', tdTx.id);
+        });
+        ref_id = entry.timeDeposit.id;
+        purpose = purpose || `Time Deposit Payment${entry.timeDeposit.name ? ` — ${entry.timeDeposit.name}` : ''}`;
+      }
+
+      if (entry.category === 'savings_booster') {
+        if (!entry.booster) throw new Error('Savings Booster enrollment not found for this member.');
+        const priorTotalDeposited = entry.booster.total_deposited || 0;
+        const priorWeeksDeposited = entry.booster.weeks_deposited || 0;
+        const priorLastDepositDate = entry.booster.last_deposit_date || null;
+        const { data: updatedBooster, error: boosterErr } = await supabase
+          .from('savings_booster')
+          .update({
+            total_deposited: priorTotalDeposited + amount,
+            weeks_deposited: priorWeeksDeposited + 1,
+            last_deposit_date: effectivePaymentDate,
+          })
+          .eq('id', entry.booster.id)
+          .select()
+          .maybeSingle();
+        if (boosterErr) throw boosterErr;
+        if (!updatedBooster) {
+          throw new Error('Could not update this Savings Booster enrollment.');
+        }
+        rollbacks.push(async () => {
+          await supabase.from('savings_booster').update({
+            total_deposited: priorTotalDeposited,
+            weeks_deposited: priorWeeksDeposited,
+            last_deposit_date: priorLastDepositDate,
+          }).eq('id', entry.booster.id);
+        });
+
+        const boosterTx = await createTransaction({
+          member_id: member.id,
+          category: 'savings_booster',
+          type: 'deposit',
+          amount,
+          reference: siNo,
+          notes,
+          created_by,
+          transaction_date: effectivePaymentDate,
+          payment_mode,
+          payment_mode_note,
+        });
+        rollbacks.push(async () => {
+          await supabase.from('transactions').delete().eq('id', boosterTx.id);
+        });
+        ref_id = updatedBooster?.id || entry.booster.id;
+        purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
+      }
+
+      // NOTE: intentionally bypasses createInvoiceForPayment's own duplicate
+      // check here — the SI# was already validated once above and is reused
+      // on purpose across every category in this same invoice. Re-checking per
+      // line item would find the row we just inserted for the first category
+      // and incorrectly reject the second one as a "duplicate".
+      const clean = buildPaymentInvoicePayload({
+        invoice_no: siNo,
+        payment_type: entry.category === 'loan' ? 'loan_payment' : entry.category,
+        member_id: member.id,
+        member_name: memberName,
+        amount,
+        purpose,
+        ref_id,
+        account_id,
+        notes,
+        created_by,
+        date,
+        payment_mode,
+        payment_mode_note,
+      });
+      clean.payment_date = effectivePaymentDate;
+
+      const invoiceRow = await insertInvoiceRow(clean);
+      rollbacks.push(async () => {
+        await supabase.from('invoices').delete().eq('id', invoiceRow.id);
+      });
+      created.push(invoiceRow);
+    }
+
+    if (created.length === 0) {
+      throw new Error('Select at least one payment category with an amount greater than zero.');
+    }
+
+    return created;
+  } catch (err) {
+    await runRollbacks();
+    throw err;
+  }
 }

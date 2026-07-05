@@ -24,6 +24,18 @@ const MEMBER_COLUMNS = [
   'beneficiary_address',
   'beneficiary_tel',
   'record_type',
+  // Kiddy & Youth Savings fields — omitting these silently drops them from
+  // any update payload (e.g. syncing kiddy_savings_type from an invoice
+  // payment), which can leave an update with zero columns to set.
+  'place_of_birth',
+  'school',
+  'grade_year_level',
+  'guardian_name',
+  'guardian_relationship',
+  'guardian_address',
+  'guardian_valid_id',
+  'guardian_id_number',
+  'kiddy_savings_type',
 ];
 
 // For CREATE: strip empty strings and undefined (don't send blank fields on insert)
@@ -83,14 +95,25 @@ export async function createMember(payload) {
 export async function updateMember(id, payload) {
   const clean = sanitizeUpdatePayload(payload);
 
+  // An update with zero columns is a no-op — sending it anyway is what
+  // produced the "Cannot coerce the result to a single JSON object" error
+  // (a 0-column PATCH can come back with no representable row). Just
+  // return the current record instead of making a pointless request.
+  if (Object.keys(clean).length === 0) {
+    return getMemberById(id);
+  }
+
   const { data, error } = await supabase
     .from('members')
     .update(clean)
     .eq('id', id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data) {
+    throw new Error('Could not update this member — the record may no longer exist.');
+  }
   return data;
 }
 

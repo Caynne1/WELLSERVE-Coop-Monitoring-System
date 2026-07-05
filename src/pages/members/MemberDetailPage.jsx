@@ -463,14 +463,23 @@ export default function MemberDetailPage() {
               </div>
 
               <div className="mt-3 space-y-1 text-xs text-gray-500">
-                <p>
-                  Referred By:{' '}
-                  <span className="font-medium text-gray-800">{member.recruiter_name || 'Self'}</span>
-                </p>
-                <p>
-                  CBU Account No.:{' '}
-                  <span className="font-mono text-gray-800">{cbuAccount?.account_no || '—'}</span>
-                </p>
+                {member.membership_type === 'kiddy' ? (
+                  <p>
+                    Guardian Name:{' '}
+                    <span className="font-medium text-gray-800">{member.guardian_name || '—'}</span>
+                  </p>
+                ) : (
+                  <p>
+                    Referred By:{' '}
+                    <span className="font-medium text-gray-800">{member.recruiter_name || 'Self'}</span>
+                  </p>
+                )}
+                {member.membership_type !== 'kiddy' && (
+                  <p>
+                    CBU Account No.:{' '}
+                    <span className="font-mono text-gray-800">{cbuAccount?.account_no || '—'}</span>
+                  </p>
+                )}
                 <p>
                   Savings Account No.:{' '}
                   <span className="font-mono text-gray-800">{savingsAccount?.account_no || '—'}</span>
@@ -504,19 +513,23 @@ export default function MemberDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-gray-100">
-          <QuickStat
-            label="Loan Balance"
-            value={formatCurrency(activeLoans.reduce((sum, loan) => sum + (loan.balance || 0), 0))}
-            icon={<CreditCard size={16} className="text-orange-600" />}
-            color="text-orange-700"
-          />
-          <QuickStat
-            label="CBU Total"
-            value={formatCurrency(cbuAccount?.balance ?? 0)}
-            icon={<PiggyBank size={16} className="text-green-600" />}
-            color="text-green-700"
-          />
+        <div className={`grid grid-cols-2 ${member.membership_type === 'kiddy' ? 'sm:grid-cols-2' : 'sm:grid-cols-4'} gap-4 mt-6 pt-5 border-t border-gray-100`}>
+          {member.membership_type !== 'kiddy' && (
+            <QuickStat
+              label="Loan Balance"
+              value={formatCurrency(activeLoans.reduce((sum, loan) => sum + (loan.balance || 0), 0))}
+              icon={<CreditCard size={16} className="text-orange-600" />}
+              color="text-orange-700"
+            />
+          )}
+          {member.membership_type !== 'kiddy' && (
+            <QuickStat
+              label="CBU Total"
+              value={formatCurrency(cbuAccount?.balance ?? 0)}
+              icon={<PiggyBank size={16} className="text-green-600" />}
+              color="text-green-700"
+            />
+          )}
           <QuickStat
             label="Savings Total"
             value={formatCurrency(savingsAccount?.balance ?? 0)}
@@ -2888,8 +2901,14 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
           <InfoRow icon={User} label="Sex" value={member.sex} />
           <InfoRow icon={User} label="Occupation" value={member.occupation} />
           <InfoRow icon={Shield} label="Membership Type" value={displayMembershipType ? displayMembershipType.charAt(0).toUpperCase() + displayMembershipType.slice(1) : '—'} />
-          <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
-          <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
+          {member.membership_type === 'kiddy' ? (
+            <InfoRow icon={User} label="Guardian Name" value={member.guardian_name || '—'} />
+          ) : (
+            <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
+          )}
+          {member.membership_type !== 'kiddy' && (
+            <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
+          )}
           <InfoRow icon={Wallet} label="Savings Account No." value={savingsAccount?.account_no || '—'} />
           <InfoRow icon={User} label="Status" value={member.status === 'closed' ? 'Closed Account' : (member.status || 'active')} />
           {member.notes && <InfoRow icon={User} label="Notes" value={member.notes} />}

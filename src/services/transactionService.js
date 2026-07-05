@@ -87,7 +87,7 @@ export async function createTransaction(payload) {
     .from('transactions')
     .insert(finalPayload)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('[createTransaction] FAILED');
@@ -97,6 +97,9 @@ export async function createTransaction(payload) {
     console.error('  hint    :', error.hint);
     console.error('  payload :', JSON.stringify(finalPayload, null, 2));
     throw error;
+  }
+  if (!data) {
+    throw new Error('The transaction was not recorded — no row was returned after insert.');
   }
 
   console.log('[createTransaction] success → id:', data.id);
