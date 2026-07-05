@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const fetchAndValidateProfile = useCallback(async (authUser) => {
     if (!authUser) {
@@ -121,7 +122,12 @@ export function AuthProvider({ children }) {
   }, [fetchAndValidateProfile]);
 
   const signOut = async () => {
+    setLoggingOut(true);
+    // Let the logout animation play briefly before the auth state actually
+    // flips and the router kicks the user back to /login.
+    await new Promise(resolve => setTimeout(resolve, 1100));
     await supabase.auth.signOut();
+    setLoggingOut(false);
   };
 
   const isAdmin = profile?.role === 'admin';
@@ -142,6 +148,7 @@ export function AuthProvider({ children }) {
         profile,
         isAdmin,
         loading,
+        loggingOut,
         signOut,
         hasPermission,
       }}

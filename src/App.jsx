@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import AppLayout from './components/layout/AppLayout';
+import LogoutOverlay from './components/shared/LogoutOverlay';
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 
@@ -97,12 +98,18 @@ function PermissionRoute({ children, module }) {
   return children;
 }
 
+function LogoutGate() {
+  const { loggingOut } = useAuth();
+  return loggingOut ? <LogoutOverlay /> : null;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
           <NotificationProvider>
+          <LogoutGate />
           <Routes>
             {/* Public */}
             <Route

@@ -65,7 +65,7 @@ export default function SplashScreen({ onDone, exiting }) {
         /* ── Background ── */
         .sp-bg {
           position: absolute; inset: 0;
-          background: radial-gradient(ellipse at 40% 40%, #05874a 0%, #036636 40%, #022c1a 100%);
+          background: radial-gradient(ellipse at 40% 40%, #000099 0%, #000066 40%, #00002e 100%);
         }
 
         /* ── Floating orbs ── */
@@ -77,19 +77,19 @@ export default function SplashScreen({ onDone, exiting }) {
         }
         .sp-orb-1 {
           width: 420px; height: 420px;
-          background: rgba(16, 185, 97, 0.18);
+          background: rgba(59, 91, 219, 0.20);
           top: -100px; left: -120px;
           animation: orbDrift1 8s ease-in-out infinite;
         }
         .sp-orb-2 {
           width: 320px; height: 320px;
-          background: rgba(52, 211, 153, 0.14);
+          background: rgba(99, 132, 255, 0.16);
           bottom: -80px; right: -80px;
           animation: orbDrift2 10s ease-in-out infinite;
         }
         .sp-orb-3 {
           width: 200px; height: 200px;
-          background: rgba(7, 160, 78, 0.22);
+          background: rgba(0, 0, 153, 0.28);
           top: 30%; left: 60%;
           animation: orbDrift3 7s ease-in-out infinite;
         }
@@ -114,7 +114,7 @@ export default function SplashScreen({ onDone, exiting }) {
         .sp-ring {
           position: absolute;
           border-radius: 50%;
-          border: 1.5px solid rgba(52, 211, 153, 0.35);
+          border: 1.5px solid rgba(99, 132, 255, 0.4);
           animation: ringPulse 2.4s ease-out infinite;
           opacity: 0;
         }
@@ -186,7 +186,7 @@ export default function SplashScreen({ onDone, exiting }) {
         }
         .sp-bar {
           height: 100%;
-          background: linear-gradient(90deg, #34d399, #07A04E);
+          background: linear-gradient(90deg, #6384ff, #000099);
           border-radius: 999px;
           width: 0%;
           animation: barFill 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) 1.5s forwards;
