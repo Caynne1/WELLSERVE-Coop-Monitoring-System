@@ -459,13 +459,6 @@ export default function SavingsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
                         <button
-                          onClick={() => openDepositModal(account)}
-                          title="Post Savings Deposit"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                        >
-                          <Plus size={15} />
-                        </button>
-                        <button
                           onClick={() => openWithdrawModal(account)}
                           title="Post Savings Withdrawal"
                           className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"

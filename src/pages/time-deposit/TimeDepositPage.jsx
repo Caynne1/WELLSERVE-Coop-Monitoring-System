@@ -1018,13 +1018,6 @@ export default function TimeDepositPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-1">
                               <ActionBtn
-                                icon={<CreditCard size={13} />}
-                                title="Record Payment"
-                                color="indigo"
-                                onClick={() => openPay(record)}
-                                disabled={!isActive}
-                              />
-                              <ActionBtn
                                 icon={<TrendingDown size={13} />}
                                 title="Withdraw"
                                 color="red"

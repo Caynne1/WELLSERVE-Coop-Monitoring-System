@@ -726,17 +726,6 @@ export default function LoansPage() {
 
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
-                            {(loan.status === 'active' || loan.status === 'ongoing') && (
-                              <button
-                                onClick={() => setPayModal({ open: true, loan })}
-                                title="Pay loan"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-green-700 bg-green-50 hover:bg-green-100 transition-colors text-xs font-medium"
-                              >
-                                <PesoSign size={13} />
-                                Pay
-                              </button>
-                            )}
-
                             <button
                               onClick={() => navigate(`/loans/${loan.id}`)}
                               title="View loan"

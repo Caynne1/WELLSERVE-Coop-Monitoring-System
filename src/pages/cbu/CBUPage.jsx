@@ -459,13 +459,6 @@ export default function CBUPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
                         <button
-                          onClick={() => openDepositModal(account)}
-                          title="Post CBU Deposit"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
-                        >
-                          <Plus size={15} />
-                        </button>
-                        <button
                           onClick={() => openWithdrawModal(account)}
                           title="Post CBU Withdrawal"
                           className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"

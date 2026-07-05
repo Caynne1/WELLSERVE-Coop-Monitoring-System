@@ -19,6 +19,8 @@ import {
   updateInvoice,
   markInvoicePaid,
   voidInvoice,
+  getMemberPaymentSummary,
+  createMultiCategoryInvoice,
 } from '../../services/invoiceService';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -113,6 +115,8 @@ export default function InvoicesPage() {
 
   const [voidTarget, setVoidTarget] = useState(null);
   const [voiding, setVoiding] = useState(false);
+
+  const [multiOpen, setMultiOpen] = useState(false);
 
   const fetchInvoices = useCallback(async () => {
     try {
@@ -438,7 +442,7 @@ export default function InvoicesPage() {
             <Button variant="outline" icon={<Download size={15} />} onClick={handleExportCSV}>
               Export
             </Button>
-            <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
+            <Button variant="primary" icon={<Plus size={15} />} onClick={() => setMultiOpen(true)}>
               New Invoice
             </Button>
           </div>
@@ -928,6 +932,16 @@ export default function InvoicesPage() {
         )}
       </Modal>
 
+      <AddInvoiceModal
+        open={multiOpen}
+        onClose={() => setMultiOpen(false)}
+        userId={user?.id}
+        onSuccess={() => {
+          setMultiOpen(false);
+          fetchInvoices();
+        }}
+      />
+
       <Modal
         open={!!voidTarget}
         onClose={() => setVoidTarget(null)}
@@ -986,6 +1000,308 @@ function SummaryCard({ icon, label, value, bg }) {
         <p className="text-lg font-bold text-gray-900">{value}</p>
       </div>
     </div>
+  );
+}
+
+// ── Add Invoice: centralized, multi-category member payment ──────────────────
+
+const CATEGORY_ORDER = ['membership', 'loan', 'cbu', 'savings', 'time_deposit', 'savings_booster'];
+const CATEGORY_LABEL = {
+  membership: 'Membership',
+  loan: 'Loan',
+  cbu: 'CBU',
+  savings: 'Savings',
+  time_deposit: 'Time Deposit',
+  savings_booster: 'Savings Booster',
+};
+
+function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
+  const [step, setStep] = useState(1); // 1 = pick member, 2 = choose payments
+  const [member, setMember] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+
+  const [amounts, setAmounts] = useState({}); // { category: amountString }
+  const [selectedLoanId, setSelectedLoanId] = useState('');
+  const [selectedTdId, setSelectedTdId] = useState('');
+
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [invoiceNo, setInvoiceNo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setStep(1);
+    setMember(null);
+    setSummary(null);
+    setAmounts({});
+    setSelectedLoanId('');
+    setSelectedTdId('');
+    setDate(new Date().toISOString().split('T')[0]);
+    setInvoiceNo('');
+    setPaymentMode('');
+    setPaymentReference('');
+    setNotes('');
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  async function handlePickMember(m) {
+    setMember(m);
+    setLoadingSummary(true);
+    try {
+      const data = await getMemberPaymentSummary(m.id);
+      setSummary(data);
+      setSelectedLoanId(data.loan.records?.[0]?.id || '');
+      setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
+      setStep(2);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load member balances.');
+    } finally {
+      setLoadingSummary(false);
+    }
+  }
+
+  function setAmount(category, value) {
+    setAmounts(a => ({ ...a, [category]: value }));
+  }
+
+  const totalAmount = useMemo(() => {
+    return CATEGORY_ORDER.reduce((s, c) => s + (parseFloat(amounts[c]) || 0), 0);
+  }, [amounts]);
+
+  const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
+
+  async function handleSave() {
+    if (!invoiceNo.trim()) return toast.error('Invoice Number (SI#) is required.');
+    if (!date) return toast.error('Invoice date is required.');
+    if (!paymentMode) return toast.error('Mode of payment is required.');
+    if (referenceRequired && !paymentReference.trim()) {
+      return toast.error('Reference / Account / Check No. is required for the selected payment mode.');
+    }
+    if (totalAmount <= 0) return toast.error('Enter at least one payment amount greater than zero.');
+
+    const selectedLoan = summary.loan.records?.find(l => l.id === selectedLoanId) || null;
+    const selectedTd = summary.time_deposit.records?.find(td => td.id === selectedTdId) || null;
+
+    const entries = [];
+    if (parseFloat(amounts.membership) > 0) {
+      entries.push({ category: 'membership', amount: parseFloat(amounts.membership), membership: summary.membership.record });
+    }
+    if (parseFloat(amounts.loan) > 0) {
+      entries.push({ category: 'loan', amount: parseFloat(amounts.loan), loan: selectedLoan });
+    }
+    if (parseFloat(amounts.cbu) > 0) {
+      entries.push({ category: 'cbu', amount: parseFloat(amounts.cbu), account: summary.cbu.record });
+    }
+    if (parseFloat(amounts.savings) > 0) {
+      entries.push({ category: 'savings', amount: parseFloat(amounts.savings), account: summary.savings.record });
+    }
+    if (parseFloat(amounts.time_deposit) > 0) {
+      entries.push({ category: 'time_deposit', amount: parseFloat(amounts.time_deposit), timeDeposit: selectedTd });
+    }
+
+    const paymentModeNote = [paymentReference.trim(), notes.trim()].filter(Boolean).join(' | ') || null;
+
+    setSaving(true);
+    try {
+      await createMultiCategoryInvoice({
+        invoice_no: invoiceNo.trim(),
+        member,
+        date,
+        entries,
+        payment_mode: paymentMode,
+        payment_mode_note: paymentModeNote,
+        notes: notes.trim() || null,
+        created_by: userId ?? null,
+      });
+      toast.success(`Invoice ${invoiceNo.trim()} saved with ${entries.length} payment categor${entries.length > 1 ? 'ies' : 'y'}.`);
+      reset();
+      onSuccess();
+    } catch (err) {
+      toast.error(err.message || 'Failed to save invoice.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const fieldClass =
+    'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]';
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Add Invoice" size="lg">
+      {step === 1 && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">Select the member to invoice.</p>
+          <MemberSearchInput onChange={handlePickMember} placeholder="Search member by name or member no..." />
+          {loadingSummary && (
+            <div className="flex items-center gap-2 text-sm text-gray-400 pt-2">
+              <Spinner size={14} /> Loading balances…
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 2 && summary && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-100">
+            <div>
+              <p className="font-medium text-gray-900 text-sm">
+                {member.first_name} {member.last_name}
+              </p>
+              <p className="text-xs font-mono text-gray-400">{member.member_no}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { setStep(1); setMember(null); setSummary(null); }}>
+              Change Member
+            </Button>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <th className="text-left px-4 py-2">Category</th>
+                  <th className="text-left px-4 py-2">Status</th>
+                  <th className="text-right px-4 py-2 w-40">Payment Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {CATEGORY_ORDER.map(cat => {
+                  const info = summary[cat];
+                  const statusText = info.hasBalance
+                    ? `Balance: ${formatCurrency(info.balance)}`
+                    : 'No Balance';
+
+                  return (
+                    <tr key={cat}>
+                      <td className="px-4 py-3 font-medium text-gray-800">{CATEGORY_LABEL[cat]}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-medium ${info.hasBalance ? 'text-amber-700' : 'text-gray-400'}`}>
+                          {statusText}
+                        </span>
+                        {cat === 'loan' && summary.loan.records?.length > 1 && (
+                          <select
+                            className="ml-2 text-xs border border-gray-200 rounded px-1 py-0.5"
+                            value={selectedLoanId}
+                            onChange={e => setSelectedLoanId(e.target.value)}
+                          >
+                            {summary.loan.records.map(l => (
+                              <option key={l.id} value={l.id}>
+                                {l.loan_no || l.id.slice(0, 8)} · {formatCurrency(l.balance)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {cat === 'time_deposit' && summary.time_deposit.records?.length > 1 && (
+                          <select
+                            className="ml-2 text-xs border border-gray-200 rounded px-1 py-0.5"
+                            value={selectedTdId}
+                            onChange={e => setSelectedTdId(e.target.value)}
+                          >
+                            {summary.time_deposit.records.map(td => (
+                              <option key={td.id} value={td.id}>
+                                {td.name} · {formatCurrency(td.amount)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {info.payable ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={amounts[cat] || ''}
+                            onChange={e => setAmount(cat, e.target.value)}
+                            className="w-32 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            Categories with no balance are still shown. Deposit-based categories (CBU, Savings,
+            Time Deposit) accept a new deposit amount even without a balance due.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className={fieldClass} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number (SI#)</label>
+              <input
+                type="text"
+                value={invoiceNo}
+                onChange={e => setInvoiceNo(e.target.value)}
+                placeholder="e.g. SI-000123"
+                className={`${fieldClass} font-mono`}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>
+              <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className={fieldClass}>
+                <option value="">Select mode…</option>
+                <option value="Cash">Cash</option>
+                <option value="GCash">GCash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Check">Check</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reference / Account / Check No. {referenceRequired && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="text"
+                value={paymentReference}
+                onChange={e => setPaymentReference(e.target.value)}
+                className={fieldClass}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              className={fieldClass}
+            />
+          </div>
+
+          <div className="flex items-center justify-between bg-[#D6FADC]/40 rounded-lg px-4 py-3">
+            <span className="text-sm font-medium text-gray-700">Total Amount</span>
+            <span className="text-lg font-bold text-gray-900">{formatCurrency(totalAmount)}</span>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={handleClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={saving} onClick={handleSave} icon={!saving && <Plus size={15} />}>
+              Save Invoice
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 

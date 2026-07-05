@@ -1926,11 +1926,6 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!isFullyPaid && (
-            <Button variant="finance" icon={<Plus size={14} />} size="sm" onClick={openPayModal}>
-              Record Payment
-            </Button>
-          )}
           {membership.membership_type === 'associate' && (
             <Button variant="blue" icon={<Shield size={14} />} size="sm" onClick={() => { setUpgradeNotes(''); setUpgradeOpen(true); }}>
               Upgrade to Regular
@@ -2436,11 +2431,6 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                   <Badge variant={isActive ? 'success' : 'default'} dot>
                     {td.status || 'Active'}
                   </Badge>
-                  {isActive && (
-                    <Button variant="finance" size="sm" icon={<Plus size={12} />} onClick={() => openPay(td)}>
-                      Deposit
-                    </Button>
-                  )}
                   <Button variant="danger" size="sm" icon={<TrendingDown size={12} />} onClick={() => setWithdrawOpen(true)}>
                     Withdraw
                   </Button>
@@ -2929,19 +2919,6 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
           <span className={`text-xs px-2 py-1 rounded-full border font-medium ${statusColors[loan.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
             {loan.status || 'pending'}
           </span>
-          {loan.status === 'active' && (
-            <Button
-              size="sm"
-              variant="finance"
-              onClick={e => {
-                e.stopPropagation();
-                onPay(loan);
-              }}
-              icon={<PesoSign size={13} />}
-            >
-              Pay
-            </Button>
-          )}
         </div>
       </div>
 
@@ -3035,9 +3012,6 @@ function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={onDeposit} variant="finance" icon={<Plus size={14} />} size="sm">
-            Deposit CBU
-          </Button>
           <Button onClick={onWithdraw} variant="danger" icon={<TrendingDown size={14} />} size="sm">
             Withdraw
           </Button>
@@ -3078,9 +3052,6 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={onDeposit} variant="finance" icon={<Plus size={14} />} size="sm">
-            Deposit Savings
-          </Button>
           <Button onClick={onWithdraw} variant="danger" icon={<TrendingDown size={14} />} size="sm">
             Withdraw
           </Button>
