@@ -36,7 +36,7 @@ const navGroups = [
     ],
   },
   {
-    label: 'Products',
+    label: 'PRODUCTS & SERVICES',
     items: [
       { to: '/loans',              icon: CreditCard,      label: 'Loans',              permKey: 'loans' },
       { to: '/cbu',                icon: PiggyBank,       label: 'CBU',                permKey: 'cbu' },
@@ -46,29 +46,28 @@ const navGroups = [
     ],
   },
   {
-    label: 'Operations',
+    label: 'FINANCIAL MANAGEMENT',
     items: [
-      { to: '/transactions',       icon: ArrowLeftRight,  label: 'Transactions',       permKey: 'transactions' },
-      { to: '/checkbook',          icon: BookOpen,        label: 'Checkbook',          permKey: 'checkbook' },
       { to: '/invoices',           icon: Receipt,         label: 'Invoices',           permKey: 'invoices' },
-      { to: '/vouchers',           icon: FileText,        label: 'Vouchers',           permKey: 'vouchers' },
+      { to: '/transactions',       icon: ArrowLeftRight,  label: 'Transactions',       permKey: 'transactions' },
       { to: '/expenses',           icon: TrendingUp,      label: 'Expenses',           permKey: 'expenses' },
+      { to: '/vouchers',           icon: FileText,        label: 'Vouchers',           permKey: 'vouchers' },
+      { to: '/checkbook',          icon: BookOpen,        label: 'Checkbook',          permKey: 'checkbook' },    ],
+  },
+  {
+    label: 'REPORTS & MONITORING',
+    items: [
+      { to: '/reports',            icon: BarChart2,       label: 'Reports',            permKey: 'reports' },
+      { to: '/logs',               icon: ActivitySquare,  label: 'Activity Logs',      permKey: 'logs' },
       { to: '/coop-monitoring',    icon: LayoutDashboard, label: 'Account Monitoring', permKey: 'account_monitoring' },
     ],
   },
   {
-    label: 'Analytics',
+    label: 'SYSTEM ADMINISTRATION',
     items: [
-      { to: '/reports',            icon: BarChart2,       label: 'Reports',            permKey: 'reports' },
-      { to: '/logs',               icon: ActivitySquare,  label: 'Activity Logs',      permKey: 'logs' },
-    ],
-  },
-  {
-    label: 'Admin',
-    items: [
-      { to: '/settings',           icon: Settings,        label: 'Settings',           permKey: 'settings' },
       { to: '/account-management', icon: ShieldCheck,     label: 'Accounts',           adminOnly: true },
       { to: '/user-management',    icon: UserCog,         label: 'User Management',    adminOnly: true },
+      { to: '/settings',           icon: Settings,        label: 'Settings',           permKey: 'settings' },
     ],
   },
 ];
