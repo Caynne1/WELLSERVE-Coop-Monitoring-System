@@ -3,7 +3,6 @@ import {
   Users,
   CreditCard,
   TrendingUp,
-  TrendingDown,
   ArrowUpRight,
   ArrowDownLeft,
   AlertTriangle,
@@ -546,38 +545,65 @@ function DonutChart({ data, size = 110, onSegmentClick }) {
 // Summary Card
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = 'rgba(5,150,105,0.08)', onClick, trend }) {
+// A few fixed "wavy uptrend" sparkline shapes so every card gets a subtle,
+// stable (non-random / non-flickering) decorative line chart under its
+// value, purely cosmetic — no data wiring, matches the reference design.
+const SPARKLINE_PATHS = [
+  'M0,24 C6,23 10,20 14,21 C20,22 24,18 30,17 C36,16 40,19 46,17 C52,15 56,10 62,11 C68,12 72,8 78,7 C84,6 90,4 100,2',
+  'M0,22 C6,24 10,19 16,20 C22,21 26,15 32,16 C38,17 42,13 48,14 C54,15 58,9 64,10 C70,11 76,6 82,7 C88,8 94,4 100,3',
+  'M0,20 C6,21 10,23 16,22 C22,21 26,17 32,18 C38,19 42,14 48,15 C54,16 58,11 64,12 C70,13 76,9 82,8 C88,7 94,5 100,4',
+  'M0,25 C6,22 10,23 16,19 C22,15 26,18 32,15 C38,12 42,16 48,13 C54,10 58,13 64,10 C70,7 76,10 82,7 C88,4 94,6 100,3',
+];
+
+function SummaryCardSparkline({ color, seed = 0 }) {
+  const path = SPARKLINE_PATHS[seed % SPARKLINE_PATHS.length];
+  const gradientId = `spark-gradient-${seed}`;
+  return (
+    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-full h-9 mt-2">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${path} L100,30 L0,30 Z`} fill={`url(#${gradientId})`} stroke="none" />
+      <path d={path} fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = 'rgba(5,150,105,0.08)', onClick, trend, sparkSeed = 0, delay = 0 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="app-card app-card-hover w-full text-left p-4 flex flex-col gap-3 group"
+      className="app-card app-card-hover dash-fade-in w-full text-left p-5 flex flex-col group"
+      style={{ animationDelay: `${delay}s` }}
     >
       <div className="flex items-start justify-between">
+        <p className="text-sm font-medium text-gray-500">{label}</p>
         <div
-          className="flex h-10 w-10 items-center justify-center rounded-xl flex-shrink-0 transition-transform duration-150 group-hover:scale-110"
+          className="flex h-9 w-9 items-center justify-center rounded-2xl flex-shrink-0 transition-transform duration-150 group-hover:scale-110"
           style={{ background: accentBg }}
         >
           <span style={{ color: accent }}>{icon}</span>
         </div>
+      </div>
+
+      <p className="tabular-nums text-2xl font-bold leading-none tracking-tight text-gray-900 mt-3">
+        {value}
+      </p>
+
+      <div className="mt-2 flex items-center gap-1.5">
         {trend !== undefined && (
-          <span className={`text-xs font-medium px-1.5 py-0.5 rounded-md ${trend >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+          <span className={`text-xs font-semibold ${trend >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
             {trend >= 0 ? '+' : ''}{trend}%
           </span>
         )}
+        {sub && <span className="text-xs text-gray-400">{sub}</span>}
       </div>
-      <div>
-        <p className="stat-label mb-1">{label}</p>
-        <p className="tabular-nums text-2xl font-bold leading-none tracking-tight text-gray-900">
-          {value}
-        </p>
-        {sub && <p className="mt-1 text-xs text-gray-400">{sub}</p>}
-      </div>
-      {/* Subtle bottom accent on hover */}
-      <div
-        className="h-0.5 w-0 group-hover:w-full transition-all duration-300 rounded-full"
-        style={{ background: accent }}
-      />
+
+      <SummaryCardSparkline color={accent} seed={sparkSeed} />
     </button>
   );
 }
@@ -586,9 +612,9 @@ function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = '
 // Chart Card Wrapper
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ChartCard({ title, subtitle, children, action, footerNote }) {
+function ChartCard({ title, subtitle, children, action, footerNote, delay = 0 }) {
   return (
-    <div className="app-card p-5 flex flex-col gap-4">
+    <div className="app-card dash-fade-in p-5 flex flex-col gap-4" style={{ animationDelay: `${delay}s` }}>
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
@@ -813,7 +839,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Summary Cards ── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard
             label="Total Members"
             value={stats?.totalMembers ?? 0}
@@ -828,6 +854,8 @@ export default function DashboardPage() {
             accent="#2563EB"
             accentBg="rgba(37,99,235,0.08)"
             onClick={() => navigate('/members')}
+            sparkSeed={0}
+            delay={0}
           />
           <SummaryCard
             label="Kiddy Members"
@@ -839,6 +867,8 @@ export default function DashboardPage() {
             accent="#0D9488"
             accentBg="rgba(13,148,136,0.08)"
             onClick={() => navigate('/members?type=kiddy')}
+            sparkSeed={1}
+            delay={0.06}
           />
           <SummaryCard
             label="Active Loans"
@@ -848,24 +878,8 @@ export default function DashboardPage() {
             accent="#059669"
             accentBg="rgba(5,150,105,0.08)"
             onClick={() => navigate('/loans')}
-          />
-          <SummaryCard
-            label="Cash In"
-            value={formatCurrency(stats?.totalCashIn ?? 0)}
-            sub="Total inflows"
-            icon={<TrendingUp size={18} />}
-            accent="#059669"
-            accentBg="rgba(5,150,105,0.08)"
-            onClick={() => navigate('/transactions')}
-          />
-          <SummaryCard
-            label="Cash Out"
-            value={formatCurrency(stats?.totalCashOut ?? 0)}
-            sub="Total outflows"
-            icon={<TrendingDown size={18} />}
-            accent="#DC2626"
-            accentBg="rgba(220,38,38,0.07)"
-            onClick={() => navigate('/transactions')}
+            sparkSeed={2}
+            delay={0.12}
           />
           <SummaryCard
             label="Overdue Payments"
@@ -875,11 +889,16 @@ export default function DashboardPage() {
             accent={stats?.overduePayments > 0 ? '#D97706' : '#6B7280'}
             accentBg={stats?.overduePayments > 0 ? 'rgba(217,119,6,0.08)' : 'rgba(107,114,128,0.08)'}
             onClick={() => navigate('/loans')}
+            sparkSeed={3}
+            delay={0.18}
           />
         </div>
 
         {/* ── Income Strip ── */}
-        <div className="app-card p-4 flex items-center justify-between border-emerald-100 bg-gradient-to-r from-emerald-50 to-white">
+        <div
+          className="app-card dash-fade-in p-4 flex items-center justify-between border-emerald-100 bg-gradient-to-r from-emerald-50 to-white"
+          style={{ animationDelay: '0.22s' }}
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
               <PesoSign size={18} className="text-emerald-700" />
@@ -905,6 +924,7 @@ export default function DashboardPage() {
             title="Loan Status"
             subtitle="Click a segment to drill down"
             footerNote="Click any segment or legend item to filter loans by status."
+            delay={0.26}
             action={
               <button onClick={() => navigate('/loans')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
                 All loans →
@@ -923,6 +943,7 @@ export default function DashboardPage() {
             title="Cash Flow"
             subtitle="Last 6 months · hover for details"
             footerNote="Click any month to view its transaction breakdown."
+            delay={0.32}
             action={
               <div className="flex items-center gap-2.5 text-[10px] text-gray-400">
                 <span className="flex items-center gap-1">
@@ -951,6 +972,7 @@ export default function DashboardPage() {
             title="Member Growth"
             subtitle="Click a bar to drill down"
             footerNote="Click any bar to see members who joined that month."
+            delay={0.38}
             action={
               <button onClick={() => navigate('/members')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
                 All members →
@@ -972,7 +994,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <div className="flex flex-col gap-3">
             <div
-              className="app-card app-card-hover p-5 cursor-pointer group"
+              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
+              style={{ animationDelay: '0.42s' }}
               onClick={() => navigate('/cbu')}
             >
               <p className="stat-label mb-1">Total CBU Balance</p>
@@ -982,7 +1005,8 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-gray-400">Capital Build-Up</p>
             </div>
             <div
-              className="app-card app-card-hover p-5 cursor-pointer group"
+              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
+              style={{ animationDelay: '0.46s' }}
               onClick={() => navigate('/savings')}
             >
               <p className="stat-label mb-1">Total Savings</p>
@@ -992,7 +1016,8 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-gray-400">Member savings accounts</p>
             </div>
             <div
-              className="app-card app-card-hover p-5 cursor-pointer group"
+              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
+              style={{ animationDelay: '0.50s' }}
               onClick={() => navigate('/time-deposit')}
             >
               <div className="flex items-center gap-2 mb-1">
@@ -1007,7 +1032,8 @@ export default function DashboardPage() {
               </p>
             </div>
             <div
-              className="app-card app-card-hover p-5 cursor-pointer group"
+              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
+              style={{ animationDelay: '0.54s' }}
               onClick={() => navigate('/savings?type=booster')}
             >
               <div className="flex items-center gap-2 mb-1">
@@ -1022,7 +1048,8 @@ export default function DashboardPage() {
               </p>
             </div>
             <div
-              className="app-card app-card-hover p-5 cursor-pointer group"
+              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
+              style={{ animationDelay: '0.58s' }}
               onClick={() => navigate('/savings?type=kiddy')}
             >
               <div className="flex items-center gap-2 mb-1">
@@ -1038,7 +1065,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-2 dash-fade-in" style={{ animationDelay: '0.44s' }}>
             <RecentTransactionsCard stats={stats} navigate={navigate} />
           </div>
         </div>

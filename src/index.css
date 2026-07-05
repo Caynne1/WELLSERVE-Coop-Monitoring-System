@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 /* ─── Keyframe Animations ──────────────────────────────────────────────────── */
 
@@ -98,7 +98,10 @@
   }
 
   body {
-    @apply bg-slate-50 text-gray-900 antialiased;
+    background-color: #f8fafc;
+    color: #111827;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-feature-settings: 'cv11', 'ss01';
   }
@@ -114,7 +117,10 @@
 @layer components {
   /* Cards */
   .app-card {
-    @apply rounded-2xl border border-gray-200 bg-white shadow-sm;
+    border-radius: 1rem;
+    border: 1px solid #e5e7eb;
+    background-color: #ffffff;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
   }
 
@@ -131,44 +137,83 @@
     box-shadow: 0 4px 12px -2px rgba(0,0,0,0.08);
   }
 
+  /* Staggered entrance animation (used on the Dashboard cards/graphs) */
+  @keyframes dashFadeInUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .dash-fade-in {
+    animation: dashFadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   /* Typography */
   .section-title {
-    @apply text-2xl font-semibold tracking-tight text-gray-900;
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: #111827;
   }
 
   .section-subtitle {
-    @apply mt-1 text-sm text-gray-500;
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    color: #6b7280;
   }
 
   .stat-label {
-    @apply text-xs font-semibold uppercase tracking-[0.14em] text-gray-400;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #9ca3af;
   }
 
   .stat-value {
-    @apply text-3xl font-bold tracking-tight text-gray-900;
+    font-size: 1.875rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: #111827;
     animation: statCountUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   /* Sidebar */
   .sidebar-section-label {
-    @apply mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400;
+    margin-bottom: 0.5rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #9ca3af;
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4b5563;
     transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
   }
   .sidebar-item:hover {
-    @apply bg-gray-50 text-gray-900;
+    background-color: #f9fafb;
+    color: #111827;
     transform: translateX(2px);
   }
   .sidebar-item-active {
-    @apply bg-emerald-50 font-semibold text-emerald-700 shadow-sm;
+    background-color: #ecfdf5;
+    font-weight: 600;
+    color: #047857;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   }
 
   /* Topbar */
   .topbar-icon-button {
-    @apply rounded-xl;
+    border-radius: 0.75rem;
     transition: all 0.16s ease;
   }
   .topbar-icon-button:hover {
