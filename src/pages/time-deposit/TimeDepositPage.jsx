@@ -84,33 +84,6 @@ function StatusBadge({ status }) {
 }
 
 function StatCard({ icon, label, value, sub, bg, textColor }) {
-  function handlePrint() {
-    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
-    const rows = filtered.map(td => `<tr>
-      <td>${td.name||'—'}</td>
-      <td>${td.address||'—'}</td>
-      <td style="text-align:right;font-weight:600">${fmt(td.amount)}</td>
-      <td style="text-align:center">${td.terms||'—'} mo.</td>
-      <td style="text-align:center">${td.interest_rate||'—'}%</td>
-      <td style="white-space:nowrap">${td.date_applied||'—'}</td>
-      <td style="white-space:nowrap">${td.termination_date||'—'}</td>
-      <td style="text-align:center">${td.status||'—'}</td>
-    </tr>`).join('');
-    const html = `
-      <h1 class="report-title">Time Deposits</h1>
-      <div class="report-meta">Time deposit register &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
-      <table>
-        <thead><tr><th>Name</th><th>Address</th><th style="text-align:right">Amount</th><th style="text-align:center">Terms</th><th style="text-align:center">Rate</th><th>Date Applied</th><th>Termination</th><th style="text-align:center">Status</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
-    `;
-    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Time Deposits — WELLSERVE'}), {
-      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
-    });
-    if (win) toast.success('Print dialog opened.');
-  }
-
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
       <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
@@ -469,6 +442,73 @@ export default function TimeDepositPage() {
   function handleSort(field) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('asc'); }
+  }
+
+  // ── Print handler ─────────────────────────────────────────────────────────
+  function handlePrint() {
+    const rowsHtml = filtered.map(record => `
+      <tr>
+        <td>${record.name || '—'}${record.address ? `<br/><span>${record.address}</span>` : ''}</td>
+        <td style="text-align:right;">${formatCurrency(record.amount || 0)}</td>
+        <td>${record.terms || 0} mo${record.terms !== 1 ? 's' : ''}</td>
+        <td>${parseFloat(record.interest_rate || 0).toFixed(2)}%</td>
+        <td>${formatDate(record.date_applied)}</td>
+        <td>${record.termination_date ? formatDate(record.termination_date) : '—'}</td>
+        <td>${record.status || '—'}</td>
+      </tr>
+    `).join('');
+
+    const contentHtml = `
+      <h1 class="report-title">Time Deposit Report</h1>
+      <p style="margin: 0 0 12px; font-size: 10pt; color: #6b7280;">
+        Generated: ${new Date().toLocaleString()} &middot; ${filtered.length} of ${records.length} records
+      </p>
+
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+        <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px;">
+          <span style="display:block; color:#6b7280; font-size:10px; text-transform:uppercase; letter-spacing:0.08em;">Total Records</span>
+          <strong style="display:block; margin-top:4px; font-size:16px;">${stats.total}</strong>
+        </div>
+        <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px;">
+          <span style="display:block; color:#6b7280; font-size:10px; text-transform:uppercase; letter-spacing:0.08em;">Total Amount</span>
+          <strong style="display:block; margin-top:4px; font-size:16px;">${formatCurrency(stats.totalAmt)}</strong>
+        </div>
+        <div style="border:1px solid #e5e7eb; border-radius:6px; padding:10px;">
+          <span style="display:block; color:#6b7280; font-size:10px; text-transform:uppercase; letter-spacing:0.08em;">Total Paid</span>
+          <strong style="display:block; margin-top:4px; font-size:16px;">${formatCurrency(stats.totalPaid)}</strong>
+        </div>
+      </div>
+
+      <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:left; text-transform:uppercase; font-size:10px;">Name</th>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:right; text-transform:uppercase; font-size:10px;">Amount</th>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:left; text-transform:uppercase; font-size:10px;">Terms</th>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:left; text-transform:uppercase; font-size:10px;">Interest Rate</th>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:left; text-transform:uppercase; font-size:10px;">Date Applied</th>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:left; text-transform:uppercase; font-size:10px;">Termination</th>
+            <th style="border:1px solid #e5e7eb; padding:7px; background:#f3f4f6; text-align:left; text-transform:uppercase; font-size:10px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml || '<tr><td colspan="7" style="text-align:center; padding:16px; border:1px solid #e5e7eb;">No records found.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+
+    const html = wrapWithLetterhead(contentHtml, {
+      title: 'Time Deposit Report',
+      extraCss: `
+        table td { border: 1px solid #e5e7eb; padding: 7px; vertical-align: top; }
+        table td span { color: #6b7280; font-size: 10px; }
+        @page { size: A4 landscape; margin: 12mm; }
+      `,
+    });
+
+    printHtmlDocument(html, {
+      onBlocked: () => toast.error('Please allow pop-ups to print this report.'),
+    });
   }
 
   // ── Application Modal handlers ────────────────────────────────────────────

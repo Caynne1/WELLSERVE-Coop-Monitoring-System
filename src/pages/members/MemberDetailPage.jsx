@@ -4,7 +4,7 @@ import {
   ArrowLeft, User, CreditCard, PiggyBank, Wallet, ArrowLeftRight,
   Edit, Phone, Mail, MapPin, Calendar, Hash, Plus, TrendingUp,
   TrendingDown, Clock, AlertCircle, Shield, Download, BadgeAlert,
-  Printer, Upload,
+  Printer, Upload, Sprout,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
@@ -16,6 +16,7 @@ import Modal from '../../components/ui/Modal';
 import LoanImportModal from '../../components/shared/LoanImportModal';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabase';
 
 import { getMemberById, initializeMemberAccounts } from '../../services/memberService';
 import { getAccountsByMemberId } from '../../services/accountService';
@@ -57,11 +58,17 @@ const TABS = [
   { id: 'cbu',             label: 'CBU',            icon: PiggyBank },
   { id: 'savings',         label: 'Savings',        icon: Wallet },
   { id: 'time_deposit',    label: 'Time Deposit',   icon: Clock },
+  { id: 'savings_booster', label: 'Savings Booster', icon: Sprout },
   { id: 'membership',      label: 'Membership',     icon: Shield },
   { id: 'transactions',    label: 'Transactions',   icon: ArrowLeftRight },
   { id: 'penalty',         label: 'Penalty',        icon: BadgeAlert },
   { id: 'credit_profile',  label: 'Credit Profile', icon: TrendingUp },
 ];
+
+// Tabs that should only appear once the member actually has a record for
+// that category — unlike CBU/Savings/Membership/etc. which every member has
+// by default, Time Deposit and Savings Booster are opt-in products.
+const CONDITIONAL_TABS = new Set(['time_deposit', 'savings_booster']);
 
 const PAYMENT_MODE_OPTIONS = [
   { value: '', label: 'Select mode of payment' },
@@ -123,6 +130,9 @@ export default function MemberDetailPage() {
 
   const [memberTimeDeposits, setMemberTimeDeposits] = useState([]);
   const [timeDepositLoading, setTimeDepositLoading] = useState(false);
+
+  const [memberBoosterSlots, setMemberBoosterSlots] = useState([]);
+  const [boosterLoading, setBoosterLoading] = useState(false);
 
   async function fetchAll() {
     try {
@@ -203,6 +213,25 @@ export default function MemberDetailPage() {
     }
   }, [id]);
 
+  const fetchBoosterSlots = useCallback(async () => {
+    try {
+      setBoosterLoading(true);
+      const { data, error } = await supabase
+        .from('savings_booster')
+        .select('*')
+        .eq('member_id', id)
+        .order('slot_number', { ascending: true });
+      if (error) throw error;
+      setMemberBoosterSlots(data || []);
+    } catch (err) {
+      // silently fail — savings_booster table/member_id may not be set up yet
+      console.warn('[MemberDetailPage] fetchBoosterSlots error:', err.message);
+      setMemberBoosterSlots([]);
+    } finally {
+      setBoosterLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchAll();
   }, [id]);
@@ -211,7 +240,8 @@ export default function MemberDetailPage() {
     fetchMembership();
     fetchPenalties();
     fetchTimeDeposits();
-  }, [fetchMembership, fetchPenalties, fetchTimeDeposits]);
+    fetchBoosterSlots();
+  }, [fetchMembership, fetchPenalties, fetchTimeDeposits, fetchBoosterSlots]);
 
   const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
   const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
@@ -228,6 +258,14 @@ export default function MemberDetailPage() {
   );
   const savingsTransactions = useMemo(
     () => transactions.filter(t => t.category === 'savings'),
+    [transactions]
+  );
+  const timeDepositTransactions = useMemo(
+    () => transactions.filter(t => t.category === 'time_deposit'),
+    [transactions]
+  );
+  const savingsBoosterTransactions = useMemo(
+    () => transactions.filter(t => t.category === 'savings_booster'),
     [transactions]
   );
 
@@ -490,7 +528,11 @@ export default function MemberDetailPage() {
         {/* Tab navigation — horizontal scroll on small screens */}
         <div className="overflow-x-auto border-b border-gray-100 scrollbar-thin scrollbar-thumb-gray-200">
           <div className="flex min-w-max">
-            {TABS.map(tab => (
+            {TABS.filter(tab => {
+              if (tab.id === 'time_deposit') return memberTimeDeposits.length > 0;
+              if (tab.id === 'savings_booster') return memberBoosterSlots.length > 0;
+              return true;
+            }).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setSearchParams({ tab: tab.id })}
@@ -576,6 +618,14 @@ export default function MemberDetailPage() {
               memberName={memberFullName}
               userId={user?.id}
               onRefresh={fetchTimeDeposits}
+            />
+          )}
+
+          {activeTab === 'savings_booster' && (
+            <MemberSavingsBoosterTab
+              slots={memberBoosterSlots}
+              transactions={savingsBoosterTransactions}
+              loading={boosterLoading}
             />
           )}
 
@@ -3091,6 +3141,79 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw
       {transactions.length > 0 && (
         <div className="mt-6">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Payment History</h4>
+          <HistoryTable rows={transactions} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SavingsBoosterSlotCard({ slot }) {
+  const statusStyle = {
+    active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    matured: 'bg-blue-50 text-blue-700 border-blue-200',
+    forfeited: 'bg-amber-50 text-amber-700 border-amber-200',
+    withdrawn: 'bg-gray-50 text-gray-500 border-gray-200',
+  }[slot.status] || 'bg-gray-50 text-gray-500 border-gray-200';
+
+  const withdrawable = (slot.total_deposited || 0) + (slot.interest_earned || 0);
+
+  return (
+    <div className="rounded-xl border border-gray-200 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || '—'}</p>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${statusStyle}`}>
+          {slot.status || 'active'}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : '—'} />
+        <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '—'} />
+        <AccountInfoCell label="Total Deposited" value={formatCurrency(slot.total_deposited || 0)} />
+        <AccountInfoCell label="Interest Earned" value={formatCurrency(slot.interest_earned || 0)} />
+        <AccountInfoCell label="Weeks Deposited" value={`${slot.weeks_deposited || 0} wk(s)`} />
+        <AccountInfoCell label="Total Withdrawable" value={formatCurrency(withdrawable)} />
+      </div>
+    </div>
+  );
+}
+
+function MemberSavingsBoosterTab({ slots, transactions, loading }) {
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (!slots || slots.length === 0) {
+    return <EmptyState icon={Sprout} message="No Savings Booster enrollment for this member." />;
+  }
+
+  const totalDeposited = slots.reduce((s, e) => s + (e.total_deposited || 0), 0);
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center">
+          <Sprout size={20} className="text-teal-600" />
+        </div>
+        <div>
+          <p className="text-xs text-gray-400">Total Deposited Across {slots.length} Slot{slots.length !== 1 ? 's' : ''}</p>
+          <p className="text-2xl font-bold text-teal-700">{formatCurrency(totalDeposited)}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {slots.map(slot => (
+          <SavingsBoosterSlotCard key={slot.id} slot={slot} />
+        ))}
+      </div>
+
+      {transactions.length > 0 && (
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Deposit History</h4>
           <HistoryTable rows={transactions} />
         </div>
       )}

@@ -54,6 +54,7 @@ const PAYMENT_TYPE_LABEL = {
   membership: 'Membership Fee',
   capital: 'Manual Fund Deposit',
   time_deposit: 'Time Deposit',
+  savings_booster: 'Savings Booster',
 };
 
 const PAYMENT_TYPE_STYLE = {
@@ -63,6 +64,7 @@ const PAYMENT_TYPE_STYLE = {
   membership: 'bg-purple-100 text-purple-700',
   capital: 'bg-indigo-100 text-indigo-700',
   time_deposit: 'bg-violet-100 text-violet-700',
+  savings_booster: 'bg-teal-100 text-teal-700',
 };
 
 const EMPTY_FORM = {
@@ -1109,6 +1111,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const [amounts, setAmounts] = useState({}); // { category: amountString }
   const [selectedLoanId, setSelectedLoanId] = useState('');
   const [selectedTdId, setSelectedTdId] = useState('');
+  const [selectedBoosterId, setSelectedBoosterId] = useState('');
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1128,6 +1131,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setAmounts({});
     setSelectedLoanId('');
     setSelectedTdId('');
+    setSelectedBoosterId('');
     setDate(new Date().toISOString().split('T')[0]);
     setPaymentDate(new Date().toISOString().split('T')[0]);
     setInvoiceNo('');
@@ -1151,6 +1155,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       setSummary(data);
       setSelectedLoanId(data.loan.records?.[0]?.id || '');
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
+      setSelectedBoosterId(data.savings_booster.records?.[0]?.id || '');
       setStep(2);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to load member balances.');
@@ -1202,6 +1207,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
 
     const selectedLoan = summary.loan.records?.find(l => l.id === selectedLoanId) || null;
     const selectedTd = summary.time_deposit.records?.find(td => td.id === selectedTdId) || null;
+    const selectedBooster = summary.savings_booster.records?.find(b => b.id === selectedBoosterId) || null;
 
     const entries = [];
     if (parseFloat(amounts.membership) > 0) {
@@ -1218,6 +1224,9 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     }
     if (parseFloat(amounts.time_deposit) > 0) {
       entries.push({ category: 'time_deposit', amount: parseFloat(amounts.time_deposit), timeDeposit: selectedTd });
+    }
+    if (parseFloat(amounts.savings_booster) > 0) {
+      entries.push({ category: 'savings_booster', amount: parseFloat(amounts.savings_booster), booster: selectedBooster });
     }
 
     const paymentModeNote = [paymentReference.trim(), notes.trim()].filter(Boolean).join(' | ') || null;
@@ -1341,6 +1350,19 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                             {summary.time_deposit.records.map(td => (
                               <option key={td.id} value={td.id}>
                                 {td.name} · {formatCurrency(td.amount)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {cat === 'savings_booster' && summary.savings_booster.records?.length > 1 && (
+                          <select
+                            className="ml-2 text-xs border border-gray-200 rounded px-1 py-0.5"
+                            value={selectedBoosterId}
+                            onChange={e => setSelectedBoosterId(e.target.value)}
+                          >
+                            {summary.savings_booster.records.map(b => (
+                              <option key={b.id} value={b.id}>
+                                Slot #{b.slot_number} · {formatCurrency(b.total_deposited || 0)}
                               </option>
                             ))}
                           </select>

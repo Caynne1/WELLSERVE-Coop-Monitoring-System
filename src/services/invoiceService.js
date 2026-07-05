@@ -283,6 +283,7 @@ export async function getMemberPaymentSummary(memberId) {
   const activeLoans = allLoans.filter(l => l.status !== 'paid' && (l.balance || 0) > 0);
   const allTimeDeposits = timeDeposits || [];
   const activeTimeDeposits = allTimeDeposits.filter(td => td.status === 'Active');
+  const activeBoosterRows = (boosterRows || []).filter(b => b.status === 'active');
 
   const hasMembership = !!membership;
   const membershipBalance = hasMembership ? computeFeeBalance(membership) : 0;
@@ -341,11 +342,13 @@ export async function getMemberPaymentSummary(memberId) {
     savings_booster: {
       key: 'savings_booster',
       label: 'Savings Booster',
-      records: boosterRows,
+      records: activeBoosterRows,
       hasRecord: (boosterRows || []).length > 0,
       valueType: 'deposited',
       value: boosterTotalDeposited,
-      payable: false, // Savings Booster deposits are managed on its own enrollment page
+      // Deposit-based, same as CBU/Savings/Time Deposit: only payable once
+      // the member has at least one active enrollment slot.
+      payable: activeBoosterRows.length > 0,
     },
   };
 }
@@ -468,8 +471,56 @@ export async function createMultiCategoryInvoice({
         si_number: siNo,
         created_by,
       });
+      // Time Deposit payments live in their own `time_deposit_payments`
+      // ledger (see timeDepositService.js) rather than an `amount` running
+      // balance, but the member's Transactions tab and dashboard read from
+      // the shared `transactions` table — so a transaction row is written
+      // here too, exactly like CBU/Savings, or the deposit wouldn't show up
+      // in the member's general transaction history.
+      await createTransaction({
+        member_id: member.id,
+        category: 'time_deposit',
+        type: 'deposit',
+        amount,
+        reference: siNo,
+        notes,
+        created_by,
+        transaction_date: effectivePaymentDate,
+        payment_mode,
+        payment_mode_note,
+      });
       ref_id = entry.timeDeposit.id;
       purpose = purpose || `Time Deposit Payment${entry.timeDeposit.name ? ` — ${entry.timeDeposit.name}` : ''}`;
+    }
+
+    if (entry.category === 'savings_booster') {
+      if (!entry.booster) throw new Error('Savings Booster enrollment not found for this member.');
+      const { data: updatedBooster, error: boosterErr } = await supabase
+        .from('savings_booster')
+        .update({
+          total_deposited: (entry.booster.total_deposited || 0) + amount,
+          weeks_deposited: (entry.booster.weeks_deposited || 0) + 1,
+          last_deposit_date: effectivePaymentDate,
+        })
+        .eq('id', entry.booster.id)
+        .select()
+        .single();
+      if (boosterErr) throw boosterErr;
+
+      await createTransaction({
+        member_id: member.id,
+        category: 'savings_booster',
+        type: 'deposit',
+        amount,
+        reference: siNo,
+        notes,
+        created_by,
+        transaction_date: effectivePaymentDate,
+        payment_mode,
+        payment_mode_note,
+      });
+      ref_id = updatedBooster?.id || entry.booster.id;
+      purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
     }
 
     // NOTE: intentionally bypasses createInvoiceForPayment's own duplicate
