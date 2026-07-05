@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Receipt, Search, Plus, Pencil, Ban, Eye,
   CheckCircle, Clock, X, Printer, Download,
@@ -292,6 +292,74 @@ export default function InvoicesPage() {
     }
   }
 
+  function getInvoiceGroup(invoice) {
+    return invoices.filter(inv => inv.invoice_no === invoice.invoice_no);
+  }
+
+  function handlePrintSingleInvoice(invoice) {
+    const group = getInvoiceGroup(invoice);
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const total = group.reduce((s, inv) => s + (inv.amount || 0), 0);
+    const member = group.find(inv => inv.members)?.members || null;
+
+    const rows = group.map(inv => `
+      <tr>
+        <td>${PAYMENT_TYPE_LABEL[inv.payment_type] || 'Others'}</td>
+        <td>${inv.purpose || '—'}</td>
+        <td style="text-align:right;font-weight:600">${fmt(inv.amount)}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <h1 class="report-title">Sales Invoice</h1>
+      <div class="report-meta">
+        SI# <strong>${invoice.invoice_no}</strong> &nbsp;|&nbsp;
+        Date: ${formatDate(invoice.date)} &nbsp;|&nbsp;
+        Generated: ${new Date().toLocaleString('en-PH')}
+      </div>
+
+      <div class="stats-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:5mm">
+        <div class="stat-box">
+          <div class="stat-label">Payee</div>
+          <div class="stat-value" style="font-size:11pt">${invoice.payee || '—'}</div>
+          ${member ? `<div class="stat-sub">${member.first_name} ${member.last_name}${member.member_no ? ' · ' + member.member_no : ''}</div>` : ''}
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total Amount</div>
+          <div class="stat-value" style="font-size:11pt;color:#065f46">${fmt(total)}</div>
+          <div class="stat-sub">${group.length} payment categor${group.length > 1 ? 'ies' : 'y'}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Payment Type</th>
+            <th>Purpose</th>
+            <th style="text-align:right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">Total</td>
+            <td style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">${fmt(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+
+    const win = printHtmlDocument(wrapWithLetterhead(html, { title: `Invoice ${invoice.invoice_no} — WELLSERVE` }), {
+      width: 800,
+      height: 700,
+      delay: 900,
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups for this site and try again.'),
+    });
+    if (win) toast.success('Print dialog opened.');
+  }
+
   function handlePrintPreview() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
     const totalAmount = filtered.reduce((s, inv) => s + (inv.amount || 0), 0);
@@ -306,7 +374,6 @@ export default function InvoicesPage() {
       return `<tr${invoice.status === 'voided' ? ' style="opacity:0.5"' : ''}>
         <td style="font-family:monospace;font-size:8.5pt;font-weight:600">${invoice.invoice_no||'—'}</td>
         <td style="white-space:nowrap">${formatDate(invoice.date)}</td>
-        <td style="font-family:monospace;font-size:8.5pt">${getAccountNoDisplay(invoice)}</td>
         <td>${invoice.payee||'—'}${memberLine}</td>
         <td style="max-width:160px">${invoice.purpose||'—'}</td>
         <td style="white-space:nowrap">${PAYMENT_TYPE_LABEL[invoice.payment_type]||'Others'}</td>
@@ -347,7 +414,6 @@ export default function InvoicesPage() {
           <tr>
             <th>Invoice No.</th>
             <th>Date</th>
-            <th>Account No.</th>
             <th>Payee / Member</th>
             <th>Purpose</th>
             <th>Payment Type</th>
@@ -357,11 +423,11 @@ export default function InvoicesPage() {
           </tr>
         </thead>
         <tbody>
-          ${rows || '<tr><td colspan="9" style="text-align:center;padding:8pt;color:#9ca3af">No invoices found.</td></tr>'}
+          ${rows || '<tr><td colspan="8" style="text-align:center;padding:8pt;color:#9ca3af">No invoices found.</td></tr>'}
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="7" style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">Grand Total</td>
+            <td colspan="6" style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">Grand Total</td>
             <td style="text-align:right;font-weight:700;padding:4pt 6pt;border-top:1.5pt solid #1a3d2b">${fmt(totalAmount)}</td>
             <td style="border-top:1.5pt solid #1a3d2b"></td>
           </tr>
@@ -385,7 +451,6 @@ export default function InvoicesPage() {
       const headers = [
         'Invoice No.',
         'Date',
-        'Account No.',
         'Payee',
         'Purpose',
         'Payment Type',
@@ -397,7 +462,6 @@ export default function InvoicesPage() {
       const rows = filtered.map(invoice => [
         invoice.invoice_no || '',
         formatDate(invoice.date),
-        getAccountNoDisplay(invoice),
         invoice.payee || '',
         invoice.purpose || '',
         PAYMENT_TYPE_LABEL[invoice.payment_type] || 'Others',
@@ -449,13 +513,7 @@ export default function InvoicesPage() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
-        <SummaryCard
-          icon={<Clock size={20} className="text-amber-500" />}
-          label="Total Unpaid"
-          value={formatCurrency(totalUnpaid)}
-          bg="bg-amber-50"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 mb-6">
         <SummaryCard
           icon={<CheckCircle size={20} className="text-green-600" />}
           label="Total Collected"
@@ -524,7 +582,7 @@ export default function InvoicesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Sales Invoice No.', 'Date', 'Account No.', 'Payee', 'Purpose', 'Payment Type', 'Mode of Payment', 'Amount', 'Status', ''].map(h => (
+                  {['Sales Invoice No.', 'Date', 'Payee', 'Purpose', 'Payment Type', 'Mode of Payment', 'Amount', 'Status', ''].map(h => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -537,7 +595,7 @@ export default function InvoicesPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-12 text-gray-400">
+                    <td colSpan={9} className="text-center py-12 text-gray-400">
                       <Receipt size={32} className="mx-auto mb-2 text-gray-200" />
                       {search || statFilter || typeFilter || dateFrom || dateTo
                         ? 'No invoices match your filters.'
@@ -559,12 +617,6 @@ export default function InvoicesPage() {
 
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       {formatDate(invoice.date)}
-                    </td>
-
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="font-mono text-xs text-gray-700">
-                        {getAccountNoDisplay(invoice)}
-                      </span>
                     </td>
 
                     <td className="px-4 py-3">
@@ -607,6 +659,14 @@ export default function InvoicesPage() {
 
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={() => handlePrintSingleInvoice(invoice)}
+                          title="Print Invoice"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-blue-50 transition-colors"
+                        >
+                          <Printer size={15} />
+                        </button>
+
                         <button
                           onClick={() => setViewTarget(invoice)}
                           title="View Details"
@@ -658,13 +718,9 @@ export default function InvoicesPage() {
                 Showing {filtered.length} of {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
               </p>
               <p className="text-xs font-medium text-gray-700">
-                Filtered unpaid:{' '}
-                <span className="text-amber-600">
-                  {formatCurrency(
-                    filtered
-                      .filter(inv => inv.status === 'unpaid')
-                      .reduce((s, inv) => s + (inv.amount || 0), 0)
-                  )}
+                Filtered total:{' '}
+                <span className="text-green-700">
+                  {formatCurrency(filtered.reduce((s, inv) => s + (inv.amount || 0), 0))}
                 </span>
               </p>
             </div>
@@ -803,7 +859,10 @@ export default function InvoicesPage() {
         title="Invoice Details"
         size="md"
       >
-        {viewTarget && (
+        {viewTarget && (() => {
+          const group = getInvoiceGroup(viewTarget);
+          const groupTotal = group.reduce((s, inv) => s + (inv.amount || 0), 0);
+          return (
           <>
             <div className="flex items-center justify-between mb-5">
               <span className="font-mono text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">
@@ -819,10 +878,7 @@ export default function InvoicesPage() {
             <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
               {[
                 ['Invoice Date', formatDate(viewTarget.date)],
-                ['Account No.', getAccountNoDisplay(viewTarget)],
                 ['Payee', viewTarget.payee],
-                ['Purpose', viewTarget.purpose],
-                ['Amount', <span key="amt" className="font-semibold text-gray-900">{formatCurrency(viewTarget.amount)}</span>],
                 ['Mode of Payment', viewTarget.payment_mode || '—'],
                 ['Notes', viewTarget.notes || '—'],
                 ['Created', formatDateTime(viewTarget.created_at)],
@@ -832,13 +888,6 @@ export default function InvoicesPage() {
                   <span className="text-gray-900 text-right">{value}</span>
                 </div>
               ))}
-
-              <div className="flex items-start justify-between px-4 py-3 text-sm">
-                <span className="text-gray-400 font-medium w-28 flex-shrink-0">Payment Type</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_TYPE_STYLE[viewTarget.payment_type] || 'bg-gray-100 text-gray-600'}`}>
-                  {PAYMENT_TYPE_LABEL[viewTarget.payment_type] || 'Others'}
-                </span>
-              </div>
 
               {viewTarget.members && (
                 <div className="flex items-start justify-between px-4 py-3 text-sm bg-[#D6FADC]/30">
@@ -859,36 +908,72 @@ export default function InvoicesPage() {
               )}
             </div>
 
-            {viewTarget.status === 'unpaid' && (
-              <div className="flex justify-end gap-3 mt-5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={<Pencil size={13} />}
-                  onClick={() => { setViewTarget(null); openEdit(viewTarget); }}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="success"
-                  size="sm"
-                  icon={<CheckCircle size={13} />}
-                  onClick={() => { setViewTarget(null); setPaidTarget(viewTarget); }}
-                >
-                  Mark Paid
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<Ban size={13} />}
-                  onClick={() => { setViewTarget(null); setVoidTarget(viewTarget); }}
-                >
-                  Void
-                </Button>
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Payment Categories {group.length > 1 ? `(${group.length})` : ''}
+              </p>
+              <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                {group.map(inv => (
+                  <div key={inv.id} className="flex items-start justify-between px-4 py-3 text-sm">
+                    <div>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_TYPE_STYLE[inv.payment_type] || 'bg-gray-100 text-gray-600'}`}>
+                        {PAYMENT_TYPE_LABEL[inv.payment_type] || 'Others'}
+                      </span>
+                      <p className="text-gray-500 text-xs mt-1">{inv.purpose || '—'}</p>
+                    </div>
+                    <span className="font-semibold text-gray-900">{formatCurrency(inv.amount)}</span>
+                  </div>
+                ))}
+                {group.length > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 text-sm bg-gray-50">
+                    <span className="font-medium text-gray-700">Total</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(groupTotal)}</span>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-5">
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Printer size={13} />}
+                onClick={() => handlePrintSingleInvoice(viewTarget)}
+              >
+                Print
+              </Button>
+              {viewTarget.status === 'unpaid' && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={<Pencil size={13} />}
+                    onClick={() => { setViewTarget(null); openEdit(viewTarget); }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="success"
+                    size="sm"
+                    icon={<CheckCircle size={13} />}
+                    onClick={() => { setViewTarget(null); setPaidTarget(viewTarget); }}
+                  >
+                    Mark Paid
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    icon={<Ban size={13} />}
+                    onClick={() => { setViewTarget(null); setVoidTarget(viewTarget); }}
+                  >
+                    Void
+                  </Button>
+                </>
+              )}
+            </div>
           </>
-        )}
+          );
+        })()}
       </Modal>
 
       <Modal
@@ -1026,11 +1111,15 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const [selectedTdId, setSelectedTdId] = useState('');
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [invoiceNo, setInvoiceNo] = useState('');
   const [paymentMode, setPaymentMode] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [invoiceNoInvalid, setInvoiceNoInvalid] = useState(false);
+  const invoiceNoRef = useRef(null);
 
   function reset() {
     setStep(1);
@@ -1040,10 +1129,13 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setSelectedLoanId('');
     setSelectedTdId('');
     setDate(new Date().toISOString().split('T')[0]);
+    setPaymentDate(new Date().toISOString().split('T')[0]);
     setInvoiceNo('');
     setPaymentMode('');
     setPaymentReference('');
     setNotes('');
+    setErrorMsg('');
+    setInvoiceNoInvalid(false);
   }
 
   function handleClose() {
@@ -1061,7 +1153,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
       setStep(2);
     } catch (err) {
-      toast.error(err.message || 'Failed to load member balances.');
+      setErrorMsg(err.message || 'Failed to load member balances.');
     } finally {
       setLoadingSummary(false);
     }
@@ -1078,13 +1170,35 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
   async function handleSave() {
-    if (!invoiceNo.trim()) return toast.error('Invoice Number (SI#) is required.');
-    if (!date) return toast.error('Invoice date is required.');
-    if (!paymentMode) return toast.error('Mode of payment is required.');
-    if (referenceRequired && !paymentReference.trim()) {
-      return toast.error('Reference / Account / Check No. is required for the selected payment mode.');
+    setErrorMsg('');
+    setInvoiceNoInvalid(false);
+
+    if (!invoiceNo.trim()) {
+      setErrorMsg('Invoice Number (SI#) is required.');
+      setInvoiceNoInvalid(true);
+      invoiceNoRef.current?.focus();
+      return;
     }
-    if (totalAmount <= 0) return toast.error('Enter at least one payment amount greater than zero.');
+    if (!date) {
+      setErrorMsg('Invoice date is required.');
+      return;
+    }
+    if (!paymentDate) {
+      setErrorMsg('Payment date is required.');
+      return;
+    }
+    if (!paymentMode) {
+      setErrorMsg('Mode of payment is required.');
+      return;
+    }
+    if (referenceRequired && !paymentReference.trim()) {
+      setErrorMsg('Reference / Account / Check No. is required for the selected payment mode.');
+      return;
+    }
+    if (totalAmount <= 0) {
+      setErrorMsg('Enter at least one payment amount greater than zero.');
+      return;
+    }
 
     const selectedLoan = summary.loan.records?.find(l => l.id === selectedLoanId) || null;
     const selectedTd = summary.time_deposit.records?.find(td => td.id === selectedTdId) || null;
@@ -1114,6 +1228,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
         invoice_no: invoiceNo.trim(),
         member,
         date,
+        payment_date: paymentDate,
         entries,
         payment_mode: paymentMode,
         payment_mode_note: paymentModeNote,
@@ -1121,10 +1236,16 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
         created_by: userId ?? null,
       });
       toast.success(`Invoice ${invoiceNo.trim()} saved with ${entries.length} payment categor${entries.length > 1 ? 'ies' : 'y'}.`);
-      reset();
       onSuccess();
+      reset();
     } catch (err) {
-      toast.error(err.message || 'Failed to save invoice.');
+      const message = err.message || 'Failed to save invoice.';
+      setErrorMsg(message);
+      if (/invoice number|SI#/i.test(message)) {
+        setInvoiceNoInvalid(true);
+        invoiceNoRef.current?.focus();
+        invoiceNoRef.current?.select();
+      }
     } finally {
       setSaving(false);
     }
@@ -1144,6 +1265,12 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               <Spinner size={14} /> Loading balances…
             </div>
           )}
+          {errorMsg && !loadingSummary && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+              <X size={16} className="flex-shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1161,6 +1288,13 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
             </Button>
           </div>
 
+          {errorMsg && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+              <X size={16} className="flex-shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -1173,15 +1307,16 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               <tbody className="divide-y divide-gray-50">
                 {CATEGORY_ORDER.map(cat => {
                   const info = summary[cat];
-                  const statusText = info.hasBalance
-                    ? `Balance: ${formatCurrency(info.balance)}`
-                    : 'No Balance';
+                  const valueLabel = info.valueType === 'balance' ? 'Balance' : 'Total Deposited';
+                  const statusText = !info.hasRecord
+                    ? 'No Record'
+                    : `${valueLabel}: ${formatCurrency(info.value)}`;
 
                   return (
                     <tr key={cat}>
                       <td className="px-4 py-3 font-medium text-gray-800">{CATEGORY_LABEL[cat]}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs font-medium ${info.hasBalance ? 'text-amber-700' : 'text-gray-400'}`}>
+                        <span className={`text-xs font-medium ${info.hasRecord ? 'text-amber-700' : 'text-gray-400'}`}>
                           {statusText}
                         </span>
                         {cat === 'loan' && summary.loan.records?.length > 1 && (
@@ -1234,8 +1369,9 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
           </div>
 
           <p className="text-xs text-gray-400">
-            Categories with no balance are still shown. Deposit-based categories (CBU, Savings,
-            Time Deposit) accept a new deposit amount even without a balance due.
+            Categories with "No Record" have no account set up yet. Deposit-based categories (CBU,
+            Savings, Time Deposit, Savings Booster) show Total Deposited and accept a new deposit
+            amount even without a balance due.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1244,14 +1380,29 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className={fieldClass} />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Date
+                <span className="ml-1.5 text-xs font-normal text-gray-400">(actual date credited)</span>
+              </label>
+              <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className={fieldClass} />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number (SI#)</label>
               <input
+                ref={invoiceNoRef}
                 type="text"
                 value={invoiceNo}
-                onChange={e => setInvoiceNo(e.target.value)}
+                onChange={e => {
+                  setInvoiceNo(e.target.value);
+                  if (invoiceNoInvalid) setInvoiceNoInvalid(false);
+                  if (errorMsg) setErrorMsg('');
+                }}
                 placeholder="e.g. SI-000123"
-                className={`${fieldClass} font-mono`}
+                className={`${fieldClass} font-mono ${invoiceNoInvalid ? 'border-red-400 ring-2 ring-red-200 focus:ring-red-300' : ''}`}
               />
+              {invoiceNoInvalid && errorMsg && (
+                <p className="text-xs text-red-600 mt-1">{errorMsg}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>

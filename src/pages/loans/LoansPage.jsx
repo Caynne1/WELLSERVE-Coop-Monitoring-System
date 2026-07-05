@@ -47,7 +47,7 @@ import {
   computeFeeBalance,
 } from '../../services/membershipService';
 import { createPenalty } from '../../services/penaltyService';
-import { createInvoiceForPayment } from '../../services/invoiceService';
+import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
 import { createTransaction } from '../../services/transactionService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { printHtmlDocument } from '../../utils/print';
@@ -954,6 +954,13 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
 
     setSaving(true);
     try {
+      const duplicate = await checkInvoiceNoExists(siNo.trim());
+      if (duplicate) {
+        toast.error(`Invoice Number "${siNo.trim()}" is already in use. Please enter a different SI#.`);
+        setSaving(false);
+        return;
+      }
+
       const paymentModeNote =
         [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 

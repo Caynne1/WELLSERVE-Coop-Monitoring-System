@@ -45,7 +45,7 @@ import {
   recordTimeDepositPayment,
 } from '../../services/timeDepositService';
 import { exportMemberReport } from '../../utils/excelExport.js';
-import { createInvoiceForPayment, createInvoice } from '../../services/invoiceService';
+import { createInvoiceForPayment, createInvoice, checkInvoiceNoExists } from '../../services/invoiceService';
 import { trackActivity } from '../../services/logService';
 
 import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
@@ -233,11 +233,7 @@ export default function MemberDetailPage() {
 
   const paymentHistoryRows = useMemo(() => {
     const relevant = transactions
-      .filter(t =>
-        t.type === 'loan_payment' ||
-        (t.category === 'cbu' && (t.type === 'deposit' || t.type === 'withdrawal')) ||
-        (t.category === 'savings' && (t.type === 'deposit' || t.type === 'withdrawal'))
-      )
+      .filter(t => t.type === 'loan_payment')
       .sort((a, b) => {
         const aDate = a.transaction_date || a.created_at;
         const bDate = b.transaction_date || b.created_at;
@@ -262,9 +258,7 @@ export default function MemberDetailPage() {
         last.payment_mode_note === (tx.payment_mode_note || '');
 
       if (canMerge) {
-        if (tx.type === 'loan_payment') last.loan_amount += Number(tx.amount || 0);
-        if (tx.category === 'cbu' && tx.type === 'deposit') last.cbu_amount += Number(tx.amount || 0);
-        if (tx.category === 'savings' && tx.type === 'deposit') last.savings_amount += Number(tx.amount || 0);
+        last.loan_amount += Number(tx.amount || 0);
 
         if (txDate > new Date(last.latest_created_at)) {
           last.latest_created_at = tx.created_at;
@@ -283,9 +277,9 @@ export default function MemberDetailPage() {
           created_by_name: tx.created_by_name || 'System',
           payment_mode: tx.payment_mode || '',
           payment_mode_note: tx.payment_mode_note || '',
-          loan_amount: tx.type === 'loan_payment' ? Number(tx.amount || 0) : 0,
-          cbu_amount: tx.category === 'cbu' && tx.type === 'deposit' ? Number(tx.amount || 0) : 0,
-          savings_amount: tx.category === 'savings' && tx.type === 'deposit' ? Number(tx.amount || 0) : 0,
+          loan_amount: Number(tx.amount || 0),
+          cbu_amount: 0,
+          savings_amount: 0,
         });
       }
     }
@@ -759,6 +753,13 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 
     setLoading(true);
     try {
+      const duplicate = await checkInvoiceNoExists(siNo.trim());
+      if (duplicate) {
+        toast.error(`Invoice Number "${siNo.trim()}" is already in use. Please enter a different SI#.`);
+        setLoading(false);
+        return;
+      }
+
       const paymentModeNote = [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
       if (loanPay > 0) {
@@ -1034,6 +1035,13 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
 
     setLoading(true);
     try {
+      const duplicate = await checkInvoiceNoExists(siNo.trim());
+      if (duplicate) {
+        toast.error(`Invoice Number "${siNo.trim()}" is already in use. Please enter a different SI#.`);
+        setLoading(false);
+        return;
+      }
+
       const paymentModeNote = [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
       await createTransaction({
@@ -1584,6 +1592,13 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
     if (!payDate) return toast.error('Payment date is required.');
     if (!payMode) return toast.error('Mode of payment is required.');
     if (isFullyPaid) return toast.error('Membership fee is already fully paid.');
+
+    if (paySiNo.trim()) {
+      const duplicate = await checkInvoiceNoExists(paySiNo.trim());
+      if (duplicate) {
+        return toast.error(`Invoice Number "${paySiNo.trim()}" is already in use. Please enter a different SI#.`);
+      }
+    }
 
     let total, breakdownNote, membershipAmt, cbuAmt, savingsAmt, parts;
     let membershipItems = [], cbuParts = [], savingsParts = [];
@@ -2272,6 +2287,13 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
 
     setAddSaving(true);
     try {
+      const duplicate = await checkInvoiceNoExists(tdForm.si_number.trim());
+      if (duplicate) {
+        toast.error(`Invoice Number "${tdForm.si_number.trim()}" is already in use. Please enter a different SI#.`);
+        setAddSaving(false);
+        return;
+      }
+
       const amt = parseFloat(tdForm.amount);
       const newTd = await createTimeDeposit({
         ...tdForm,
@@ -2333,6 +2355,13 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
 
     setPaying(true);
     try {
+      const duplicate = await checkInvoiceNoExists(paySiNo.trim());
+      if (duplicate) {
+        toast.error(`Invoice Number "${paySiNo.trim()}" is already in use. Please enter a different SI#.`);
+        setPaying(false);
+        return;
+      }
+
       await recordTimeDepositPayment({
         time_deposit_id: payTarget.id,
         amount:          value,
@@ -2956,7 +2985,7 @@ function LoanPaymentHistoryTable({ rows }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Date', 'Loan', 'CBU', 'Savings', 'Mode', 'Assisted by'].map(h => (
+            {['Date & Time', 'Loan Payment', 'Mode', 'Assisted by'].map(h => (
               <th
                 key={h}
                 className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -2970,16 +2999,10 @@ function LoanPaymentHistoryTable({ rows }) {
           {rows.map(row => (
             <tr key={row.id}>
               <td className="px-4 py-3 whitespace-nowrap">
-                {formatDate(row.transaction_date || row.created_at)}
+                {formatDateTime(row.latest_created_at || row.created_at)}
               </td>
               <td className="px-4 py-3 font-medium">
                 {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : '—'}
-              </td>
-              <td className="px-4 py-3 font-medium">
-                {row.cbu_amount > 0 ? formatCurrency(row.cbu_amount) : '—'}
-              </td>
-              <td className="px-4 py-3 font-medium">
-                {row.savings_amount > 0 ? formatCurrency(row.savings_amount) : '—'}
               </td>
               <td className="px-4 py-3 text-gray-500">
                 {row.payment_mode || '—'}
@@ -3130,7 +3153,7 @@ function HistoryTable({ rows }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Date', 'Type', 'Amount', 'Mode', 'Assisted By'].map(h => (
+            {['Date & Time', 'Type', 'Amount', 'Mode', 'Assisted By'].map(h => (
               <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 {h}
               </th>
@@ -3140,7 +3163,7 @@ function HistoryTable({ rows }) {
         <tbody className="divide-y divide-gray-50">
           {rows.map(row => (
             <tr key={row.id}>
-              <td className="px-4 py-3">{formatDate(row.transaction_date || row.created_at || row.payment_date)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.created_at || row.transaction_date || row.payment_date)}</td>
               <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || '—'}</td>
               <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
                 {formatCurrency(row.amount || 0)}

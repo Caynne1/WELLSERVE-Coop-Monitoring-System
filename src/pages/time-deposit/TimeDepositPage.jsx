@@ -15,7 +15,7 @@ import MemberSearchInput from '../../components/shared/MemberSearchInput';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { trackActivity } from '../../services/logService';
-import { createInvoice } from '../../services/invoiceService';
+import { createInvoice, checkInvoiceNoExists } from '../../services/invoiceService';
 import { createTransaction } from '../../services/transactionService';
 import {
   getAllTimeDeposits,
@@ -524,8 +524,15 @@ export default function TimeDepositPage() {
         });
         toast.success('Time Deposit updated successfully.');
       } else {
+        const siNo = form.si_number.trim();
+        const duplicate = await checkInvoiceNoExists(siNo);
+        if (duplicate) {
+          toast.error(`Invoice Number "${siNo}" is already in use. Please enter a different SI#.`);
+          setSaving(false);
+          return;
+        }
+
         const newTD = await createTimeDeposit(form);
-        const siNo  = form.si_number.trim();
         const amt   = parseFloat(form.amount);
 
         // Close modal & refresh immediately — prevents re-submission if secondary steps fail
@@ -657,6 +664,13 @@ export default function TimeDepositPage() {
 
     setPaying(true);
     try {
+      const duplicate = await checkInvoiceNoExists(siNo);
+      if (duplicate) {
+        toast.error(`Invoice Number "${siNo}" is already in use. Please enter a different SI#.`);
+        setPaying(false);
+        return;
+      }
+
       // 1. Save payment record
       const result = await recordTimeDepositPayment({
         time_deposit_id: payTarget.id,

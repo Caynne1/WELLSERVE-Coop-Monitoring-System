@@ -23,7 +23,7 @@ import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import { getAllCBUAccounts } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
-import { createInvoiceForPayment } from '../../services/invoiceService';
+import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -44,6 +44,9 @@ export default function CBUPage() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortOrder, setSortOrder] = useState('desc');
 
   const [depositTarget, setDepositTarget] = useState(null);
   const [withdrawTarget, setWithdrawTarget] = useState(null);
@@ -167,6 +170,13 @@ export default function CBUPage() {
 
     setPosting(true);
     try {
+      const duplicate = await checkInvoiceNoExists(siNo.trim());
+      if (duplicate) {
+        toast.error(`Invoice Number "${siNo.trim()}" is already in use. Please enter a different SI#.`);
+        setPosting(false);
+        return;
+      }
+
       const account = depositTarget.account;
       const memberName = [
         account.members?.first_name,
@@ -196,7 +206,7 @@ export default function CBUPage() {
         member_id: account.member_id,
         member_name: memberName,
         amount: value,
-        purpose: `CBU Deposit — ${account.account_no || account.id}`,
+        purpose: `CBU Deposit${account.account_no ? ` — ${account.account_no}` : ''}`,
         ref_id: account.id,
         account_id: account.id,
         created_by: user?.id ?? null,
@@ -278,17 +288,26 @@ export default function CBUPage() {
     }
   }
 
-  const filtered = accounts.filter(a => {
-    const q = search.toLowerCase();
-    return (
-      a.members?.first_name?.toLowerCase().includes(q) ||
-      a.members?.last_name?.toLowerCase().includes(q) ||
-      a.members?.member_no?.toLowerCase().includes(q) ||
-      a.account_no?.toLowerCase().includes(q)
-    );
-  });
+  const filtered = accounts
+    .filter(a => {
+      const q = search.toLowerCase();
+      const matchSearch = (
+        a.members?.first_name?.toLowerCase().includes(q) ||
+        a.members?.last_name?.toLowerCase().includes(q) ||
+        a.members?.member_no?.toLowerCase().includes(q) ||
+        a.account_no?.toLowerCase().includes(q)
+      );
+      const updated = a.updated_at ? a.updated_at.slice(0, 10) : null;
+      const matchFrom = !dateFrom || (updated && updated >= dateFrom);
+      const matchTo = !dateTo || (updated && updated <= dateTo);
+      return matchSearch && matchFrom && matchTo;
+    })
+    .sort((a, b) => {
+      const aDate = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const bDate = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
+    });
 
-  const totalBalance = accounts.reduce((s, a) => s + (a.balance || 0), 0);
   const totalDeposits = accounts.reduce((s, a) => s + (a.total_deposits || 0), 0);
   const activeCount = accounts.filter(a => a.status === 'active').length;
 
@@ -344,13 +363,7 @@ export default function CBUPage() {
     <div className="p-6">
       <PageHeader title="CBU Monitoring" subtitle="Capital Build-Up accounts across all members" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
-        <SummaryCard
-          icon={<PesoSign size={20} className="text-green-600" />}
-          label="Total CBU Balance"
-          value={formatCurrency(totalBalance)}
-          bg="bg-green-50"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 mb-6">
         <SummaryCard
           icon={<TrendingUp size={20} className="text-blue-600" />}
           label="Total Deposits"
@@ -376,6 +389,28 @@ export default function CBUPage() {
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
           />
         </div>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={e => setDateFrom(e.target.value)}
+          title="Updated from"
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={e => setDateTo(e.target.value)}
+          title="Updated to"
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+        />
+        <select
+          value={sortOrder}
+          onChange={e => setSortOrder(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E] bg-white text-gray-700"
+        >
+          <option value="desc">Newest Updated First</option>
+          <option value="asc">Oldest Updated First</option>
+        </select>
         <button
           onClick={handlePrint}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"

@@ -37,16 +37,16 @@ export default function MemberSearchInput({ value, onChange, placeholder = 'Sear
         />
       </div>
       {open && results.length > 0 && (
-        <div className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+        <div className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-80 overflow-y-auto">
           {results.map(m => (
             <button
               key={m.id}
               onClick={() => { onChange(m); setQuery(`${m.first_name} ${m.last_name}`); setOpen(false); }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 text-left"
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-gray-50 text-left"
             >
               <User size={14} className="text-gray-400 flex-shrink-0" />
-              <span>{m.first_name} {m.last_name}</span>
-              {m.member_no && <span className="text-xs text-gray-400 ml-auto font-mono">{m.member_no}</span>}
+              <span className="whitespace-normal break-words leading-snug">{m.first_name} {m.last_name}</span>
+              {m.member_no && <span className="text-xs text-gray-400 ml-auto font-mono flex-shrink-0">{m.member_no}</span>}
             </button>
           ))}
         </div>

@@ -24,7 +24,7 @@ import {
 import { getAccountsByMemberId, updateAccount } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
 import { createMembership } from '../../services/membershipService';
-import { createInvoiceForPayment } from '../../services/invoiceService';
+import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
 import { createTimeDeposit } from '../../services/timeDepositService';
 
 import { useAuth } from '../../context/AuthContext';
@@ -994,6 +994,11 @@ export function MemberFormContent({
             toast.error('Reference / Account / Check No. is required for the selected payment mode.');
             return;
           }
+          const duplicate = await checkInvoiceNoExists(values.invoice_no.trim());
+          if (duplicate) {
+            toast.error(`Invoice Number "${values.invoice_no.trim()}" is already in use. Please enter a different SI#.`);
+            return;
+          }
         }
 
         const newMember = await createMember({ ...payload, record_type: 'new_member' });
@@ -1100,6 +1105,11 @@ export function MemberFormContent({
         if (!values.payment_mode) { toast.error('Mode of payment is required when there is onboarding payment.'); return; }
         if (referenceRequired && !values.payment_reference?.trim()) {
           toast.error('Reference / Account / Check No. is required for the selected payment mode.');
+          return;
+        }
+        const duplicate = await checkInvoiceNoExists(values.invoice_no.trim());
+        if (duplicate) {
+          toast.error(`Invoice Number "${values.invoice_no.trim()}" is already in use. Please enter a different SI#.`);
           return;
         }
       }

@@ -29,6 +29,7 @@ const INVOICE_COLUMNS = [
   'fund_added',
   'payment_mode',
   'payment_mode_note',
+  'payment_date',
 ];
 
 function sanitizeInvoicePayload(payload) {
@@ -118,6 +119,17 @@ export async function checkInvoiceNoExists(invoiceNo, excludeId = null) {
   return (data || []).length > 0;
 }
 
+async function insertInvoiceRow(clean) {
+  const { data, error } = await supabase
+    .from('invoices')
+    .insert(clean)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function createInvoice(payload) {
   if (!payload.invoice_no || !String(payload.invoice_no).trim()) {
     throw new Error('SI# is required.');
@@ -135,17 +147,10 @@ export async function createInvoice(payload) {
     invoice_no: invoiceNo,
   });
 
-  const { data, error } = await supabase
-    .from('invoices')
-    .insert(clean)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
+  return insertInvoiceRow(clean);
 }
 
-export async function createInvoiceForPayment({
+function buildPaymentInvoicePayload({
   invoice_no,
   payment_type,
   member_id,
@@ -170,7 +175,7 @@ export async function createInvoiceForPayment({
   if (!member_name) throw new Error('member_name is required for invoice creation.');
   if (!amount || Number(amount) <= 0) throw new Error('amount must be greater than zero.');
 
-  return createInvoice({
+  return sanitizeInvoicePayload({
     invoice_no: String(invoice_no).trim(),
     date: date || new Date().toISOString().split('T')[0],
     payee: member_name,
@@ -186,6 +191,16 @@ export async function createInvoiceForPayment({
     payment_mode,
     payment_mode_note,
   });
+}
+
+export async function createInvoiceForPayment(args) {
+  const invoiceNo = String(args.invoice_no || '').trim();
+  const duplicate = await checkInvoiceNoExists(invoiceNo);
+  if (duplicate) {
+    throw new Error(`Invoice Number "${invoiceNo}" is already in use. Please enter a different SI#.`);
+  }
+  const clean = buildPaymentInvoicePayload(args);
+  return insertInvoiceRow(clean);
 }
 
 export async function updateInvoice(id, payload) {
@@ -253,63 +268,83 @@ export const PAYMENT_CATEGORIES = [
 export async function getMemberPaymentSummary(memberId) {
   if (!memberId) throw new Error('member_id is required.');
 
-  const [membership, loans, accounts, timeDeposits] = await Promise.all([
+  const [membership, loans, accounts, timeDeposits, boosterRows] = await Promise.all([
     getMembershipByMemberId(memberId).catch(() => null),
     getLoansByMemberId(memberId).catch(() => []),
     getMemberAccountsMap(memberId).catch(() => ({ all: [], cbu: null, savings: null })),
     getTimeDepositsByMemberId(memberId).catch(() => []),
+    supabase.from('savings_booster').select('*').eq('member_id', memberId).then(
+      r => (r.error ? [] : (r.data || [])),
+      () => []
+    ),
   ]);
 
-  const activeLoans = (loans || []).filter(l => l.status !== 'paid' && (l.balance || 0) > 0);
-  const activeTimeDeposits = (timeDeposits || []).filter(td => td.status === 'Active');
+  const allLoans = loans || [];
+  const activeLoans = allLoans.filter(l => l.status !== 'paid' && (l.balance || 0) > 0);
+  const allTimeDeposits = timeDeposits || [];
+  const activeTimeDeposits = allTimeDeposits.filter(td => td.status === 'Active');
 
-  const membershipBalance = membership ? computeFeeBalance(membership) : 0;
+  const hasMembership = !!membership;
+  const membershipBalance = hasMembership ? computeFeeBalance(membership) : 0;
+
+  const cbuTotalDeposited = accounts.cbu?.total_deposits ?? accounts.cbu?.balance ?? 0;
+  const savingsTotalDeposited = accounts.savings?.total_deposits ?? accounts.savings?.balance ?? 0;
+  const tdTotalDeposited = allTimeDeposits.reduce((s, td) => s + (Number(td.amount) || 0), 0);
+  const boosterTotalDeposited = (boosterRows || []).reduce((s, b) => s + (Number(b.total_deposited) || 0), 0);
 
   return {
     membership: {
       key: 'membership',
       label: 'Membership',
       record: membership,
-      balance: membershipBalance,
-      hasBalance: membershipBalance > 0,
-      payable: !!membership && membershipBalance > 0,
+      hasRecord: hasMembership,
+      valueType: 'balance',
+      value: membershipBalance,
+      payable: hasMembership && membershipBalance > 0,
     },
     loan: {
       key: 'loan',
       label: 'Loan',
       records: activeLoans,
-      balance: activeLoans.reduce((s, l) => s + (l.balance || 0), 0),
-      hasBalance: activeLoans.length > 0,
+      hasRecord: allLoans.length > 0,
+      valueType: 'balance',
+      value: activeLoans.reduce((s, l) => s + (l.balance || 0), 0),
       payable: activeLoans.length > 0,
     },
     cbu: {
       key: 'cbu',
       label: 'CBU',
       record: accounts.cbu,
-      balance: accounts.cbu?.balance || 0,
-      hasBalance: !!accounts.cbu,
+      hasRecord: !!accounts.cbu,
+      valueType: 'deposited',
+      value: cbuTotalDeposited,
       payable: !!accounts.cbu, // deposit-based: always allowed to add more
     },
     savings: {
       key: 'savings',
       label: 'Savings',
       record: accounts.savings,
-      balance: accounts.savings?.balance || 0,
-      hasBalance: !!accounts.savings,
+      hasRecord: !!accounts.savings,
+      valueType: 'deposited',
+      value: savingsTotalDeposited,
       payable: !!accounts.savings,
     },
     time_deposit: {
       key: 'time_deposit',
       label: 'Time Deposit',
       records: activeTimeDeposits,
-      balance: activeTimeDeposits.reduce((s, td) => s + (td.amount || 0), 0),
-      hasBalance: activeTimeDeposits.length > 0,
+      hasRecord: allTimeDeposits.length > 0,
+      valueType: 'deposited',
+      value: tdTotalDeposited,
       payable: activeTimeDeposits.length > 0,
     },
     savings_booster: {
       key: 'savings_booster',
       label: 'Savings Booster',
-      hasBalance: false,
+      records: boosterRows,
+      hasRecord: (boosterRows || []).length > 0,
+      valueType: 'deposited',
+      value: boosterTotalDeposited,
       payable: false, // Savings Booster deposits are managed on its own enrollment page
     },
   };
@@ -328,6 +363,7 @@ export async function createMultiCategoryInvoice({
   invoice_no,
   member,
   date,
+  payment_date = null,
   entries,
   payment_mode = null,
   payment_mode_note = null,
@@ -349,6 +385,7 @@ export async function createMultiCategoryInvoice({
     throw new Error(`Invoice Number "${siNo}" is already in use. Please enter a different SI#.`);
   }
 
+  const effectivePaymentDate = payment_date || date;
   const memberName = [member.first_name, member.last_name].filter(Boolean).join(' ') || 'Member';
   const created = [];
 
@@ -363,7 +400,7 @@ export async function createMultiCategoryInvoice({
     if (entry.category === 'membership') {
       if (!entry.membership) throw new Error('Membership record not found for this member.');
       await recordMembershipPayment(
-        entry.membership.id, member.id, amount, date, notes, created_by
+        entry.membership.id, member.id, amount, effectivePaymentDate, notes, created_by
       );
       ref_id = entry.membership.id;
       purpose = purpose || 'Membership Fee Payment';
@@ -383,13 +420,13 @@ export async function createMultiCategoryInvoice({
         reference: siNo,
         notes,
         created_by,
-        transaction_date: date,
+        transaction_date: effectivePaymentDate,
         payment_mode,
         payment_mode_note,
       });
       await applyLoanPaymentToSchedule(entry.loan.id, amount);
       ref_id = entry.loan.id;
-      purpose = purpose || `Loan Payment — ${entry.loan.loan_no || entry.loan.id}`;
+      purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;
     }
 
     if (entry.category === 'cbu' || entry.category === 'savings') {
@@ -403,13 +440,13 @@ export async function createMultiCategoryInvoice({
         reference: siNo,
         notes,
         created_by,
-        transaction_date: date,
+        transaction_date: effectivePaymentDate,
         payment_mode,
         payment_mode_note,
       });
       account_id = entry.account.id;
       ref_id = entry.account.id;
-      purpose = purpose || `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit — ${entry.account.account_no || entry.account.id}`;
+      purpose = purpose || `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`;
     }
 
     if (entry.category === 'time_deposit') {
@@ -417,15 +454,20 @@ export async function createMultiCategoryInvoice({
       await recordTimeDepositPayment({
         time_deposit_id: entry.timeDeposit.id,
         amount,
-        payment_date: date,
+        payment_date: effectivePaymentDate,
         si_number: siNo,
         created_by,
       });
       ref_id = entry.timeDeposit.id;
-      purpose = purpose || `Time Deposit Payment — ${entry.timeDeposit.name || memberName}`;
+      purpose = purpose || `Time Deposit Payment${entry.timeDeposit.name ? ` — ${entry.timeDeposit.name}` : ''}`;
     }
 
-    const invoiceRow = await createInvoiceForPayment({
+    // NOTE: intentionally bypasses createInvoiceForPayment's own duplicate
+    // check here — the SI# was already validated once above and is reused
+    // on purpose across every category in this same invoice. Re-checking per
+    // line item would find the row we just inserted for the first category
+    // and incorrectly reject the second one as a "duplicate".
+    const clean = buildPaymentInvoicePayload({
       invoice_no: siNo,
       payment_type: entry.category === 'loan' ? 'loan_payment' : entry.category,
       member_id: member.id,
@@ -440,7 +482,9 @@ export async function createMultiCategoryInvoice({
       payment_mode,
       payment_mode_note,
     });
+    clean.payment_date = effectivePaymentDate;
 
+    const invoiceRow = await insertInvoiceRow(clean);
     created.push(invoiceRow);
   }
 
