@@ -266,7 +266,11 @@ export default function MembersPage() {
         (m.recruiter_name || '').toLowerCase().includes(q);
 
       const matchesType =
-        typeFilter === 'all' ? true : (m.membership_type || '').toLowerCase() === typeFilter;
+        typeFilter === 'all'
+          ? true
+          : isKiddyView
+            ? (m.kiddy_savings_type || 'regular_savings') === typeFilter
+            : (m.membership_type || '').toLowerCase() === typeFilter;
 
       const matchesStatus =
         statusTab === 'active'
@@ -371,6 +375,7 @@ export default function MembersPage() {
         first_name:      m.first_name      || '',
         last_name:       m.last_name       || '',
         membership_type: m.membership_type || '',
+        kiddy_savings_type: m.membership_type === 'kiddy' ? (m.kiddy_savings_type || 'regular_savings') : '',
         email:           m.email           || '',
         mobile_no:       m.phone           || '',
         recruiter_name:  m.recruiter_name  || 'Self',
@@ -421,6 +426,7 @@ export default function MembersPage() {
         first_name:      m.first_name      || '',
         last_name:       m.last_name       || '',
         membership_type: m.membership_type || '',
+        kiddy_savings_type: m.membership_type === 'kiddy' ? (m.kiddy_savings_type || 'regular_savings') : '',
         email:           m.email           || '',
         mobile_no:       m.phone           || '',
         recruiter_name:  m.recruiter_name  || 'Self',
@@ -564,22 +570,31 @@ export default function MembersPage() {
               />
             </div>
 
-            {/* Type filter — only for regular/associate view */}
-            {!isKiddyView && (
-              <div className="relative">
-                <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <select
-                  value={typeFilter}
-                  onChange={e => setTypeFilter(e.target.value)}
-                  className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm
-                    focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-                >
-                  <option value="all">All Types</option>
-                  <option value="associate">Associate</option>
-                  <option value="regular">Regular</option>
-                </select>
-              </div>
-            )}
+            {/* Type filter — Associate/Regular for the regular view,
+                Regular Savings Account/Educational Savings Account for the Kiddy view */}
+            <div className="relative">
+              <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <select
+                value={typeFilter}
+                onChange={e => setTypeFilter(e.target.value)}
+                className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm
+                  focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+              >
+                {isKiddyView ? (
+                  <>
+                    <option value="all">All Savings Types</option>
+                    <option value="regular_savings">Regular Savings Account</option>
+                    <option value="educational_savings">Educational Savings Account</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="all">All Types</option>
+                    <option value="associate">Associate</option>
+                    <option value="regular">Regular</option>
+                  </>
+                )}
+              </select>
+            </div>
 
             {/* Year filter */}
             <div className="relative">
@@ -659,7 +674,15 @@ export default function MembersPage() {
           <div className="text-right">
             <p className="text-sm font-semibold text-gray-800">{isKiddyView ? 'Kiddy & Youth Members Report' : 'Members Report'}</p>
             <p className="text-xs text-gray-500">Status: {statusLabel[statusTab]}</p>
-            {!isKiddyView && <p className="text-xs text-gray-500">Type: {typeFilter === 'all' ? 'All' : typeFilter}</p>}
+            <p className="text-xs text-gray-500">
+              {isKiddyView ? 'Savings Type' : 'Type'}: {
+                typeFilter === 'all'
+                  ? 'All'
+                  : isKiddyView
+                    ? (typeFilter === 'educational_savings' ? 'Educational Savings Account' : 'Regular Savings Account')
+                    : typeFilter
+              }
+            </p>
             <p className="text-xs text-gray-500">Year Joined: {yearFilter === 'all' ? 'All Years' : yearFilter}</p>
             <p className="text-xs text-gray-500">Generated: {new Date().toLocaleString()}</p>
           </div>
@@ -690,7 +713,7 @@ export default function MembersPage() {
                     </th>
 
                     {(isKiddyView
-                      ? ['Member', 'Member No.', 'Guardian', 'Contact', 'Date of Birth', 'Status', 'Actions']
+                      ? ['Member', 'Member No.', 'Savings Type', 'Guardian', 'Contact', 'Date of Birth', 'Status', 'Actions']
                       : ['Member', 'Member No.', 'Contact', 'Referrer', 'Joined', 'Status', 'Actions']
                     ).map((h) => (
                       <th
@@ -712,7 +735,7 @@ export default function MembersPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-16 text-center">
+                      <td colSpan={10} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-400">
                           {isKiddyView
                             ? <Baby size={32} className="text-teal-200" />
@@ -812,6 +835,21 @@ export default function MembersPage() {
                               {member.member_no || '—'}
                             </span>
                           </td>
+
+                          {/* Savings Type (kiddy only) */}
+                          {isKiddyView && (
+                            <td className="px-4 py-3 text-left">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                member.kiddy_savings_type === 'educational_savings'
+                                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                  : 'bg-teal-100 text-teal-700 border border-teal-200'
+                              }`}>
+                                {member.kiddy_savings_type === 'educational_savings'
+                                  ? 'Educational Savings Account'
+                                  : 'Regular Savings Account'}
+                              </span>
+                            </td>
+                          )}
 
                           {/* Guardian (kiddy) | Contact (regular) */}
                           {isKiddyView ? (

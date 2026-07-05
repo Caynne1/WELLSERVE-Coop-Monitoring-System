@@ -7,6 +7,7 @@ import {
 } from './membershipService';
 import { getLoansByMemberId, applyLoanPaymentToSchedule } from './loanService';
 import { getMemberAccountsMap, updateAccount } from './accountService';
+import { updateMember } from './memberService';
 import {
   getTimeDepositsByMemberId,
   recordTimeDepositPayment,
@@ -434,6 +435,17 @@ export async function createMultiCategoryInvoice({
 
     if (entry.category === 'cbu' || entry.category === 'savings') {
       if (!entry.account) throw new Error(`No ${entry.category.toUpperCase()} account found for this member.`);
+
+      // Kiddy & Youth Savings members carry a sub-type (Regular Savings
+      // Account vs Educational Savings Account) chosen on the invoice form.
+      // Label the deposit under that sub-type and keep the member's on-file
+      // savings type in sync if it was changed here.
+      const isKiddySavings = entry.category === 'savings' && member.membership_type === 'kiddy';
+      const kiddySavingsType = isKiddySavings ? (entry.kiddySavingsType || member.kiddy_savings_type || 'regular_savings') : null;
+      const kiddySavingsLabel = kiddySavingsType === 'educational_savings'
+        ? 'Educational Savings Account'
+        : 'Regular Savings Account';
+
       await createTransaction({
         member_id: member.id,
         account_id: entry.account.id,
@@ -441,7 +453,7 @@ export async function createMultiCategoryInvoice({
         type: 'deposit',
         amount,
         reference: siNo,
-        notes,
+        notes: isKiddySavings ? [kiddySavingsLabel, notes].filter(Boolean).join(' — ') : notes,
         created_by,
         transaction_date: effectivePaymentDate,
         payment_mode,
@@ -457,9 +469,17 @@ export async function createMultiCategoryInvoice({
         total_deposits: (entry.account.total_deposits || 0) + amount,
         updated_at: new Date().toISOString(),
       });
+
+      if (isKiddySavings && kiddySavingsType && kiddySavingsType !== member.kiddy_savings_type) {
+        await updateMember(member.id, { kiddy_savings_type: kiddySavingsType });
+        member.kiddy_savings_type = kiddySavingsType;
+      }
+
       account_id = entry.account.id;
       ref_id = entry.account.id;
-      purpose = purpose || `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`;
+      purpose = purpose || (isKiddySavings
+        ? `${kiddySavingsLabel} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`
+        : `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`);
     }
 
     if (entry.category === 'time_deposit') {

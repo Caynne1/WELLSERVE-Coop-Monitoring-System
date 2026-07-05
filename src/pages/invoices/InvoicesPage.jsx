@@ -1112,6 +1112,9 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const [selectedLoanId, setSelectedLoanId] = useState('');
   const [selectedTdId, setSelectedTdId] = useState('');
   const [selectedBoosterId, setSelectedBoosterId] = useState('');
+  const [kiddySavingsType, setKiddySavingsType] = useState('regular_savings');
+
+  const isKiddyMember = member?.membership_type === 'kiddy';
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1132,6 +1135,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setSelectedLoanId('');
     setSelectedTdId('');
     setSelectedBoosterId('');
+    setKiddySavingsType('regular_savings');
     setDate(new Date().toISOString().split('T')[0]);
     setPaymentDate(new Date().toISOString().split('T')[0]);
     setInvoiceNo('');
@@ -1156,6 +1160,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       setSelectedLoanId(data.loan.records?.[0]?.id || '');
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
       setSelectedBoosterId(data.savings_booster.records?.[0]?.id || '');
+      setKiddySavingsType(m.kiddy_savings_type || 'regular_savings');
       setStep(2);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to load member balances.');
@@ -1220,7 +1225,12 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       entries.push({ category: 'cbu', amount: parseFloat(amounts.cbu), account: summary.cbu.record });
     }
     if (parseFloat(amounts.savings) > 0) {
-      entries.push({ category: 'savings', amount: parseFloat(amounts.savings), account: summary.savings.record });
+      entries.push({
+        category: 'savings',
+        amount: parseFloat(amounts.savings),
+        account: summary.savings.record,
+        ...(isKiddyMember ? { kiddySavingsType } : {}),
+      });
     }
     if (parseFloat(amounts.time_deposit) > 0) {
       entries.push({ category: 'time_deposit', amount: parseFloat(amounts.time_deposit), timeDeposit: selectedTd });
@@ -1352,6 +1362,16 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                                 {td.name} · {formatCurrency(td.amount)}
                               </option>
                             ))}
+                          </select>
+                        )}
+                        {cat === 'savings' && isKiddyMember && (
+                          <select
+                            className="ml-2 text-xs border border-teal-200 rounded px-1 py-0.5 bg-teal-50 text-teal-700"
+                            value={kiddySavingsType}
+                            onChange={e => setKiddySavingsType(e.target.value)}
+                          >
+                            <option value="regular_savings">Regular Savings Account</option>
+                            <option value="educational_savings">Educational Savings Account</option>
                           </select>
                         )}
                         {cat === 'savings_booster' && summary.savings_booster.records?.length > 1 && (

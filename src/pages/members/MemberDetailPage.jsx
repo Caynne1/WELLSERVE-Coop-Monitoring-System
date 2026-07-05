@@ -65,10 +65,9 @@ const TABS = [
   { id: 'credit_profile',  label: 'Credit Profile', icon: TrendingUp },
 ];
 
-// Tabs that should only appear once the member actually has a record for
-// that category — unlike CBU/Savings/Membership/etc. which every member has
-// by default, Time Deposit and Savings Booster are opt-in products.
-const CONDITIONAL_TABS = new Set(['time_deposit', 'savings_booster']);
+// Tabs that don't apply to Kiddy & Youth Savings members — Kiddy is a
+// savings-only membership with no loan, CBU, or penalty records.
+const HIDDEN_FOR_KIDDY = new Set(['loan', 'cbu', 'penalty']);
 
 const PAYMENT_MODE_OPTIONS = [
   { value: '', label: 'Select mode of payment' },
@@ -242,6 +241,15 @@ export default function MemberDetailPage() {
     fetchTimeDeposits();
     fetchBoosterSlots();
   }, [fetchMembership, fetchPenalties, fetchTimeDeposits, fetchBoosterSlots]);
+
+  // Kiddy & Youth Savings is a savings-only membership — if a stale link or
+  // bookmark points at a Loan/CBU/Penalty tab for a Kiddy member, fall back
+  // to Overview instead of rendering a tab that no longer appears in the nav.
+  useEffect(() => {
+    if (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(activeTab)) {
+      setSearchParams({ tab: 'overview' });
+    }
+  }, [member, activeTab, setSearchParams]);
 
   const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
   const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
@@ -529,6 +537,7 @@ export default function MemberDetailPage() {
         <div className="overflow-x-auto border-b border-gray-100 scrollbar-thin scrollbar-thumb-gray-200">
           <div className="flex min-w-max">
             {TABS.filter(tab => {
+              if (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(tab.id)) return false;
               if (tab.id === 'time_deposit') return memberTimeDeposits.length > 0;
               if (tab.id === 'savings_booster') return memberBoosterSlots.length > 0;
               return true;

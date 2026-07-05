@@ -53,7 +53,7 @@ function assertCreatedBy(createdBy) {
 }
 
 function assertMembershipType(type) {
-  if (!['associate', 'regular'].includes(type)) {
+  if (!['associate', 'regular', 'kiddy'].includes(type)) {
     throw new Error('Invalid membership type.');
   }
 }

@@ -107,6 +107,27 @@ const NEW_MEMBER_BREAKDOWN = {
   },
 };
 
+// Kiddy's savings item depends on which Savings Option was chosen on the
+// application form (WS Kiddy & Youth Savings Application Form):
+//   - Regular Savings Account:     Initial Savings Deposit  ₱50   (3% p.a., withdrawable on Birthday/Christmas)
+//   - Educational Savings Account: Minimum Monthly Savings  ₱500  (6% p.a., locked-in until age 18)
+const KIDDY_SAVINGS_ITEM_BY_TYPE = {
+  regular_savings:      { key: 'kiddy_savings', label: 'Initial Savings Deposit',  amount: 50,  category: 'savings' },
+  educational_savings:  { key: 'kiddy_savings', label: 'Minimum Monthly Savings',  amount: 500, category: 'savings' },
+};
+
+function buildKiddyBreakdown(savingsType) {
+  const savingsItem = KIDDY_SAVINGS_ITEM_BY_TYPE[savingsType] || KIDDY_SAVINGS_ITEM_BY_TYPE.regular_savings;
+  return {
+    label: 'Kiddy & Youth Savings Membership',
+    items: [
+      { key: 'kiddy_membership_fee', label: 'Membership Fee', amount: 50,  category: 'membership' },
+      { key: 'kiddy_regulatory_fee', label: 'Regulatory Fee', amount: 200, category: 'membership' },
+      savingsItem,
+    ],
+  };
+}
+
 const ALL_NEW_ITEM_KEYS = [
   'membership_fee', 'vip_card', 'cbu', 'cbu_assoc',
   'admin_fees', 'savings_deposit', 'min_cbu',
@@ -156,7 +177,7 @@ const MEMBERSHIP_CARDS = [
     icon: Baby,
     title: 'Kiddy & Youth Savings',
     description: 'Savings membership for children and youth members.',
-    badge: '₱300 total',
+    badge: '₱300 – ₱750 total',
     badgeColor: 'bg-teal-100 text-teal-700',
     borderColor: 'border-teal-200',
     hoverBorder: 'hover:border-teal-400',
@@ -164,7 +185,7 @@ const MEMBERSHIP_CARDS = [
     selectedBg: 'bg-teal-50',
     iconBg: 'bg-teal-100',
     iconColor: 'text-teal-700',
-    items: ['₱50 Membership Fee', '₱200 Regulatory Fee', '₱50 Initial Savings Deposit'],
+    items: ['₱50 Membership Fee', '₱200 Regulatory Fee', 'Regular: ₱50 deposit / Educational: ₱500 monthly'],
   },
 ];
 
@@ -667,8 +688,12 @@ export function MemberFormContent({
   const isOldMember = recordType === 'old_member';
   const isKiddy = !isOldMember && membershipType === 'kiddy';
 
+  const kiddySavingsTypeWatch = watch('kiddy_savings_type');
+
   const breakdownMap = isOldMember ? OLD_MEMBER_BREAKDOWN : NEW_MEMBER_BREAKDOWN;
-  const breakdown = breakdownMap[membershipType];
+  const breakdown = (!isOldMember && membershipType === 'kiddy')
+    ? buildKiddyBreakdown(kiddySavingsTypeWatch)
+    : breakdownMap[membershipType];
 
   const oldManualMFRaw  = watch('old_manual_membership_fee');
   const oldManualCBURaw = watch('old_manual_cbu');
@@ -739,7 +764,7 @@ export function MemberFormContent({
         }
       });
     }
-  }, [paymentOption, membershipType, isEdit, isOldMember, breakdown, setValue, watch]);
+  }, [paymentOption, membershipType, isEdit, isOldMember, breakdown, kiddySavingsTypeWatch, setValue, watch]);
 
   async function loadMember() {
     try {
@@ -966,7 +991,8 @@ export function MemberFormContent({
 
       // ── KIDDY MEMBERSHIP FLOW ──────────────────────────────────────
       if (values.membership_type === 'kiddy') {
-        const kiddyBreakdown = NEW_MEMBER_BREAKDOWN.kiddy;
+        const kiddySavingsType = values.kiddy_savings_type || 'regular_savings';
+        const kiddyBreakdown = buildKiddyBreakdown(kiddySavingsType);
         const kiddyItem = kiddyBreakdown.items.find(i => i.key === 'kiddy_savings');
         const paymentDate = values.payment_date || new Date().toISOString().split('T')[0];
 
