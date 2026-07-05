@@ -22,7 +22,7 @@ import Button from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import { getAllSavingsAccounts } from '../../services/accountService';
-import { createTransaction } from '../../services/transactionService';
+import { createTransaction, deleteTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
 import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -186,7 +186,12 @@ export default function SavingsPage() {
       const paymentModeNote =
         [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
-      await createTransaction({
+      // ── Atomicity guard ──────────────────────────────────────────────
+      // The deposit and its invoice must succeed or fail together. If
+      // invoice creation fails after the deposit was already posted, roll
+      // the deposit back rather than leaving a "phantom" deposit with no
+      // matching invoice.
+      const depositTx = await createTransaction({
         member_id: account.member_id,
         account_id: account.id,
         category: 'savings',
@@ -200,21 +205,30 @@ export default function SavingsPage() {
         payment_mode_note: paymentModeNote,
       });
 
-      await createInvoiceForPayment({
-        invoice_no: siNo.trim(),
-        payment_type: 'savings',
-        member_id: account.member_id,
-        member_name: memberName,
-        amount: value,
-        purpose: `Savings Deposit${account.account_no ? ` — ${account.account_no}` : ''}`,
-        ref_id: account.id,
-        account_id: account.id,
-        created_by: user?.id ?? null,
-        date: paymentDate,
-        notes: paymentNotes.trim() || null,
-        payment_mode: paymentMode,
-        payment_mode_note: paymentModeNote,
-      });
+      try {
+        await createInvoiceForPayment({
+          invoice_no: siNo.trim(),
+          payment_type: 'savings',
+          member_id: account.member_id,
+          member_name: memberName,
+          amount: value,
+          purpose: `Savings Deposit${account.account_no ? ` — ${account.account_no}` : ''}`,
+          ref_id: account.id,
+          account_id: account.id,
+          created_by: user?.id ?? null,
+          date: paymentDate,
+          notes: paymentNotes.trim() || null,
+          payment_mode: paymentMode,
+          payment_mode_note: paymentModeNote,
+        });
+      } catch (invoiceErr) {
+        try {
+          await deleteTransaction(depositTx.id);
+        } catch (rollbackErr) {
+          console.error('[Savings deposit] rollback of deposit transaction failed:', rollbackErr);
+        }
+        throw invoiceErr;
+      }
 
       toast.success('Savings deposit posted.');
       trackActivity({ userId: user?.id, module: 'savings', action: 'deposit', description: `Savings deposit of ${formatCurrency(value)} for ${memberName}` });

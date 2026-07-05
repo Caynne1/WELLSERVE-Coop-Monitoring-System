@@ -24,7 +24,7 @@ import {
   getLoansByMemberId,
   applyLoanPaymentToSchedule,
 } from '../../services/loanService';
-import { getTransactionsByMemberId, createTransaction } from '../../services/transactionService';
+import { getTransactionsByMemberId, createTransaction, deleteTransaction } from '../../services/transactionService';
 import {
   getMembershipByMemberId,
   getMembershipPayments,
@@ -834,78 +834,103 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 
       const paymentModeNote = [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
-      if (loanPay > 0) {
-        await createTransaction({
-          member_id: memberId,
-          loan_id: loan.id,
-          category: 'loan',
-          type: 'loan_payment',
-          amount: loanPay,
-          reference: paymentReference.trim() || loan.loan_no || null,
-          notes: paymentNotes.trim() || null,
-          created_by: userId ?? null,
-          transaction_date: paymentDate,
-          payment_mode: paymentMode,
-          payment_mode_note: paymentModeNote,
-        });
-
-        await applyLoanPaymentToSchedule(loan.id, loanPay);
+      // ── Atomicity guard ──────────────────────────────────────────────
+      // Every side effect below (transaction rows, the loan schedule
+      // update) is tracked here as a compensating action. If the final
+      // invoice insert fails, we undo everything that already happened so
+      // a failed payment never leaves a deposit or loan payment "stuck"
+      // with no invoice to show for it.
+      const rollbacks = [];
+      async function runRollbacks() {
+        for (const undo of rollbacks.reverse()) {
+          try {
+            await undo();
+          } catch (rollbackErr) {
+            console.error('[Combined payment] rollback step failed:', rollbackErr);
+          }
+        }
       }
 
-      if (cbuPay > 0) {
-        await createTransaction({
-          member_id: memberId,
-          account_id: cbuAccount.id,
-          category: 'cbu',
-          type: 'deposit',
-          amount: cbuPay,
-          reference: paymentReference.trim() || cbuAccount.account_no || null,
-          notes: paymentNotes.trim() || null,
-          created_by: userId ?? null,
-          transaction_date: paymentDate,
-          payment_mode: paymentMode,
-          payment_mode_note: paymentModeNote,
-        });
+      try {
+        if (loanPay > 0) {
+          const loanTx = await createTransaction({
+            member_id: memberId,
+            loan_id: loan.id,
+            category: 'loan',
+            type: 'loan_payment',
+            amount: loanPay,
+            reference: paymentReference.trim() || loan.loan_no || null,
+            notes: paymentNotes.trim() || null,
+            created_by: userId ?? null,
+            transaction_date: paymentDate,
+            payment_mode: paymentMode,
+            payment_mode_note: paymentModeNote,
+          });
+          rollbacks.push(() => deleteTransaction(loanTx.id));
+
+          await applyLoanPaymentToSchedule(loan.id, loanPay);
+        }
+
+        if (cbuPay > 0) {
+          const cbuTx = await createTransaction({
+            member_id: memberId,
+            account_id: cbuAccount.id,
+            category: 'cbu',
+            type: 'deposit',
+            amount: cbuPay,
+            reference: paymentReference.trim() || cbuAccount.account_no || null,
+            notes: paymentNotes.trim() || null,
+            created_by: userId ?? null,
+            transaction_date: paymentDate,
+            payment_mode: paymentMode,
+            payment_mode_note: paymentModeNote,
+          });
+          rollbacks.push(() => deleteTransaction(cbuTx.id));
+        }
+
+        if (savingsPay > 0) {
+          const savingsTx = await createTransaction({
+            member_id: memberId,
+            account_id: savingsAccount.id,
+            category: 'savings',
+            type: 'deposit',
+            amount: savingsPay,
+            reference: paymentReference.trim() || savingsAccount.account_no || null,
+            notes: paymentNotes.trim() || null,
+            created_by: userId ?? null,
+            transaction_date: paymentDate,
+            payment_mode: paymentMode,
+            payment_mode_note: paymentModeNote,
+          });
+          rollbacks.push(() => deleteTransaction(savingsTx.id));
+        }
+
+        const invoiceBreakdown = [];
+        if (loanPay > 0) invoiceBreakdown.push(`Loan: ${formatCurrency(loanPay)}`);
+        if (cbuPay > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(cbuPay)}`);
+        if (savingsPay > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(savingsPay)}`);
+
+        await createInvoiceStrict(
+          {
+            invoice_no: siNo.trim(),
+            payment_type: 'loan_payment',
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: totalPayment,
+            purpose: invoiceBreakdown.length > 1 ? 'Combined Payment' : (invoiceBreakdown[0] || 'Payment'),
+            ref_id: loan?.id || null,
+            created_by: userId ?? null,
+            date: paymentDate,
+            notes: invoiceBreakdown.join(' | '),
+            payment_mode: paymentMode,
+            payment_mode_note: paymentModeNote,
+          },
+          'Combined payment'
+        );
+      } catch (paymentErr) {
+        await runRollbacks();
+        throw paymentErr;
       }
-
-      if (savingsPay > 0) {
-        await createTransaction({
-          member_id: memberId,
-          account_id: savingsAccount.id,
-          category: 'savings',
-          type: 'deposit',
-          amount: savingsPay,
-          reference: paymentReference.trim() || savingsAccount.account_no || null,
-          notes: paymentNotes.trim() || null,
-          created_by: userId ?? null,
-          transaction_date: paymentDate,
-          payment_mode: paymentMode,
-          payment_mode_note: paymentModeNote,
-        });
-      }
-
-      const invoiceBreakdown = [];
-      if (loanPay > 0) invoiceBreakdown.push(`Loan: ${formatCurrency(loanPay)}`);
-      if (cbuPay > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(cbuPay)}`);
-      if (savingsPay > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(savingsPay)}`);
-
-      await createInvoiceStrict(
-        {
-          invoice_no: siNo.trim(),
-          payment_type: 'loan_payment',
-          member_id: memberId,
-          member_name: memberName || 'Member',
-          amount: totalPayment,
-          purpose: invoiceBreakdown.length > 1 ? 'Combined Payment' : (invoiceBreakdown[0] || 'Payment'),
-          ref_id: loan?.id || null,
-          created_by: userId ?? null,
-          date: paymentDate,
-          notes: invoiceBreakdown.join(' | '),
-          payment_mode: paymentMode,
-          payment_mode_note: paymentModeNote,
-        },
-        'Combined payment'
-      );
 
       trackActivity({
         userId,
@@ -1116,7 +1141,12 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
 
       const paymentModeNote = [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
-      await createTransaction({
+      // ── Atomicity guard ──────────────────────────────────────────────
+      // The deposit (transactions row) and its invoice must succeed or
+      // fail together. If invoice creation fails for any reason after the
+      // deposit was already posted, roll the deposit back rather than
+      // leaving a "phantom" deposit with no matching invoice.
+      const depositTx = await createTransaction({
         member_id: memberId,
         account_id: account.id,
         category: accountType,
@@ -1130,24 +1160,33 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
         payment_mode_note: paymentModeNote,
       });
 
-      await createInvoiceStrict(
-        {
-          invoice_no: siNo.trim(),
-          payment_type: accountType,
-          member_id: memberId,
-          member_name: memberName || 'Member',
-          amount: value,
-          purpose: `${label} Deposit`,
-          ref_id: account.id,
-          account_id: account.id,
-          created_by: userId ?? null,
-          date: paymentDate,
-          notes: paymentNotes.trim() || null,
-          payment_mode: paymentMode,
-          payment_mode_note: paymentModeNote,
-        },
-        `${label} deposit`
-      );
+      try {
+        await createInvoiceStrict(
+          {
+            invoice_no: siNo.trim(),
+            payment_type: accountType,
+            member_id: memberId,
+            member_name: memberName || 'Member',
+            amount: value,
+            purpose: `${label} Deposit`,
+            ref_id: account.id,
+            account_id: account.id,
+            created_by: userId ?? null,
+            date: paymentDate,
+            notes: paymentNotes.trim() || null,
+            payment_mode: paymentMode,
+            payment_mode_note: paymentModeNote,
+          },
+          `${label} deposit`
+        );
+      } catch (invoiceErr) {
+        try {
+          await deleteTransaction(depositTx.id);
+        } catch (rollbackErr) {
+          console.error(`[${label} deposit] rollback of deposit transaction failed:`, rollbackErr);
+        }
+        throw invoiceErr;
+      }
 
       trackActivity({
         userId,

@@ -1037,6 +1037,7 @@ export function MemberFormContent({
         // "Cannot coerce the result to a single JSON object" error when
         // trying to record a payment for that member later.
         let newMemberId = null;
+        let kiddyDepositTxId = null;
         try {
           const newMember = await createMember({ ...payload, record_type: 'new_member' });
           newMemberId = newMember.id;
@@ -1071,7 +1072,7 @@ export function MemberFormContent({
 
           if (kiddySavingsPaid > 0) {
             if (!refreshedSavingsAccount) throw new Error('Savings account not found after member initialization.');
-            await createTransaction({
+            const kiddyDepositTx = await createTransaction({
               member_id: newMemberId,
               account_id: refreshedSavingsAccount.id,
               category: 'savings',
@@ -1084,6 +1085,7 @@ export function MemberFormContent({
               payment_mode: values.payment_mode,
               payment_mode_note: paymentModeNote,
             });
+            kiddyDepositTxId = kiddyDepositTx.id;
           }
 
           if (kiddyTotalPaid > 0) {
@@ -1113,10 +1115,15 @@ export function MemberFormContent({
           else navigate(`/members/${newMemberId}`);
           return;
         } catch (kiddyErr) {
-          // Roll back the partially-created member so a failed registration
-          // never leaves a half-saved record behind.
+          // Roll back the partially-created member (and any deposit already
+          // posted to their savings account) so a failed registration never
+          // leaves a half-saved record — or a phantom deposit with no
+          // invoice — behind.
           if (newMemberId) {
             try {
+              if (kiddyDepositTxId) {
+                await supabase.from('transactions').delete().eq('id', kiddyDepositTxId);
+              }
               await supabase.from('accounts').delete().eq('member_id', newMemberId);
               await supabase.from('member_memberships').delete().eq('member_id', newMemberId);
               await supabase.from('members').delete().eq('id', newMemberId);
