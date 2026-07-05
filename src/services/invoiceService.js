@@ -6,7 +6,7 @@ import {
   computeFeeBalance,
 } from './membershipService';
 import { getLoansByMemberId, applyLoanPaymentToSchedule } from './loanService';
-import { getMemberAccountsMap } from './accountService';
+import { getMemberAccountsMap, updateAccount } from './accountService';
 import {
   getTimeDepositsByMemberId,
   recordTimeDepositPayment,
@@ -443,6 +443,16 @@ export async function createMultiCategoryInvoice({
         transaction_date: effectivePaymentDate,
         payment_mode,
         payment_mode_note,
+      });
+      // The transaction row alone doesn't move the needle on the account's
+      // own balance/total_deposits — those are the fields the CBU/Savings
+      // pages and the Member Dashboard tabs actually display, so they must
+      // be updated here too, or the deposit will look like it "disappeared"
+      // even though it was recorded.
+      await updateAccount(entry.account.id, {
+        balance: (entry.account.balance || 0) + amount,
+        total_deposits: (entry.account.total_deposits || 0) + amount,
+        updated_at: new Date().toISOString(),
       });
       account_id = entry.account.id;
       ref_id = entry.account.id;
