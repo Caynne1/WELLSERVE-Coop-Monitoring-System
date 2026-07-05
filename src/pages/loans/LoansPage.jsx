@@ -20,6 +20,9 @@ import {
   Heart,
   Bike,
   Sliders,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
@@ -87,9 +90,24 @@ const DUE_FILTER_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'pending', label: 'Pending' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'defaulted', label: 'Defaulted' },
+  { value: 'delinquent', label: 'Delinquent' },
 ];
+
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'active', label: 'Active' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'delinquent', label: 'Delinquent' },
+];
+
+// Maps any legacy/underlying status value (e.g. 'ongoing', 'paid', 'defaulted')
+// to one of the 3 statuses now supported: active, pending, delinquent.
+function normalizeLoanStatus(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'pending') return 'pending';
+  if (s === 'delinquent' || s === 'defaulted' || s === 'overdue') return 'delinquent';
+  return 'active';
+}
 
 const PAYMENT_MODE_OPTIONS = [
   { value: '', label: 'Select mode of payment' },
@@ -139,16 +157,21 @@ function parseJSONSafe(val, fallback = {}) {
   }
 }
 
+// Computes the automatic due-date status for a loan:
+// - "Overdue" if the due date has passed
+// - "Next Due: <date>" once at least one payment/installment has been made
+// - "Due in X days" (or "Due Today") otherwise
 function getNextDueInfo(loan) {
   const schedule = parseJSONSafe(loan?.preview_schedule_json, []);
+  const hasPaidInstallment = Array.isArray(schedule) && schedule.some(row => row?.paid);
   const nextDue = Array.isArray(schedule) ? schedule.find(row => !row.paid) : null;
 
   const dueDate = nextDue?.due_date || loan?.due_date || null;
   if (!dueDate) {
     return {
       dueDate: null,
-      badge: null,
       diffDays: null,
+      badge: null,
     };
   }
 
@@ -171,12 +194,36 @@ function getNextDueInfo(loan) {
     };
   }
 
+  if (hasPaidInstallment) {
+    return {
+      dueDate,
+      diffDays,
+      badge: {
+        label: `Next Due: ${formatDate(dueDate)}`,
+        className: 'bg-blue-50 text-blue-700 border border-blue-200',
+      },
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      dueDate,
+      diffDays,
+      badge: {
+        label: 'Due Today',
+        className: 'bg-amber-50 text-amber-700 border border-amber-200',
+      },
+    };
+  }
+
+  const dayLabel = `Due in ${diffDays} day${diffDays === 1 ? '' : 's'}`;
+
   if (diffDays <= 2) {
     return {
       dueDate,
       diffDays,
       badge: {
-        label: 'Due in 2 Days',
+        label: dayLabel,
         className: 'bg-amber-50 text-amber-700 border border-amber-200',
       },
     };
@@ -187,7 +234,7 @@ function getNextDueInfo(loan) {
       dueDate,
       diffDays,
       badge: {
-        label: 'Due in 7 Days',
+        label: dayLabel,
         className: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
       },
     };
@@ -196,7 +243,10 @@ function getNextDueInfo(loan) {
   return {
     dueDate,
     diffDays,
-    badge: null,
+    badge: {
+      label: dayLabel,
+      className: 'bg-gray-50 text-gray-500 border border-gray-200',
+    },
   };
 }
 
@@ -210,6 +260,8 @@ export default function LoansPage() {
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
   const [dueFilter, setDueFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState(null);
@@ -316,9 +368,73 @@ export default function LoansPage() {
       const matchesProduct =
         productFilter === 'all' || (loan.loan_product || '') === productFilter;
 
-      return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesProduct;
+      const matchesStatus =
+        statusFilter === 'all' || normalizeLoanStatus(loan.status) === statusFilter;
+
+      return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesProduct && matchesStatus;
     });
-  }, [loans, search, frequencyFilter, methodFilter, dueFilter, productFilter]);
+  }, [loans, search, frequencyFilter, methodFilter, dueFilter, productFilter, statusFilter]);
+
+  function handleSort(key) {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  }
+
+  const sorted = useMemo(() => {
+    const { key, direction } = sortConfig;
+    if (!key) return filtered;
+
+    const dir = direction === 'asc' ? 1 : -1;
+    const arr = [...filtered];
+
+    arr.sort((a, b) => {
+      let aVal;
+      let bVal;
+
+      switch (key) {
+        case 'member':
+          aVal = `${a.members?.first_name || ''} ${a.members?.last_name || ''}`.trim().toLowerCase();
+          bVal = `${b.members?.first_name || ''} ${b.members?.last_name || ''}`.trim().toLowerCase();
+          break;
+        case 'amount':
+          aVal = Number(a.amount) || 0;
+          bVal = Number(b.amount) || 0;
+          break;
+        case 'balance':
+          aVal = Number(a.balance ?? a.amount) || 0;
+          bVal = Number(b.balance ?? b.amount) || 0;
+          break;
+        case 'released':
+          aVal = new Date(a.release_date || a.created_at || 0).getTime() || 0;
+          bVal = new Date(b.release_date || b.created_at || 0).getTime() || 0;
+          break;
+        case 'due_date': {
+          const aDue = getNextDueInfo(a).dueDate;
+          const bDue = getNextDueInfo(b).dueDate;
+          aVal = aDue ? new Date(aDue).getTime() : Infinity;
+          bVal = bDue ? new Date(bDue).getTime() : Infinity;
+          break;
+        }
+        case 'status':
+          aVal = normalizeLoanStatus(a.status);
+          bVal = normalizeLoanStatus(b.status);
+          break;
+        default:
+          aVal = 0;
+          bVal = 0;
+      }
+
+      if (aVal < bVal) return -1 * dir;
+      if (aVal > bVal) return 1 * dir;
+      return 0;
+    });
+
+    return arr;
+  }, [filtered, sortConfig]);
 
   const stats = useMemo(() => {
     const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'ongoing');
@@ -565,6 +681,16 @@ export default function LoansPage() {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+          >
+            {STATUS_FILTER_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex items-center gap-2">
@@ -601,37 +727,53 @@ export default function LoansPage() {
               <thead>
                 <tr className="bg-gray-50/80 border-b border-gray-100">
                   {[
-                    'Member',
-                    'Amount',
-                    'Balance',
-                    'Method',
-                    'Frequency',
-                    'Term',
-                    'Released',
-                    'Due Date',
-                    'Status',
-                    'Actions',
-                  ].map((h, i) => (
-                    <th
-                      key={h}
-                      className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                        i === 1 || i === 2 ? 'text-right' : i === 9 ? 'text-right' : 'text-left'
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  ))}
+                    { key: 'member', label: 'Member', align: 'left' },
+                    { key: 'amount', label: 'Amount', align: 'right' },
+                    { key: 'balance', label: 'Balance', align: 'right' },
+                    { key: 'released', label: 'Released', align: 'left' },
+                    { key: 'due_date', label: 'Due Date', align: 'left' },
+                    { key: 'status', label: 'Status', align: 'left' },
+                    { key: null, label: 'Actions', align: 'right' },
+                  ].map(col => {
+                    const isSorted = sortConfig.key === col.key && col.key;
+                    return (
+                      <th
+                        key={col.label}
+                        onClick={col.key ? () => handleSort(col.key) : undefined}
+                        className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
+                          col.align === 'right' ? 'text-right' : 'text-left'
+                        } ${col.key ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}
+                      >
+                        <span
+                          className={`inline-flex items-center gap-1 ${
+                            col.align === 'right' ? 'justify-end w-full' : ''
+                          }`}
+                        >
+                          {col.label}
+                          {col.key && (
+                            isSorted ? (
+                              sortConfig.direction === 'asc'
+                                ? <ChevronUp size={12} />
+                                : <ChevronDown size={12} />
+                            ) : (
+                              <ArrowUpDown size={11} className="text-gray-300" />
+                            )
+                          )}
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-gray-50">
-                {filtered.length === 0 ? (
+                {sorted.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-16 text-center">
+                    <td colSpan={7} className="py-16 text-center">
                       <div className="flex flex-col items-center gap-2 text-gray-400">
                         <CreditCard size={32} className="text-gray-200" />
                         <p className="text-sm">
-                          {search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all'
+                          {search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all'
                             ? 'No loans match your search/filter.'
                             : 'No loans yet.'}
                         </p>
@@ -639,8 +781,9 @@ export default function LoansPage() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map(loan => {
+                  sorted.map(loan => {
                     const dueInfo = getNextDueInfo(loan);
+                    const normalizedStatus = normalizeLoanStatus(loan.status);
 
                     return (
                       <tr
@@ -674,22 +817,6 @@ export default function LoansPage() {
                           </span>
                         </td>
 
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          <span className="inline-flex items-center px-2 py-1 rounded-lg bg-gray-100 text-gray-700">
-                            {titleCase(loan.loan_method || 'diminishing')}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 text-blue-700">
-                            {frequencyLabel(loan.repayment_frequency)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 text-gray-500 text-xs">
-                          {loan.term_months ? `${loan.term_months} mo.` : '—'}
-                        </td>
-
                         <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <Calendar size={12} className="text-gray-300" />
@@ -698,22 +825,19 @@ export default function LoansPage() {
                         </td>
 
                         <td className="px-4 py-3 text-xs whitespace-nowrap">
-                          <div className="space-y-1">
-                            <div className="text-gray-600">
-                              {dueInfo.dueDate ? formatDate(dueInfo.dueDate) : '—'}
-                            </div>
-                            {dueInfo.badge && (
-                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium ${dueInfo.badge.className}`}>
-                                <AlertCircle size={11} />
-                                {dueInfo.badge.label}
-                              </span>
-                            )}
-                          </div>
+                          {dueInfo.dueDate ? (
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium ${dueInfo.badge.className}`}>
+                              <AlertCircle size={11} />
+                              {dueInfo.badge.label}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
                         </td>
 
                         <td className="px-4 py-3">
                           <select
-                            value={loan.status || 'pending'}
+                            value={normalizedStatus}
                             onChange={e => handleStatusChange(loan, e.target.value)}
                             disabled={statusSavingId === loan.id}
                             className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
