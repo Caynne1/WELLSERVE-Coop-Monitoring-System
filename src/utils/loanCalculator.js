@@ -164,7 +164,10 @@ export function generateLoanPreview({
 
   const deductions = computeDeductions({ loanAmount: principal, deductions: deductionItems });
   const summary    = buildScheduleSummary(scheduleResult.schedule, {
-    amount: principal, frequency: paymentFrequency, method: loanMethod,
+    amount: principal,
+    frequency: paymentFrequency,
+    method: loanMethod,
+    rate_per_period: scheduleResult.meta?.rate_per_period ?? 0,
   });
 
   return {
