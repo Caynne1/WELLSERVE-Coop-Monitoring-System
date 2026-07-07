@@ -164,21 +164,44 @@ export function generateLoanPreview({
 
   const deductions = computeDeductions({ loanAmount: principal, deductions: deductionItems });
   const summary    = buildScheduleSummary(scheduleResult.schedule, {
-    amount: principal,
-    frequency: paymentFrequency,
-    method: loanMethod,
-    rate_per_period: scheduleResult.meta?.rate_per_period ?? 0,
+    amount: principal, frequency: paymentFrequency, method: loanMethod,
   });
+
+  // ── Named deduction lookups ────────────────────────────────────────────────
+  // `computeDeductions` only returns a flat `items` array + `total` +
+  // `net_proceeds` — it has no per-category fields. The Loan Preview UI
+  // (LoanFormPage) reads named properties (service_fee, cbu_retention,
+  // insurance, notarial_fee, total_deductions), so we derive them here from
+  // the items array by matching on label. This keeps a single source of
+  // truth (the items array) while still supporting the named-field lookups
+  // the UI expects.
+  const findDeductionAmount = (matcher) => {
+    const item = deductions.items.find(d => matcher.test(d.label || ''));
+    return item ? item.amount : 0;
+  };
 
   return {
     schedule: scheduleResult.schedule,
     totals:   scheduleResult.totals,
     summary: {
       ...summary,
+      // buildScheduleSummary() doesn't receive the computed rate — pull it
+      // from the schedule engine's own meta so "Rate / Period" isn't stuck at 0%.
+      rate_per_period:          scheduleResult.meta?.rate_per_period ?? 0,
+      // Principal + interest only (no CBU/Savings) — distinct from
+      // `payment_per_period`, which already includes CBU + Savings.
+      loan_payment_per_period:  scheduleResult.schedule[0]?.payment || 0,
       total_cash_out:          deductions.net_proceeds,
       total_payments_collected: scheduleResult.totals.total_payment,
     },
-    deductions,
+    deductions: {
+      ...deductions,
+      service_fee:      findDeductionAmount(/service fee/i),
+      cbu_retention:    findDeductionAmount(/cbu \(share capital\)/i),
+      insurance:        findDeductionAmount(/protection|clpp|insurance/i),
+      notarial_fee:     findDeductionAmount(/notarial/i),
+      total_deductions: deductions.total,
+    },
   };
 }
 

@@ -25,14 +25,13 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
       color: #111;
       background: #fff;
     }
-    .page {
-      width: 210mm;
-      min-height: 297mm;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-    }
+    /* Header/footer are fixed so they repeat on every printed page, rather
+       than appearing once at the top/bottom of the whole document. */
     .lh-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
       width: 100%;
       display: block;
       line-height: 0;
@@ -41,19 +40,28 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
       width: 100%;
       display: block;
     }
-    .lh-content {
-      flex: 1;
-      padding: 6mm 16mm 4mm 16mm;
-    }
     .lh-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
       width: 100%;
       display: block;
       line-height: 0;
-      margin-top: auto;
     }
     .lh-footer img {
       width: 100%;
       display: block;
+    }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+    }
+    .lh-content {
+      /* Top/bottom padding reserves space so content doesn't run under the
+         fixed header/footer bands on each page. */
+      padding: 32mm 16mm 30mm 16mm;
     }
     /* Report-specific styles */
     h1.report-title {
@@ -194,4 +202,4 @@ export function printHtmlDocument(html, options = {}) {
   }
 
   return printWindow;
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+}

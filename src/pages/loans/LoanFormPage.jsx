@@ -35,11 +35,9 @@ import { useAuth } from '../../context/AuthContext';
 import {
   generateLoanPreview,
   frequencyDisplayLabel,
-  applyPaymentToSchedule,
-  computeLoanStatus,
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { wrapWithLetterhead, printHtmlDocument } from '../../utils/print';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const STATUS_OPTS = [
   { value: 'active', label: 'Active' },
@@ -161,6 +159,101 @@ const emptyMemberProfile = {
 
 function round2(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function titleCase(value) {
+  if (!value) return '—';
+  return String(value).replaceAll('_', ' ').replace(/\b\w/g, m => m.toUpperCase());
+}
+
+// ─── Print helpers (Loan Application Preview) ──────────────────────────────
+
+function loanFormPrintStyles() {
+  return `
+    .doc-meta-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 2px solid #059669;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .doc-title {
+      font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+      color: #059669;
+    }
+    .draft-badge {
+      display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #92400e; background: #fef3c7; border: 1px solid #fde68a;
+      border-radius: 99px; padding: 2px 10px; margin-left: 8px; vertical-align: middle;
+    }
+    .printed-at { font-size: 9.5px; color: #6b7280; }
+    .info-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin-bottom: 14px;
+      border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;
+    }
+    .info-grid .col { padding: 10px 14px; }
+    .info-grid .col:first-child { border-right: 1px solid #e5e7eb; }
+    .info-grid h3 {
+      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+      color: #6b7280; margin-bottom: 8px;
+    }
+    .kv-row {
+      display: flex; justify-content: space-between; padding: 3px 0;
+      border-bottom: 1px solid #f3f4f6; font-size: 10.5px;
+    }
+    .kv-row:last-child { border-bottom: none; }
+    .kv-row .kv-label { color: #6b7280; }
+    .kv-row .kv-value { font-weight: 600; color: #111827; text-align: right; }
+    .kv-row.highlight .kv-label { color: #059669; font-weight: 600; }
+    .kv-row.highlight .kv-value { color: #059669; font-size: 12px; }
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #f9fafb; border: 1px solid #e5e7eb; border-bottom: none;
+      border-radius: 6px 6px 0 0; padding: 7px 12px;
+    }
+    .section-header span {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #374151;
+    }
+    .section-header .meta { font-size: 10px; color: #6b7280; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    table.schedule {
+      width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb;
+      border-radius: 0 0 6px 6px; overflow: hidden; font-size: 10px;
+    }
+    table.schedule thead tr { background: #059669; color: #fff; }
+    table.schedule thead th {
+      padding: 6px 8px; text-align: right; font-weight: 600; font-size: 9px;
+      text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
+    }
+    table.schedule thead th:first-child, table.schedule thead th:nth-child(2) { text-align: left; }
+    table.schedule tbody tr { border-bottom: 1px solid #f3f4f6; }
+    table.schedule tbody tr:last-child { border-bottom: none; }
+    table.schedule tbody tr:nth-child(even) { background: #f9fafb; }
+    table.schedule tbody td { padding: 5px 8px; text-align: right; color: #374151; white-space: nowrap; }
+    table.schedule tbody td:first-child, table.schedule tbody td:nth-child(2) { text-align: left; }
+    .totals-bar {
+      display: flex; justify-content: flex-end; gap: 24px; margin-top: 10px;
+      padding: 8px 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; font-size: 10.5px;
+    }
+    .totals-bar .tot-item { display: flex; flex-direction: column; align-items: flex-end; }
+    .totals-bar .tot-label { color: #6b7280; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .totals-bar .tot-value { font-weight: 700; color: #065f46; font-size: 12px; }
+    .sig-block { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 32px; }
+    .sig-item { border-top: 1px solid #9ca3af; padding-top: 6px; font-size: 10px; color: #6b7280; }
+    .sig-item strong { display: block; font-size: 10.5px; color: #111827; margin-bottom: 2px; }
+    .confidential-note {
+      margin-top: 20px; font-size: 9px; color: #9ca3af; text-align: center; font-style: italic;
+    }
+  `;
+}
+
+function loanFormKvRow(label, value, highlight = false) {
+  return `
+    <div class="kv-row${highlight ? ' highlight' : ''}">
+      <span class="kv-label">${label}</span>
+      <span class="kv-value">${value}</span>
+    </div>
+  `;
 }
 
 export default function LoanFormPage() {
@@ -296,8 +389,6 @@ export default function LoanFormPage() {
       cbu_per_period: '0',
       savings_per_period: '0',
 
-      advance_payment: '',
-
       penalty_due: '',
       penalty_due_percent: '',
       annual_dues: '',
@@ -340,7 +431,6 @@ export default function LoanFormPage() {
 
   const watchedCbuPerPeriod = useWatch({ control, name: 'cbu_per_period' });
   const watchedSavingsPerPeriod = useWatch({ control, name: 'savings_per_period' });
-  const watchedAdvancePayment = useWatch({ control, name: 'advance_payment' });
 
   const watchedPettyCash = useWatch({ control, name: 'petty_cash' });
   const watchedPettyCashPercent = useWatch({ control, name: 'petty_cash_percent' });
@@ -452,30 +542,6 @@ export default function LoanFormPage() {
     otherCharges,
     chargeIncluded,
   ]);
-
-  // Advance Payment (at Release): the member may prepay part or all of the
-  // first upcoming due(s) right when the loan is released. Whatever amount
-  // is entered — a full period, half a period, or any other amount — is
-  // applied against the freshly-generated schedule using the same
-  // partial-payment engine used for regular loan payments, so the
-  // remainder owed on a period is always deducted from what's still due,
-  // never lost or double-counted.
-  const advancePreview = useMemo(() => {
-    const amt = round2(parseFloat(watchedAdvancePayment || 0) || 0);
-    if (!preview || !Array.isArray(preview.schedule) || preview.schedule.length === 0 || amt <= 0) {
-      return null;
-    }
-    const result = applyPaymentToSchedule(preview.schedule, amt);
-    const nextUnpaid = result.schedule.find(r => !r.paid) || null;
-    return {
-      amount: amt,
-      applied: result.applied,
-      excess: round2(result.remaining), // leftover if advance exceeds the entire schedule
-      schedule: result.schedule,
-      periodsFullyCovered: result.schedule.filter(r => r.paid).length,
-      nextDue: nextUnpaid,
-    };
-  }, [preview, watchedAdvancePayment]);
 
   const proposalAmount = parseFloat(watchedProposal || 0) || 0;
 
@@ -958,121 +1024,133 @@ export default function LoanFormPage() {
     toast.success('Loan preview generated.');
   }
 
-  // ── PRINT: Draft preview before the loan is actually created ────────────────
-  function handlePrintPreview() {
+  // ── PRINT: Loan Application Preview (before the loan is actually created) ──
+  function handlePrint() {
     if (!preview) {
-      toast.error('Generate a preview first.');
+      toast.error('Please generate the preview first.');
       return;
     }
 
     const values = getValues();
-    const memberDisplayName = [
-      selectedMember?.first_name,
-      selectedMember?.last_name,
-    ].filter(Boolean).join(' ') || 'Member';
-    const printedAt = new Date().toLocaleString('en-PH');
-    const rows = advancePreview?.schedule || preview.schedule;
-    const productLabel = LOAN_PRODUCT_MAP[values.loan_product]?.label || 'Custom / Other';
+    const memberName = [selectedMember?.first_name, selectedMember?.last_name].filter(Boolean).join(' ') || '—';
+    const printedAt = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
 
-    const scheduleRowsHtml = rows.map(row => {
-      const loanTotal = round2((row.principal || 0) + (row.interest || 0));
-      const freqTotal = round2(loanTotal + (row.cbu_paid || 0) + (row.savings_paid || 0));
-      const statusLabel = row.paid ? 'Paid (Advance)' : row.partial_paid ? 'Partial (Advance)' : 'Pending';
+    const scheduleRowsHTML = preview.schedule.map(row => {
+      const freqTotal = round2(row.total_due != null ? row.total_due : (row.principal || 0) + (row.interest || 0));
       return `
         <tr>
           <td>${row.period}</td>
-          <td>${formatDate(row.due_date)}</td>
           <td>${formatCurrency(row.balance || 0)}</td>
           <td>${formatCurrency(row.principal || 0)}</td>
           <td>${formatCurrency(row.interest || 0)}</td>
-          <td>${formatCurrency(row.cbu_paid || 0)}</td>
-          <td>${formatCurrency(row.savings_paid || 0)}</td>
-          <td><strong>${formatCurrency(freqTotal)}</strong></td>
-          ${advancePreview ? `<td>${statusLabel}</td>` : ''}
+          <td>${formatCurrency(freqTotal)}</td>
+          <td>${formatDate(row.due_date)}</td>
         </tr>
       `;
     }).join('');
 
-    const deductionRowsHtml = (preview.deductions.items || []).map(d => `
-      <tr>
-        <td>${d.label}</td>
-        <td>${formatCurrency(d.amount)}</td>
-      </tr>
-    `).join('');
-
-    const html = wrapWithLetterhead(`
-      <h1 class="report-title">Loan Proposal Preview${values.purpose ? ' — ' + values.purpose : ''}</h1>
-      <div class="report-meta">
-        Member: ${memberDisplayName}${selectedMember?.member_no ? ` (${selectedMember.member_no})` : ''}
-        &nbsp;·&nbsp; Product: ${productLabel}
-        &nbsp;·&nbsp; Prepared: ${printedAt}
-        &nbsp;·&nbsp; <strong>DRAFT — Not Yet Released</strong>
+    const contentHtml = `
+      <div class="doc-meta-row">
+        <span class="doc-title">Loan Application Preview<span class="draft-badge">Not Yet Created</span></span>
+        <span class="printed-at">Printed: ${printedAt}</span>
       </div>
 
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-label">Loan Amount</div>
-          <div class="stat-value">${formatCurrency(parseFloat(values.loan_proposal || 0))}</div>
+      <div class="info-grid">
+        <div class="col">
+          <h3>Borrower Information</h3>
+          ${loanFormKvRow('Member Name', memberName)}
+          ${loanFormKvRow('Member No.', memberProfile.member_no || '—')}
+          ${loanFormKvRow('Loan Type', titleCase(values.loan_type))}
+          ${loanFormKvRow('Loan Product', LOAN_PRODUCT_MAP[values.loan_product]?.label || '—')}
+          ${loanFormKvRow('Purpose', values.purpose || '—')}
+          ${coMakerRequired ? loanFormKvRow('Co-Maker', watchedCoMakerName?.trim() ? watchedCoMakerName : 'Required — not yet filled in') : ''}
         </div>
-        <div class="stat-box">
-          <div class="stat-label">No. of Payments</div>
-          <div class="stat-value">${preview.summary.number_of_payments}</div>
-          <div class="stat-sub">${frequencyDisplayLabel(watchedFrequency)} · ${watchedMethod === 'straight' ? 'Straight' : 'Diminishing'}</div>
+        <div class="col">
+          <h3>Loan Terms</h3>
+          ${loanFormKvRow('Loan Proposal', formatCurrency(proposalAmount))}
+          ${loanFormKvRow('Interest Rate', `${values.interest_rate || 0}% / month`)}
+          ${loanFormKvRow('Term', `${values.term_months || 0} months`)}
+          ${loanFormKvRow('Frequency', frequencyDisplayLabel(watchedFrequency))}
+          ${loanFormKvRow('Method', titleCase(watchedMethod))}
+          ${loanFormKvRow('Release Date', formatDate(values.release_date))}
         </div>
-        <div class="stat-box">
-          <div class="stat-label">Payment / Period</div>
-          <div class="stat-value">${formatCurrency(preview.summary.payment_per_period)}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Total Interest</div>
-          <div class="stat-value">${formatCurrency(preview.summary.total_interest_earned)}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Net Proceeds</div>
-          <div class="stat-value">${formatCurrency(preview.deductions.net_proceeds)}</div>
-        </div>
-        ${advancePreview ? `
-        <div class="stat-box">
-          <div class="stat-label">Advance Payment</div>
-          <div class="stat-value">${formatCurrency(advancePreview.amount)}</div>
-          <div class="stat-sub">${advancePreview.periodsFullyCovered} of ${preview.summary.number_of_payments} periods fully covered</div>
-        </div>
-        ` : ''}
       </div>
 
-      <div class="section-heading">Amortization Schedule Preview</div>
-      <table>
+      <div class="info-grid" style="margin-bottom:14px">
+        <div class="col">
+          <h3>Deductions</h3>
+          ${loanFormKvRow('Service Fee', formatCurrency(preview.deductions.service_fee))}
+          ${loanFormKvRow('CBU Retention', formatCurrency(preview.deductions.cbu_retention))}
+          ${loanFormKvRow('Notarial Fee', formatCurrency(preview.deductions.notarial_fee))}
+          ${loanFormKvRow('Insurance', formatCurrency(preview.deductions.insurance))}
+          ${loanFormKvRow('Total Deductions', formatCurrency(preview.deductions.total_deductions))}
+          ${loanFormKvRow('Net Proceeds', formatCurrency(preview.deductions.net_proceeds), true)}
+        </div>
+        <div class="col">
+          <h3>Computed Summary</h3>
+          ${loanFormKvRow('No. of Payments', preview.summary.number_of_payments)}
+          ${loanFormKvRow('Rate / Period', `${preview.summary.rate_per_period}%`)}
+          ${loanFormKvRow('Loan Payment / Period', formatCurrency(preview.summary.loan_payment_per_period))}
+          ${loanFormKvRow('Total / Period (w/ CBU+Savings)', formatCurrency(preview.summary.payment_per_period))}
+          ${loanFormKvRow('Total Interest', formatCurrency(preview.summary.total_interest_earned))}
+          ${loanFormKvRow('Total Payable', formatCurrency(preview.summary.total_payments_collected), true)}
+        </div>
+      </div>
+
+      <div class="section-header">
+        <span>Amortization Schedule</span>
+        <span class="meta">${frequencyDisplayLabel(watchedFrequency)} · ${preview.schedule.length} payments</span>
+      </div>
+      <table class="schedule">
         <thead>
           <tr>
-            <th>No.</th>
-            <th>Due Date</th>
-            <th>Principal</th>
+            <th style="text-align:left">No.</th>
+            <th style="text-align:left">Principal</th>
             <th>Principal Amort.</th>
             <th>Interest</th>
-            <th>CBU</th>
-            <th>Savings</th>
-            <th>Total / Period</th>
-            ${advancePreview ? '<th>Status</th>' : ''}
+            <th>${frequencyDisplayLabel(watchedFrequency)} Total</th>
+            <th>Due Date</th>
           </tr>
         </thead>
-        <tbody>${scheduleRowsHtml}</tbody>
+        <tbody>${scheduleRowsHTML}</tbody>
       </table>
 
-      <div class="section-heading">Deductions</div>
-      <table>
-        <thead><tr><th>Item</th><th>Amount</th></tr></thead>
-        <tbody>${deductionRowsHtml}</tbody>
-      </table>
+      <div class="totals-bar">
+        <div class="tot-item">
+          <span class="tot-label">Total Principal</span>
+          <span class="tot-value">${formatCurrency(preview.summary.total_principal_collected)}</span>
+        </div>
+        <div class="tot-item">
+          <span class="tot-label">Total Interest</span>
+          <span class="tot-value">${formatCurrency(preview.summary.total_interest_earned)}</span>
+        </div>
+        <div class="tot-item">
+          <span class="tot-label">Total Payable</span>
+          <span class="tot-value">${formatCurrency(preview.summary.total_payments_collected)}</span>
+        </div>
+      </div>
 
-      <p class="confidential">
-        This is a draft preview generated prior to loan creation. Figures are subject to
-        change until the loan is actually saved.
-      </p>
-    `, { title: `Loan Preview — ${memberDisplayName}` });
+      <div class="sig-block">
+        <div class="sig-item"><strong>Prepared by</strong>Signature over Printed Name</div>
+        <div class="sig-item"><strong>Verified by</strong>Signature over Printed Name</div>
+        <div class="sig-item"><strong>Borrower's Conformity</strong>Signature over Printed Name / Date</div>
+      </div>
 
-    printHtmlDocument(html, {
-      onBlocked: () => toast.error('Unable to open print preview — check your popup blocker.'),
-    });
+      <div class="confidential-note">This is a draft preview only — the loan has not yet been recorded in the system.</div>
+    `;
+
+    printHtmlDocument(
+      wrapWithLetterhead(contentHtml, {
+        title: `Loan Application Preview — ${memberName}`,
+        extraCss: loanFormPrintStyles(),
+      }),
+      {
+        width: 1100,
+        height: 900,
+        delay: 400,
+        onBlocked: () => toast.error('Unable to open print preview.'),
+      }
+    );
   }
 
   async function onSubmit(values) {
@@ -1114,39 +1192,11 @@ export default function LoanFormPage() {
         .map(c => ({ label: c.label.trim(), amount: round2(parseFloat(c.amount) || 0) }));
       const otherChargesTotal = round2(otherChargesIncluded.reduce((s, c) => s + c.amount, 0));
 
-      // ── Advance Payment (at Release) ────────────────────────────────────────
-      // Only applies to NEW loans. Whatever amount the member pays upfront —
-      // a full period, half a period, or any other amount — is applied
-      // against the freshly-generated schedule via the same partial-payment
-      // engine used for regular payments, so the schedule saved with the
-      // loan already reflects paid/partially-paid periods and the correct
-      // remaining balance/due date from day one.
-      const advanceAmount = !isEdit ? round2(parseFloat(values.advance_payment || 0) || 0) : 0;
-      let finalSchedule = preview.schedule;
-      let finalBalance = principalAmount;
-      let finalDueDate = preview.schedule[0]?.due_date || null;
-      let finalStatus = values.status || 'active';
-      let advanceApplied = 0;
-
-      if (advanceAmount > 0) {
-        const result = applyPaymentToSchedule(preview.schedule, advanceAmount);
-        finalSchedule = result.schedule;
-        advanceApplied = result.applied;
-        const unpaidPrincipal = round2(
-          finalSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
-        );
-        finalBalance = unpaidPrincipal;
-        const nextUnpaid = finalSchedule.find(r => !r.paid);
-        finalDueDate = nextUnpaid?.due_date || finalSchedule[finalSchedule.length - 1]?.due_date || null;
-        finalStatus = computeLoanStatus(finalBalance, finalDueDate, finalSchedule);
-      }
-
       const payload = {
         ...values,
         source: 'manual',
         amount: principalAmount,
-        balance: isEdit ? principalAmount : finalBalance,
-        ...(isEdit ? {} : { due_date: finalDueDate, status: finalStatus, advance_payment: advanceAmount }),
+        balance: principalAmount,
         monthly_amortization: round2(preview.summary?.payment_per_period || 0),
         total_loan_payable: round2(preview.summary?.total_payments_collected || 0),
         service_fee: chargeIncluded.service_fee ? round2(preview.deductions?.items?.find(d => d.label?.toLowerCase().includes('service'))?.amount
@@ -1195,7 +1245,7 @@ export default function LoanFormPage() {
           other_charges: otherChargesIncluded,
           other_charges_total: otherChargesTotal,
         }),
-        preview_schedule_json: JSON.stringify(finalSchedule),
+        preview_schedule_json: JSON.stringify(preview.schedule),
       };
 
       let loan;
@@ -1236,18 +1286,6 @@ export default function LoanFormPage() {
           amount: loan.amount,
           created_by: user?.id ?? null,
         });
-
-        if (advanceApplied > 0) {
-          await createTransaction({
-            member_id: loan.member_id,
-            loan_id: loan.id,
-            category: 'loan',
-            type: 'loan_payment',
-            amount: advanceApplied,
-            notes: 'Advance payment made at loan release',
-            created_by: user?.id ?? null,
-          });
-        }
 
         if (regularSavings > 0) {
           const savingsAccountId = memberAccounts.savingsAccountId;
@@ -1584,62 +1622,6 @@ export default function LoanFormPage() {
             </div>
           </div>
 
-          {!isEdit && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <div>
-                <Input
-                  label="Advance Payment (at Release)"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  {...register('advance_payment')}
-                />
-                <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
-                  Optional — amount the member is paying upfront. Any amount is accepted;
-                  a partial amount is deducted from the remaining balance still owed on
-                  the period(s) it covers.
-                </p>
-              </div>
-
-              {advancePreview && (
-                <>
-                  <div>
-                    <Input
-                      label="Periods Fully Covered"
-                      readOnly
-                      value={`${advancePreview.periodsFullyCovered} of ${preview?.summary?.number_of_payments ?? 0}`}
-                    />
-                    <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-calculated — read only</p>
-                  </div>
-                  <div>
-                    <Input
-                      label="Next Due After Advance"
-                      readOnly
-                      value={
-                        advancePreview.nextDue
-                          ? `${formatDate(advancePreview.nextDue.due_date)} — ${formatCurrency(advancePreview.nextDue.remaining_due ?? advancePreview.nextDue.total_due ?? 0)}`
-                          : 'Fully Paid'
-                      }
-                    />
-                    <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-calculated — read only</p>
-                  </div>
-                </>
-              )}
-
-              {advancePreview && advancePreview.excess > 0 && (
-                <div className="sm:col-span-3 rounded-lg px-4 py-3 border bg-amber-50 border-amber-200">
-                  <p className="text-xs font-medium text-amber-800">
-                    Advance payment exceeds the entire schedule by {formatCurrency(advancePreview.excess)}.
-                  </p>
-                  <p className="text-[11px] mt-1 text-amber-700">
-                    Only {formatCurrency(advancePreview.applied)} was applied to the schedule shown below —
-                    please confirm the advance amount with the member before saving.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Hidden field for monthly amortization and amount (synced from loan_proposal) */}
           <input type="hidden" {...register('monthly_amortization')} />
           <input type="hidden" {...register('amount')} />
@@ -1942,25 +1924,14 @@ export default function LoanFormPage() {
               <h3 className="text-sm font-semibold text-gray-700">Loan Preview</h3>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePreview}
-                icon={<Eye size={14} />}
-              >
-                Preview Schedule
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePrintPreview}
-                disabled={!preview}
-                icon={<Printer size={14} />}
-              >
-                Print Preview
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePreview}
+              icon={<Eye size={14} />}
+            >
+              Preview Schedule
+            </Button>
           </div>
 
           {!preview ? (
@@ -1988,6 +1959,11 @@ export default function LoanFormPage() {
                 />
                 <CalcCard
                   label="Loan Payment / Period"
+                  value={formatCurrency(preview.summary.loan_payment_per_period)}
+                  highlight
+                />
+                <CalcCard
+                  label="Total / Period (w/ CBU+Savings)"
                   value={formatCurrency(preview.summary.payment_per_period)}
                   highlight
                 />
@@ -2032,27 +2008,6 @@ export default function LoanFormPage() {
                   value={formatCurrency(preview.deductions.net_proceeds)}
                   highlight
                 />
-                {advancePreview && (
-                  <>
-                    <CalcCard
-                      label="Advance Payment"
-                      value={formatCurrency(advancePreview.amount)}
-                      highlight
-                    />
-                    <CalcCard
-                      label="Periods Fully Covered"
-                      value={`${advancePreview.periodsFullyCovered} of ${preview.summary.number_of_payments}`}
-                    />
-                    <CalcCard
-                      label="Next Due After Advance"
-                      value={
-                        advancePreview.nextDue
-                          ? `${formatDate(advancePreview.nextDue.due_date)} — ${formatCurrency(advancePreview.nextDue.remaining_due ?? advancePreview.nextDue.total_due ?? 0)}`
-                          : 'Fully Paid'
-                      }
-                    />
-                  </>
-                )}
                 {parseFloat(watchedPenaltyDue || 0) > 0 && (
                   <CalcCard label="Penalty Due" value={formatCurrency(parseFloat(watchedPenaltyDue))} />
                 )}
@@ -2093,12 +2048,8 @@ export default function LoanFormPage() {
                           'Principal',
                           'Principal Amort.',
                           'Interest',
-                          'Loan Total',
-                          'CBU',
-                          'Savings',
-                          (watchedFrequency === 'semi_monthly' || watchedFrequency === 'semi_monthly_old') ? 'Kinsenas' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : 'Monthly Total',
+                          (watchedFrequency === 'semi_monthly' || watchedFrequency === 'semi_monthly_old') ? 'Kinsenas Total' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : watchedFrequency === 'quarterly' ? 'Quarterly Total' : 'Monthly Total',
                           'Due Date',
-                          ...(advancePreview ? ['Status'] : []),
                         ].map(h => (
                           <th
                             key={h}
@@ -2110,38 +2061,16 @@ export default function LoanFormPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {(advancePreview?.schedule || preview.schedule).map(row => {
-                        const loanTotal = round2((row.principal || 0) + (row.interest || 0));
-                        const freqTotal = round2(loanTotal + (row.cbu_paid || 0) + (row.savings_paid || 0));
-                        const rowBg = row.paid
-                          ? 'bg-emerald-50/60'
-                          : row.partial_paid
-                            ? 'bg-amber-50/60'
-                            : '';
+                      {preview.schedule.map(row => {
+                        const freqTotal = round2((row.total_due != null ? row.total_due : (row.principal || 0) + (row.interest || 0)));
                         return (
-                          <tr key={row.period} className={`hover:bg-gray-50/60 text-gray-700 ${rowBg}`}>
+                          <tr key={row.period} className="hover:bg-gray-50/60 text-gray-700">
                             <td className="px-3 py-2 font-mono">{row.period}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.balance || 0)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.principal || 0)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.interest || 0)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap font-medium">{formatCurrency(loanTotal)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-blue-600">{(row.cbu_paid || 0) > 0 ? formatCurrency(row.cbu_paid) : '—'}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-emerald-600">{(row.savings_paid || 0) > 0 ? formatCurrency(row.savings_paid) : '—'}</td>
                             <td className="px-3 py-2 whitespace-nowrap font-semibold">{formatCurrency(freqTotal)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.due_date)}</td>
-                            {advancePreview && (
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {row.paid ? (
-                                  <span className="text-emerald-700 font-semibold">Paid (Advance)</span>
-                                ) : row.partial_paid ? (
-                                  <span className="text-amber-700 font-semibold">
-                                    Partial — {formatCurrency(row.remaining_due || 0)} left
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400">Pending</span>
-                                )}
-                              </td>
-                            )}
                           </tr>
                         );
                       })}
@@ -2160,6 +2089,15 @@ export default function LoanFormPage() {
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => navigate('/loans')}>
             Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handlePrint}
+            disabled={!preview}
+            icon={<Printer size={15} />}
+          >
+            Print
           </Button>
           <Button
             type="submit"
