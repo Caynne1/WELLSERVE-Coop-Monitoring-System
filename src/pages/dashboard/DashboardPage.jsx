@@ -9,6 +9,8 @@ import {
   RefreshCw,
   Clock,
   CalendarDays,
+  PiggyBank,
+  Wallet,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
@@ -546,34 +548,7 @@ function DonutChart({ data, size = 110, onSegmentClick }) {
 // Summary Card
 // ─────────────────────────────────────────────────────────────────────────────
 
-// A few fixed "wavy uptrend" sparkline shapes so every card gets a subtle,
-// stable (non-random / non-flickering) decorative line chart under its
-// value, purely cosmetic — no data wiring, matches the reference design.
-const SPARKLINE_PATHS = [
-  'M0,24 C6,23 10,20 14,21 C20,22 24,18 30,17 C36,16 40,19 46,17 C52,15 56,10 62,11 C68,12 72,8 78,7 C84,6 90,4 100,2',
-  'M0,22 C6,24 10,19 16,20 C22,21 26,15 32,16 C38,17 42,13 48,14 C54,15 58,9 64,10 C70,11 76,6 82,7 C88,8 94,4 100,3',
-  'M0,20 C6,21 10,23 16,22 C22,21 26,17 32,18 C38,19 42,14 48,15 C54,16 58,11 64,12 C70,13 76,9 82,8 C88,7 94,5 100,4',
-  'M0,25 C6,22 10,23 16,19 C22,15 26,18 32,15 C38,12 42,16 48,13 C54,10 58,13 64,10 C70,7 76,10 82,7 C88,4 94,6 100,3',
-];
-
-function SummaryCardSparkline({ color, seed = 0 }) {
-  const path = SPARKLINE_PATHS[seed % SPARKLINE_PATHS.length];
-  const gradientId = `spark-gradient-${seed}`;
-  return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-full h-9 mt-2">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={`${path} L100,30 L0,30 Z`} fill={`url(#${gradientId})`} stroke="none" />
-      <path d={path} fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = 'rgba(5,150,105,0.08)', onClick, trend, trendInverse = false, sparkSeed = 0, delay = 0 }) {
+function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = 'rgba(5,150,105,0.08)', onClick, trend, trendInverse = false, delay = 0 }) {
   const trendIsGood = trend === undefined ? null : (trendInverse ? trend <= 0 : trend >= 0);
   return (
     <button
@@ -605,8 +580,6 @@ function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = '
         )}
         {sub && <span className="text-xs text-gray-400">{sub}</span>}
       </div>
-
-      <SummaryCardSparkline color={accent} seed={sparkSeed} />
     </button>
   );
 }
@@ -617,10 +590,10 @@ function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = '
 
 function ChartCard({ title, subtitle, children, action, footerNote, delay = 0 }) {
   return (
-    <div className="app-card dash-fade-in p-5 flex flex-col gap-4" style={{ animationDelay: `${delay}s` }}>
+    <div className="app-card dash-fade-in p-5 sm:p-6 flex flex-col gap-4" style={{ animationDelay: `${delay}s` }}>
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+          <h3 className="text-[15px] font-semibold text-gray-900 tracking-tight">{title}</h3>
           {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
         </div>
         {action}
@@ -639,6 +612,19 @@ function ChartCard({ title, subtitle, children, action, footerNote, delay = 0 })
 
 const INFLOW_TYPES = ['deposit', 'loan_release', 'payment', 'interest'];
 
+function StatusBadge({ isInflow }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        isInflow ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${isInflow ? 'bg-emerald-500' : 'bg-red-500'}`} />
+      {isInflow ? 'Credit' : 'Debit'}
+    </span>
+  );
+}
+
 function RecentTransactionsCard({ stats, navigate }) {
   return (
     <ChartCard
@@ -656,36 +642,59 @@ function RecentTransactionsCard({ stats, navigate }) {
       {!stats?.recentTransactions?.length ? (
         <div className="text-center text-sm text-gray-400 py-8">No transactions yet</div>
       ) : (
-        <div className="divide-y divide-gray-50">
-          {stats.recentTransactions.slice(0, 6).map((tx) => {
-            const isInflow = INFLOW_TYPES.includes(tx.type);
-            return (
-              <div
-                key={tx.id}
-                className="flex items-center justify-between py-3 rounded-lg px-1 hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={() => navigate('/transactions')}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0 transition-transform duration-150 hover:scale-110 ${
-                      isInflow ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
-                    }`}
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-sm border-separate" style={{ borderSpacing: '0 2px' }}>
+            <thead>
+              <tr className="text-left">
+                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Member</th>
+                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Type</th>
+                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hidden sm:table-cell">Date</th>
+                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hidden md:table-cell">Status</th>
+                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.recentTransactions.slice(0, 6).map((tx) => {
+                const isInflow = INFLOW_TYPES.includes(tx.type);
+                return (
+                  <tr
+                    key={tx.id}
+                    className="group cursor-pointer"
+                    onClick={() => navigate('/transactions')}
                   >
-                    {isInflow ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 capitalize leading-tight">
-                      {tx.type?.replace(/_/g, ' ')}
-                    </p>
-                    <p className="text-xs text-gray-400">{formatRelativeTime(tx.created_at)}</p>
-                  </div>
-                </div>
-                <span className={`text-sm font-semibold tabular-nums ${isInflow ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {isInflow ? '+' : '-'}{formatCurrency(tx.amount)}
-                </span>
-              </div>
-            );
-          })}
+                    <td className="px-1 py-2 rounded-l-lg group-hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0 transition-transform duration-150 group-hover:scale-110 ${
+                            isInflow ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
+                          }`}
+                        >
+                          {isInflow ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 leading-tight truncate max-w-[120px] sm:max-w-none">
+                          {tx.member_name || 'Cooperative'}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-1 py-2 group-hover:bg-gray-50 transition-colors">
+                      <p className="text-xs text-gray-500 capitalize">{tx.type?.replace(/_/g, ' ')}</p>
+                    </td>
+                    <td className="px-1 py-2 group-hover:bg-gray-50 transition-colors hidden sm:table-cell">
+                      <p className="text-xs text-gray-400">{formatRelativeTime(tx.created_at)}</p>
+                    </td>
+                    <td className="px-1 py-2 group-hover:bg-gray-50 transition-colors hidden md:table-cell">
+                      <StatusBadge isInflow={isInflow} />
+                    </td>
+                    <td className="px-1 py-2 rounded-r-lg group-hover:bg-gray-50 transition-colors text-right">
+                      <span className={`text-sm font-semibold tabular-nums ${isInflow ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {isInflow ? '+' : '-'}{formatCurrency(tx.amount)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </ChartCard>
@@ -831,8 +840,33 @@ function TimePeriodFilter({ value, onChange }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Product Balance Card — compact tile for CBU / Savings / TD / Booster / Kiddy
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ProductStatCard({ label, value, sub, icon, iconColorClass = 'text-gray-400', valueHoverClass = '', onClick, delay = 0 }) {
+  return (
+    <div
+      className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
+      style={{ animationDelay: `${delay}s` }}
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className={iconColorClass}>{icon}</span>
+        <p className="stat-label truncate">{label}</p>
+      </div>
+      <p className={`tabular-nums text-2xl font-bold text-gray-900 transition-colors ${valueHoverClass}`}>
+        {value}
+      </p>
+      <p className="mt-1 text-xs text-gray-400">{sub}</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN DASHBOARD PAGE
 // ─────────────────────────────────────────────────────────────────────────────
+
+
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -905,7 +939,6 @@ export default function DashboardPage() {
             accent="#2563EB"
             accentBg="rgba(37,99,235,0.08)"
             onClick={() => navigate('/members')}
-            sparkSeed={0}
             delay={0}
             trend={stats?.trends?.members}
           />
@@ -919,7 +952,6 @@ export default function DashboardPage() {
             accent="#0D9488"
             accentBg="rgba(13,148,136,0.08)"
             onClick={() => navigate('/members?type=kiddy')}
-            sparkSeed={1}
             delay={0.06}
           />
           <SummaryCard
@@ -930,7 +962,6 @@ export default function DashboardPage() {
             accent="#059669"
             accentBg="rgba(5,150,105,0.08)"
             onClick={() => navigate('/loans')}
-            sparkSeed={2}
             delay={0.12}
             trend={stats?.trends?.loans}
           />
@@ -942,52 +973,82 @@ export default function DashboardPage() {
             accent={stats?.overduePayments > 0 ? '#D97706' : '#6B7280'}
             accentBg={stats?.overduePayments > 0 ? 'rgba(217,119,6,0.08)' : 'rgba(107,114,128,0.08)'}
             onClick={() => navigate('/loans')}
-            sparkSeed={3}
             delay={0.18}
             trend={stats?.trends?.overdue}
             trendInverse
           />
         </div>
 
-        {/* ── Income Strip ── */}
-        <div
-          className="app-card dash-fade-in p-4 flex items-center justify-between border-emerald-100 bg-gradient-to-r from-emerald-50 to-white"
-          style={{ animationDelay: '0.22s' }}
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
-              <PesoSign size={18} className="text-emerald-700" />
-            </div>
-            <div>
-              <p className="stat-label flex items-center gap-1.5">
-                Total Income
-                {stats?.trends?.income !== undefined && (
-                  <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${stats.trends.income >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {stats.trends.income >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}
-                    {stats.trends.income >= 0 ? '+' : ''}{stats.trends.income}%
+        {/* ── Hero row: Income + Cash Flow (2/3) · Loan Status (1/3) ── */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+
+          {/* Hero: Income summary + Cash Flow chart combined */}
+          <div
+            className="app-card dash-fade-in lg:col-span-2 p-5 sm:p-6 flex flex-col gap-4"
+            style={{ animationDelay: '0.22s' }}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 flex-shrink-0">
+                  <PesoSign size={20} className="text-emerald-700" />
+                </div>
+                <div>
+                  <p className="stat-label flex items-center gap-1.5">
+                    Total Income
+                    {stats?.trends?.income !== undefined && (
+                      <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${stats.trends.income >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {stats.trends.income >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}
+                        {stats.trends.income >= 0 ? '+' : ''}{stats.trends.income}%
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-2xl font-bold text-emerald-700 tabular-nums">{formatCurrency(stats?.totalIncome ?? 0)}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 sm:gap-6">
+                <div className="text-right">
+                  <p className="stat-label">Net Cash Flow</p>
+                  <p className={`text-lg font-bold tabular-nums ${netCashFlow >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {netCashFlow >= 0 ? '+' : ''}{formatCurrency(netCashFlow)}
+                  </p>
+                </div>
+                <div className="hidden items-center gap-2.5 text-[10px] text-gray-400 md:flex">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" />
+                    In
                   </span>
-                )}
-              </p>
-              <p className="text-xl font-bold text-emerald-700 tabular-nums">{formatCurrency(stats?.totalIncome ?? 0)}</p>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" />
+                    Out
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 border-t-2 border-dashed border-indigo-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
+                    Net
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="text-right hidden sm:block">
-            <p className="stat-label">Net Cash Flow</p>
-            <p className={`text-lg font-bold tabular-nums ${netCashFlow >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-              {netCashFlow >= 0 ? '+' : ''}{formatCurrency(netCashFlow)}
+
+            <div className="border-t border-gray-50 pt-4">
+              <CashFlowChart
+                data={stats?.cashFlowChart ?? []}
+                height={190}
+                onBarClick={(item) => setDrillItem(item)}
+              />
+            </div>
+
+            <p className="text-[10px] text-gray-400 border-t border-gray-50 pt-2">
+              Last 6 months · click any month to view its transaction breakdown.
             </p>
           </div>
-        </div>
-
-        {/* ── Charts Row ── */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
 
           {/* Loan Status Donut */}
           <ChartCard
             title="Loan Status"
             subtitle="Click a segment to drill down"
             footerNote="Click any segment or legend item to filter loans by status."
-            delay={0.26}
+            delay={0.28}
             action={
               <button onClick={() => navigate('/loans')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
                 All loans →
@@ -996,46 +1057,19 @@ export default function DashboardPage() {
           >
             <DonutChart
               data={stats?.loanStatusChart ?? []}
-              size={110}
+              size={126}
               onSegmentClick={(seg) => setDrillItem(seg)}
             />
           </ChartCard>
+        </div>
 
-          {/* Cash Flow Bar + Net Line */}
-          <ChartCard
-            title="Cash Flow"
-            subtitle="Last 6 months · hover for details"
-            footerNote="Click any month to view its transaction breakdown."
-            delay={0.32}
-            action={
-              <div className="flex items-center gap-2.5 text-[10px] text-gray-400">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" />
-                  In
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" />
-                  Out
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-3 border-t-2 border-dashed border-indigo-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
-                  Net
-                </span>
-              </div>
-            }
-          >
-            <CashFlowChart
-              data={stats?.cashFlowChart ?? []}
-              onBarClick={(item) => setDrillItem(item)}
-            />
-          </ChartCard>
-
-          {/* Member Growth Bar */}
+        {/* ── Second row: Member Growth (1/3) · Product Balances (2/3) ── */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <ChartCard
             title="Member Growth"
             subtitle="Click a bar to drill down"
             footerNote="Click any bar to see members who joined that month."
-            delay={0.38}
+            delay={0.34}
             action={
               <button onClick={() => navigate('/members')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
                 All members →
@@ -1046,91 +1080,64 @@ export default function DashboardPage() {
               data={stats?.memberGrowthChart ?? []}
               valueKey="count"
               color="#2563EB"
-              height={100}
+              height={150}
               formatValue={v => `${v} member${v !== 1 ? 's' : ''}`}
               onBarClick={(item) => setDrillItem(item)}
             />
           </ChartCard>
+
+          <div className="lg:col-span-2">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Product Balances
+            </h2>
+            <div className="grid grid-cols-2 gap-4">
+              <ProductStatCard
+                label="Capital Build-Up"
+                value={formatCurrency(stats?.totalCBU ?? 0)}
+                sub="Total CBU balance"
+                icon={<PiggyBank size={13} />}
+                iconColorClass="text-emerald-400"
+                valueHoverClass="group-hover:text-emerald-700"
+                onClick={() => navigate('/cbu')}
+                delay={0.4}
+              />
+              <ProductStatCard
+                label="Savings"
+                value={formatCurrency(stats?.totalSavings ?? 0)}
+                sub="Member savings accounts"
+                icon={<Wallet size={13} />}
+                iconColorClass="text-emerald-400"
+                valueHoverClass="group-hover:text-emerald-700"
+                onClick={() => navigate('/savings')}
+                delay={0.44}
+              />
+              <ProductStatCard
+                label="Time Deposits"
+                value={formatCurrency(stats?.totalTimeDeposit ?? 0)}
+                sub={`${stats?.timeDepositCount ?? 0} active deposit${(stats?.timeDepositCount ?? 0) !== 1 ? 's' : ''}`}
+                icon={<Clock size={13} />}
+                iconColorClass="text-violet-400"
+                valueHoverClass="group-hover:text-violet-700"
+                onClick={() => navigate('/time-deposit')}
+                delay={0.48}
+              />
+              <ProductStatCard
+                label="Savings Booster"
+                value={formatCurrency(stats?.totalSavingsBooster ?? 0)}
+                sub={`${stats?.savingsBoosterCount ?? 0} account${(stats?.savingsBoosterCount ?? 0) !== 1 ? 's' : ''}`}
+                icon={<TrendingUp size={13} />}
+                iconColorClass="text-amber-400"
+                valueHoverClass="group-hover:text-amber-600"
+                onClick={() => navigate('/savings-booster')}
+                delay={0.52}
+              />
+            </div>
+          </div>
         </div>
 
-        {/* ── Bottom: CBU / Savings + Recent Transactions ── */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="flex flex-col gap-3">
-            <div
-              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
-              style={{ animationDelay: '0.42s' }}
-              onClick={() => navigate('/cbu')}
-            >
-              <p className="stat-label mb-1">Total CBU Balance</p>
-              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-emerald-700 transition-colors">
-                {formatCurrency(stats?.totalCBU ?? 0)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">Capital Build-Up</p>
-            </div>
-            <div
-              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
-              style={{ animationDelay: '0.46s' }}
-              onClick={() => navigate('/savings')}
-            >
-              <p className="stat-label mb-1">Total Savings</p>
-              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-emerald-700 transition-colors">
-                {formatCurrency(stats?.totalSavings ?? 0)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">Member savings accounts</p>
-            </div>
-            <div
-              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
-              style={{ animationDelay: '0.50s' }}
-              onClick={() => navigate('/time-deposit')}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <Clock size={13} className="text-violet-400" />
-                <p className="stat-label">Time Deposits</p>
-              </div>
-              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-violet-700 transition-colors">
-                {formatCurrency(stats?.totalTimeDeposit ?? 0)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
-                {stats?.timeDepositCount ?? 0} active deposit{(stats?.timeDepositCount ?? 0) !== 1 ? 's' : ''}
-              </p>
-            </div>
-            <div
-              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
-              style={{ animationDelay: '0.54s' }}
-              onClick={() => navigate('/savings?type=booster')}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <TrendingUp size={13} className="text-amber-400" />
-                <p className="stat-label">Savings Booster</p>
-              </div>
-              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-amber-600 transition-colors">
-                {formatCurrency(stats?.totalSavingsBooster ?? 0)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
-                {stats?.savingsBoosterCount ?? 0} account{(stats?.savingsBoosterCount ?? 0) !== 1 ? 's' : ''}
-              </p>
-            </div>
-            <div
-              className="app-card app-card-hover dash-fade-in p-5 cursor-pointer group"
-              style={{ animationDelay: '0.58s' }}
-              onClick={() => navigate('/savings?type=kiddy')}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <Users size={13} className="text-teal-500" />
-                <p className="stat-label">Kiddy Savings</p>
-              </div>
-              <p className="tabular-nums text-2xl font-bold text-gray-900 group-hover:text-teal-700 transition-colors">
-                {formatCurrency(stats?.totalKiddySavings ?? 0)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
-                {stats?.kiddySavingsCount ?? 0} account{(stats?.kiddySavingsCount ?? 0) !== 1 ? 's' : ''}
-              </p>
-            </div>
-          </div>
-
-          <div className="xl:col-span-2 dash-fade-in" style={{ animationDelay: '0.44s' }}>
-            <RecentTransactionsCard stats={stats} navigate={navigate} />
-          </div>
+        {/* ── Recent Transactions ── */}
+        <div className="dash-fade-in" style={{ animationDelay: '0.6s' }}>
+          <RecentTransactionsCard stats={stats} navigate={navigate} />
         </div>
 
       </div>

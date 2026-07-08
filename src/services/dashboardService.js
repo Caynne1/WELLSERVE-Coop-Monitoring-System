@@ -90,7 +90,7 @@ export async function getDashboardStats(period = 'month') {
     // All transactions = primary source for member-level cash flows
     supabase
       .from('transactions')
-      .select('id, type, category, amount, created_at, transaction_date')
+      .select('id, type, category, amount, created_at, transaction_date, member_id')
       .order('created_at', { ascending: false }),
     // Kiddy savings accounts
     supabase
@@ -145,6 +145,23 @@ export async function getDashboardStats(period = 'month') {
   // Recent transactions for activity feed
   const recentTxData = allTxData.slice(0, 8);
 
+  // Attach member display names (small lookup, only for the recent feed)
+  const recentMemberIds = [...new Set(recentTxData.map(t => t.member_id).filter(Boolean))];
+  let recentMemberMap = {};
+  if (recentMemberIds.length > 0) {
+    const { data: recentMembersData } = await supabase
+      .from('members')
+      .select('id, first_name, last_name')
+      .in('id', recentMemberIds);
+    recentMemberMap = Object.fromEntries(
+      (recentMembersData || []).map(m => [m.id, `${m.first_name || ''} ${m.last_name || ''}`.trim()])
+    );
+  }
+  const recentTransactionsWithNames = recentTxData.map(t => ({
+    ...t,
+    member_name: t.member_id ? (recentMemberMap[t.member_id] || 'Member') : 'Cooperative',
+  }));
+
   const cbuAccounts     = accountData.filter(a => a.account_type === 'cbu');
   const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
   const activeLoans     = loanData.filter(l => ['active', 'ongoing'].includes(l.status));
@@ -183,17 +200,22 @@ export async function getDashboardStats(period = 'month') {
   });
 
   // ── Member Growth per Month (last 6 months) ───────────────────────────────
-  // Uses created_at (always set by DB) to avoid null / historical date_joined values.
-  // Timestamp comparison avoids UTC string-slice timezone errors.
-  const memberGrowthChart = months.map(({ label, start, end }) => {
+  // Groups members by their actual registration date (date_joined). Falls back
+  // to created_at only when date_joined is missing (e.g. legacy/imported rows).
+  // Date-only values are normalized to noon before parsing to avoid UTC
+  // string-slice timezone errors shifting a member into the wrong month.
+  const memberGrowthChart = months.map(({ start, end }) => {
     const startMs = new Date(start).getTime();
     const endMs   = new Date(end).getTime();
     const count = nonKiddyMembers.filter(m => {
-      if (!m.created_at) return false;
-      const ms = new Date(m.created_at).getTime();
+      const raw = m.date_joined
+        ? (String(m.date_joined).includes('T') ? m.date_joined : `${m.date_joined}T12:00:00`)
+        : m.created_at;
+      if (!raw) return false;
+      const ms = new Date(raw).getTime();
       return ms >= startMs && ms <= endMs;
     }).length;
-    return { label, count };
+    return { label: format(new Date(start), 'MMM yyyy'), count };
   });
 
   // ── Period Filter (Today / Week / Month / Year) ───────────────────────────
@@ -248,7 +270,7 @@ export async function getDashboardStats(period = 'month') {
     cashFlowChart,
     memberGrowthChart,
 
-    recentTransactions: recentTxData,
+    recentTransactions: recentTransactionsWithNames,
 
     // ── Period Filter data (Today / Week / Month / Year) ──────────────────
     periodFilter:      period,

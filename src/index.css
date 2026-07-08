@@ -117,10 +117,10 @@
 @layer components {
   /* Cards */
   .app-card {
-    border-radius: 1rem;
+    border-radius: 1.125rem;
     border: 1px solid #e5e7eb;
     background-color: #ffffff;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
     transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
   }
 
@@ -360,4 +360,20 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+}
+
+/* Horizontal top navigation — slim scrollbar for smaller screens */
+.topnav-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
+}
+.topnav-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.topnav-scroll::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 999px;
+}
+.topnav-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }

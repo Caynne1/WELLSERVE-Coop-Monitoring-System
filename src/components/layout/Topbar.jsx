@@ -1,27 +1,13 @@
 /**
- * Topbar
- *
- * Props:
- *   onMenuClick     — called when hamburger is clicked; parent should expand sidebar
- *   isSidebarOpen   — true when sidebar is fully expanded (not collapsed)
- *
- * Parent wiring example:
- *   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
- *
- *   <Topbar
- *     onMenuClick={() => setSidebarCollapsed(false)}
- *     isSidebarOpen={!sidebarCollapsed}
- *   />
- *   <Sidebar
- *     collapsed={sidebarCollapsed}
- *     onCollapse={() => setSidebarCollapsed(true)}
- *   />
+ * Topbar — global header. Sticky at the very top of the app.
+ * Shows brand/logo, global search, notifications, and the user menu.
+ * The left sidebar has been removed; navigation now lives in <TopNav /> underneath.
  */
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Menu, X, Bell, LogOut, Search,
+  X, Bell, LogOut, Search,
   LayoutDashboard, Users, CreditCard, Receipt, BookOpen,
   PiggyBank, ArrowLeftRight, FileText, TrendingUp, BarChart2,
   ActivitySquare, Settings, Wallet, ShieldCheck, UserCog,
@@ -30,6 +16,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import NotificationPanel from '../notifications/NotificationPanel';
+import WellserveLogo from '../shared/WellserveLogo';
 
 const ALL_NAV_ITEMS = [
   { to: '/dashboard',          icon: LayoutDashboard, label: 'Dashboard',          group: 'Main' },
@@ -71,17 +58,17 @@ function Highlight({ text, query }) {
   );
 }
 
-export default function Topbar({ onMenuClick, isSidebarOpen = true }) {
+export default function Topbar() {
   const { user, profile, signOut, hasPermission } = useAuth();
   const { unreadCount, panelOpen, setPanelOpen } = useNotifications();
   const navigate   = useNavigate();
   const isAdmin    = profile?.role === 'admin';
   const initials   = user?.email?.[0]?.toUpperCase() || 'A';
 
-  const bellRef     = useRef(null);
-  const searchRef   = useRef(null);
-  const inputRef    = useRef(null);
-  const dropdownRef = useRef(null);
+  const bellRef       = useRef(null);
+  const searchRef     = useRef(null);
+  const inputRef      = useRef(null);
+  const dropdownRef   = useRef(null);
 
   const [searchValue,   setSearchValue]   = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -130,52 +117,34 @@ export default function Topbar({ onMenuClick, isSidebarOpen = true }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Hamburger button: shows Menu icon when sidebar is collapsed, X when expanded (desktop-only X is gone — we use arrow in sidebar now)
-  // We always show Menu icon since the arrow in the sidebar handles collapsing.
-  // Clicking hamburger always expands (onMenuClick).
-  const showMenuIcon = !isSidebarOpen; // hamburger when collapsed, nothing special when expanded
-
   return (
     <>
       <header style={{
         height: '60px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
-        paddingLeft: '16px', paddingRight: '20px',
+        paddingLeft: '20px', paddingRight: '20px',
         background: '#ffffff', borderBottom: '1px solid #e5e7eb',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-        flexShrink: 0, position: 'relative', zIndex: 20, gap: '12px',
+        flexShrink: 0, position: 'sticky', top: 0, zIndex: 20, gap: '12px',
       }}>
 
-        {/* Left — hamburger (only visible when sidebar is collapsed) */}
-        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-          <button
-            onClick={onMenuClick}
-            title={isSidebarOpen ? 'Sidebar open' : 'Expand sidebar'}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '36px', height: '36px', borderRadius: '10px',
-              border: '1px solid #e5e7eb',
-              background: !isSidebarOpen ? '#f0fdf6' : '#fafafa',
-              cursor: !isSidebarOpen ? 'pointer' : 'default',
-              color: !isSidebarOpen ? '#07A04E' : '#d1d5db',
-              transition: 'all 0.18s ease',
-              opacity: isSidebarOpen ? 0.45 : 1,
-            }}
-            onMouseEnter={e => {
-              if (!isSidebarOpen) {
-                e.currentTarget.style.background = '#f0fdf6';
-                e.currentTarget.style.color = '#07A04E';
-                e.currentTarget.style.borderColor = '#bbf7d0';
-              }
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = !isSidebarOpen ? '#f0fdf6' : '#fafafa';
-              e.currentTarget.style.color = !isSidebarOpen ? '#07A04E' : '#d1d5db';
-              e.currentTarget.style.borderColor = '#e5e7eb';
-            }}
-          >
-            <Menu size={18} />
-          </button>
+        {/* Left — brand */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+          <WellserveLogo size={32} variant="dark" />
+          <div style={{ lineHeight: 1.1 }} className="hidden sm:block">
+            <p style={{
+              margin: 0, fontSize: '13px', fontWeight: '800',
+              letterSpacing: '0.14em', color: '#111827',
+            }}>
+              WELLSERVE
+            </p>
+            <p style={{
+              margin: '2px 0 0', fontSize: '8px', fontWeight: '700',
+              letterSpacing: '0.12em', textTransform: 'uppercase', color: '#07A04E',
+            }}>
+              Credit Cooperative
+            </p>
+          </div>
         </div>
 
         {/* Right — actions */}
@@ -200,7 +169,7 @@ export default function Topbar({ onMenuClick, isSidebarOpen = true }) {
               <input
                 ref={inputRef}
                 type="text"
-                placeholder="Search pages..."
+                placeholder="Search..."
                 value={searchValue}
                 onChange={e => setSearchValue(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
