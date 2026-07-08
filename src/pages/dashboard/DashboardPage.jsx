@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Clock,
+  CalendarDays,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
@@ -572,7 +573,8 @@ function SummaryCardSparkline({ color, seed = 0 }) {
   );
 }
 
-function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = 'rgba(5,150,105,0.08)', onClick, trend, sparkSeed = 0, delay = 0 }) {
+function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = 'rgba(5,150,105,0.08)', onClick, trend, trendInverse = false, sparkSeed = 0, delay = 0 }) {
+  const trendIsGood = trend === undefined ? null : (trendInverse ? trend <= 0 : trend >= 0);
   return (
     <button
       type="button"
@@ -596,7 +598,8 @@ function SummaryCard({ label, value, sub, icon, accent = '#059669', accentBg = '
 
       <div className="mt-2 flex items-center gap-1.5">
         {trend !== undefined && (
-          <span className={`text-xs font-semibold ${trend >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+          <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${trendIsGood ? 'text-emerald-600' : 'text-red-500'}`}>
+            {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
             {trend >= 0 ? '+' : ''}{trend}%
           </span>
         )}
@@ -793,12 +796,48 @@ function DrillDownDrawer({ item, onClose, navigate }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Time Period Filter — segmented control (Today / Week / Month / Year)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PERIOD_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'week',  label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: 'year',  label: 'Year' },
+];
+
+function TimePeriodFilter({ value, onChange }) {
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-xl bg-gray-100 p-1">
+      {PERIOD_OPTIONS.map(opt => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 ${
+              active
+                ? 'bg-white text-emerald-700 shadow-sm'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN DASHBOARD PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { stats, loading, refetch } = useRealtimeDashboard();
+  const [period, setPeriod] = useState('month');
+  const { stats, loading, refetch } = useRealtimeDashboard(period);
   const [drillItem, setDrillItem] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -824,18 +863,30 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="section-title">Dashboard</h1>
-            <p className="section-subtitle">WELLSERVE Cooperative — live overview</p>
+            <p className="section-subtitle flex items-center gap-1.5 flex-wrap">
+              <span>WELLSERVE Cooperative — live overview</span>
+              {stats?.periodLabel && (
+                <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                  <span className="text-gray-300">·</span>
+                  <CalendarDays size={12} />
+                  {stats.periodLabel}
+                </span>
+              )}
+            </p>
           </div>
-          <button
-            onClick={handleRefetch}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors px-3 py-2 rounded-xl hover:bg-gray-100"
-          >
-            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <TimePeriodFilter value={period} onChange={setPeriod} />
+            <button
+              onClick={handleRefetch}
+              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors px-3 py-2 rounded-xl hover:bg-gray-100"
+            >
+              <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* ── Summary Cards ── */}
@@ -856,6 +907,7 @@ export default function DashboardPage() {
             onClick={() => navigate('/members')}
             sparkSeed={0}
             delay={0}
+            trend={stats?.trends?.members}
           />
           <SummaryCard
             label="Kiddy Members"
@@ -880,6 +932,7 @@ export default function DashboardPage() {
             onClick={() => navigate('/loans')}
             sparkSeed={2}
             delay={0.12}
+            trend={stats?.trends?.loans}
           />
           <SummaryCard
             label="Overdue Payments"
@@ -891,6 +944,8 @@ export default function DashboardPage() {
             onClick={() => navigate('/loans')}
             sparkSeed={3}
             delay={0.18}
+            trend={stats?.trends?.overdue}
+            trendInverse
           />
         </div>
 
@@ -904,7 +959,15 @@ export default function DashboardPage() {
               <PesoSign size={18} className="text-emerald-700" />
             </div>
             <div>
-              <p className="stat-label">Total Income</p>
+              <p className="stat-label flex items-center gap-1.5">
+                Total Income
+                {stats?.trends?.income !== undefined && (
+                  <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${stats.trends.income >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {stats.trends.income >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}
+                    {stats.trends.income >= 0 ? '+' : ''}{stats.trends.income}%
+                  </span>
+                )}
+              </p>
               <p className="text-xl font-bold text-emerald-700 tabular-nums">{formatCurrency(stats?.totalIncome ?? 0)}</p>
             </div>
           </div>

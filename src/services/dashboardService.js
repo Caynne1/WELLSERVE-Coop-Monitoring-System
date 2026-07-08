@@ -1,11 +1,64 @@
 import { supabase } from './supabase';
-import { subMonths, format, startOfMonth, endOfMonth } from 'date-fns';
+import {
+  subMonths, format, startOfMonth, endOfMonth,
+  startOfDay, endOfDay, startOfWeek, endOfWeek,
+  startOfYear, endOfYear, subDays, subWeeks, subYears,
+} from 'date-fns';
 
 function isWithdrawalInvoice(inv) {
   return String(inv?.purpose || '').toLowerCase().includes('withdrawal');
 }
 
-export async function getDashboardStats() {
+// ── Time Period Filter helpers ────────────────────────────────────────────
+// Supported periods: 'today' | 'week' | 'month' | 'year'
+function getPeriodRange(period, now) {
+  switch (period) {
+    case 'today':
+      return { start: startOfDay(now), end: endOfDay(now), label: format(now, 'MMM d, yyyy') };
+    case 'week': {
+      const s = startOfWeek(now, { weekStartsOn: 1 });
+      const e = endOfWeek(now, { weekStartsOn: 1 });
+      return { start: s, end: e, label: `${format(s, 'MMM d')} – ${format(e, 'MMM d, yyyy')}` };
+    }
+    case 'year':
+      return { start: startOfYear(now), end: endOfYear(now), label: format(now, 'yyyy') };
+    case 'month':
+    default:
+      return { start: startOfMonth(now), end: endOfMonth(now), label: format(now, 'MMMM yyyy') };
+  }
+}
+
+function getPreviousPeriodRange(period, now) {
+  switch (period) {
+    case 'today': return getPeriodRange('today', subDays(now, 1));
+    case 'week':  return getPeriodRange('week', subWeeks(now, 1));
+    case 'year':  return getPeriodRange('year', subYears(now, 1));
+    case 'month':
+    default:      return getPeriodRange('month', subMonths(now, 1));
+  }
+}
+
+function pctChange(curr, prev) {
+  if (!prev) return curr > 0 ? 100 : 0;
+  return Math.round(((curr - prev) / prev) * 100);
+}
+
+function recordDateMs(r) {
+  const raw = r.transaction_date ? `${r.transaction_date}T12:00:00`
+    : (r.date ? `${r.date}T12:00:00` : (r.created_at || r.due_date));
+  return new Date(raw).getTime();
+}
+
+function inRange(arr, range) {
+  const startMs = range.start.getTime();
+  const endMs = range.end.getTime();
+  return arr.filter(r => {
+    const ms = recordDateMs(r);
+    return ms >= startMs && ms <= endMs;
+  });
+}
+
+export async function getDashboardStats(period = 'month') {
   const now = new Date();
 
   // Build 6-month range for trend data
@@ -143,6 +196,32 @@ export async function getDashboardStats() {
     return { label, count };
   });
 
+  // ── Period Filter (Today / Week / Month / Year) ───────────────────────────
+  // Purely additive — does not alter any of the existing overall totals above.
+  const range     = getPeriodRange(period, now);
+  const prevRange = getPreviousPeriodRange(period, now);
+
+  const periodIncome = inRange(cashInTx, range).reduce((s, t) => s + (t.amount || 0), 0)
+                      + inRange(invoiceData, range).reduce((s, i) => s + (i.amount || 0), 0);
+  const prevPeriodIncome = inRange(cashInTx, prevRange).reduce((s, t) => s + (t.amount || 0), 0)
+                      + inRange(invoiceData, prevRange).reduce((s, i) => s + (i.amount || 0), 0);
+
+  const periodExpense = inRange(cashOutTx, range).reduce((s, t) => s + (t.amount || 0), 0)
+                      + inRange(voucherData, range).reduce((s, v) => s + (v.amount || 0), 0);
+  const prevPeriodExpense = inRange(cashOutTx, prevRange).reduce((s, t) => s + (t.amount || 0), 0)
+                      + inRange(voucherData, prevRange).reduce((s, v) => s + (v.amount || 0), 0);
+
+  const periodNewMembers     = inRange(nonKiddyMembers, range).length;
+  const prevPeriodNewMembers = inRange(nonKiddyMembers, prevRange).length;
+
+  const periodNewLoans     = inRange(loanData, range).length;
+  const prevPeriodNewLoans = inRange(loanData, prevRange).length;
+
+  const periodOverdue     = inRange(overdueLoans, range).length;
+  const prevPeriodOverdue = inRange(overdueLoans, prevRange).length;
+
+  const periodTransactions = inRange(allTxData, range).length;
+
   return {
     totalMembers:         nonKiddyMembers.length,
     activeMembers:        nonKiddyMembers.filter(m => m.status === 'active').length,
@@ -170,5 +249,24 @@ export async function getDashboardStats() {
     memberGrowthChart,
 
     recentTransactions: recentTxData,
+
+    // ── Period Filter data (Today / Week / Month / Year) ──────────────────
+    periodFilter:      period,
+    periodLabel:       range.label,
+    periodStart:       range.start.toISOString(),
+    periodEnd:         range.end.toISOString(),
+    periodIncome,
+    periodExpense,
+    periodNewMembers,
+    periodNewLoans,
+    periodOverdue,
+    periodTransactions,
+    trends: {
+      income:  pctChange(periodIncome, prevPeriodIncome),
+      expense: pctChange(periodExpense, prevPeriodExpense),
+      members: pctChange(periodNewMembers, prevPeriodNewMembers),
+      loans:   pctChange(periodNewLoans, prevPeriodNewLoans),
+      overdue: pctChange(periodOverdue, prevPeriodOverdue),
+    },
   };
 }
