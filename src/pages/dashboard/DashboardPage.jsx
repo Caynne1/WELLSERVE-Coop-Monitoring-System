@@ -1,4 +1,7 @@
+// DashboardPage.jsx - Updated with React Portal for modals
+
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users,
   CreditCard,
@@ -11,11 +14,14 @@ import {
   CalendarDays,
   PiggyBank,
   Wallet,
+  X,
+  Mail,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeDashboard } from '../../hooks/useRealtimeDashboard';
-import { formatCurrency, formatRelativeTime } from '../../utils/formatters';
+import { formatCurrency, formatRelativeTime, formatDate } from '../../utils/formatters';
+import { format } from 'date-fns';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tooltip
@@ -106,7 +112,7 @@ function BarChart({ data, valueKey, color = '#2563EB', height = 100, formatValue
 
   const max = Math.max(...data.map(d => d[valueKey] || 0), 1);
   const fmt = formatValue || (v => String(v));
-  const labelH = 20; // reserve px for month label + value label row
+  const labelH = 20;
   const innerH = height - labelH;
 
   return (
@@ -126,7 +132,6 @@ function BarChart({ data, valueKey, color = '#2563EB', height = 100, formatValue
               onMouseMove={move}
               onMouseLeave={() => { setHoveredIdx(null); hide(); }}
             >
-              {/* Value label on hover */}
               <span
                 className="text-[9px] font-semibold tabular-nums transition-opacity duration-150"
                 style={{ color, opacity: isHovered ? 1 : 0 }}
@@ -158,9 +163,7 @@ function BarChart({ data, valueKey, color = '#2563EB', height = 100, formatValue
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CashFlowChart — diverging bar chart: Cash In rises UP, Cash Out falls DOWN
-// from a bold center zero-line. Dashed indigo net line floats across both halves.
-// Uses ResizeObserver for pixel-perfect sizing.
+// CashFlowChart — diverging bar chart
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CashFlowChart({ data, height = 152, onBarClick }) {
@@ -188,7 +191,7 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
   const PAD    = { t: 26, b: 22, l: 4, r: 10 };
   const iW     = W - PAD.l - PAD.r;
   const iH     = H - PAD.t - PAD.b;
-  const midY   = PAD.t + iH / 2;   // zero / center line
+  const midY   = PAD.t + iH / 2;
   const halfH  = iH / 2;
 
   const n      = data.length;
@@ -201,7 +204,6 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
   const barX   = i => PAD.l + i * groupW + margin;
   const mX     = i => PAD.l + i * groupW + groupW / 2;
 
-  // Net line: mapped proportionally across full iH, clamped to chart bounds
   const netPts = data.map((d, i) => {
     const net = (d.cashIn || 0) - (d.cashOut || 0);
     const y   = midY - (net / maxVal) * halfH;
@@ -240,46 +242,37 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
         {W > 0 && (
           <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
             <defs>
-              {/* Cash In: dark green at top → light near center */}
               <linearGradient id="cf-div-green" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"   stopColor="#047857" stopOpacity="1" />
                 <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.45" />
               </linearGradient>
-              {/* Cash Out: light near center → dark red at bottom */}
               <linearGradient id="cf-div-red" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"   stopColor="#FCA5A5" stopOpacity="0.45" />
                 <stop offset="100%" stopColor="#B91C1C" stopOpacity="1" />
               </linearGradient>
             </defs>
 
-            {/* Upper half background — subtle green tint */}
             <rect x={PAD.l} y={PAD.t} width={iW} height={halfH}
               fill="#F0FDF4" opacity={0.65} />
-            {/* Lower half background — subtle red tint */}
             <rect x={PAD.l} y={midY} width={iW} height={halfH}
               fill="#FFF5F5" opacity={0.65} />
 
-            {/* Upper quarter dashed guide */}
             <line
               x1={PAD.l} y1={PAD.t + halfH * 0.5} x2={W - PAD.r} y2={PAD.t + halfH * 0.5}
               stroke="#D1FAE5" strokeWidth={1} strokeDasharray="4 5"
             />
-            {/* Lower quarter dashed guide */}
             <line
               x1={PAD.l} y1={midY + halfH * 0.5} x2={W - PAD.r} y2={midY + halfH * 0.5}
               stroke="#FEE2E2" strokeWidth={1} strokeDasharray="4 5"
             />
 
-            {/* Bold center / zero line */}
             <line x1={PAD.l} y1={midY} x2={W - PAD.r} y2={midY}
               stroke="#94A3B8" strokeWidth={1.5} />
             <text x={W - PAD.r + 2} y={midY + 3.5} fontSize={7} fill="#94A3B8" textAnchor="start">0</text>
 
-            {/* Axis corner labels */}
             <text x={PAD.l + 2} y={PAD.t + 9} fontSize={7} fill="#059669" fontWeight="700">↑ In</text>
             <text x={PAD.l + 2} y={PAD.t + iH - 3} fontSize={7} fill="#DC2626" fontWeight="700">↓ Out</text>
 
-            {/* Bars per month */}
             {data.map((d, i) => {
               const ciH    = Math.max(sh(d.cashIn  || 0), (d.cashIn  || 0) > 0 ? 3 : 0);
               const coH    = Math.max(sh(d.cashOut || 0), (d.cashOut || 0) > 0 ? 3 : 0);
@@ -302,13 +295,11 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                   onMouseLeave={() => { setHoveredIdx(null); hide(); }}
                   onClick={() => onBarClick?.(d)}
                 >
-                  {/* Column hover tint */}
                   {isHov && (
                     <rect x={bx - 2} y={PAD.t} width={bw + 4} height={iH}
                       fill="#6366F1" opacity={0.05} rx={3} />
                   )}
 
-                  {/* Cash In bar — rises upward from center line */}
                   {ciH > 0 && (
                     <>
                       <rect
@@ -316,7 +307,6 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                         width={bw} height={ciH}
                         fill="url(#cf-div-green)" opacity={op} rx={2.5}
                       />
-                      {/* Value label above bar on hover */}
                       {isHov && (
                         <text
                           x={bx + bw / 2} y={midY - ciH - 4}
@@ -328,7 +318,6 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                     </>
                   )}
 
-                  {/* Cash Out bar — drops downward from center line */}
                   {coH > 0 && (
                     <>
                       <rect
@@ -336,7 +325,6 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                         width={bw} height={coH}
                         fill="url(#cf-div-red)" opacity={op} rx={2.5}
                       />
-                      {/* Value label below bar on hover */}
                       {isHov && (
                         <text
                           x={bx + bw / 2} y={midY + coH + 9}
@@ -348,7 +336,6 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                     </>
                   )}
 
-                  {/* Month label */}
                   <text x={mX(i)} y={H - 6} textAnchor="middle" fontSize={9}
                     fill={isHov ? '#374151' : '#9CA3AF'}
                     fontWeight={isHov ? '600' : '400'}>
@@ -358,18 +345,14 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
               );
             })}
 
-            {/* Dashed net line with glow */}
             {netPts.length > 1 && (
               <g style={{ pointerEvents: 'none' }}>
-                {/* Glow */}
                 <path d={linePath} fill="none" stroke="#818CF8"
                   strokeWidth={5} strokeLinejoin="round" strokeLinecap="round" opacity={0.18} />
-                {/* Dashed line */}
                 <path d={linePath} fill="none" stroke="#6366F1"
                   strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round"
                   strokeDasharray="5 3" />
 
-                {/* Dots + hover net label */}
                 {netPts.map((p, i) => {
                   const isHov    = hoveredIdx === i;
                   const neg      = p.net < 0;
@@ -377,7 +360,6 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                   const ringR    = isHov ? 5 : 3;
                   const dotR     = isHov ? 3 : 1.75;
                   const lw       = 58;
-                  // Place label above dot if dot is in lower half, below if in upper half
                   const showAbove = p.y > midY;
                   const rectY    = showAbove ? p.y - 21 : p.y + 6;
                   const textY    = showAbove ? p.y - 9   : p.y + 17;
@@ -414,7 +396,7 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DonutChart — with hover tooltip + click per segment
+// DonutChart
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DONUT_COLORS = ['#059669', '#2563EB', '#F59E0B', '#DC2626', '#8B5CF6', '#6B7280'];
@@ -457,10 +439,8 @@ function DonutChart({ data, size = 110, onSegmentClick }) {
             viewBox="0 0 100 100"
             className="overflow-visible"
           >
-            {/* Background ring */}
             <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F3F4F6" strokeWidth="14" />
 
-            {/* Segments */}
             {segments.map((seg, i) => (
               <circle
                 key={i}
@@ -489,7 +469,6 @@ function DonutChart({ data, size = 110, onSegmentClick }) {
               />
             ))}
 
-            {/* Center label — shows hovered segment or total */}
             {hovered ? (
               <>
                 <text x="50" y="46" textAnchor="middle" fontSize="9" fill="#6B7280" fontWeight="500">
@@ -512,7 +491,6 @@ function DonutChart({ data, size = 110, onSegmentClick }) {
           </svg>
         </div>
 
-        {/* Legend */}
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">
           {segments.map((seg, i) => (
             <button
@@ -629,7 +607,7 @@ function RecentTransactionsCard({ stats, navigate }) {
   return (
     <ChartCard
       title="Recent Transactions"
-      subtitle="Latest cooperative activity"
+      subtitle={`Latest activity · ${stats?.periodLabel || 'selected period'}`}
       action={
         <button
           onClick={() => navigate('/transactions')}
@@ -640,7 +618,7 @@ function RecentTransactionsCard({ stats, navigate }) {
       }
     >
       {!stats?.recentTransactions?.length ? (
-        <div className="text-center text-sm text-gray-400 py-8">No transactions yet</div>
+        <div className="text-center text-sm text-gray-400 py-8">No transactions in this period</div>
       ) : (
         <div className="overflow-x-auto -mx-1">
           <table className="w-full text-sm border-separate" style={{ borderSpacing: '0 2px' }}>
@@ -702,23 +680,197 @@ function RecentTransactionsCard({ stats, navigate }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Drill-down Drawer — shown when a chart element is clicked
+// Member Growth Drill-down Modal - Using React Portal
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Always resolves to a readable, complete date — falls back through the
+// service-formatted string, the shared formatDate utility, then a manual
+// long-form date, so the modal never shows a blank/missing registration date.
+function getRegistrationDateLabel(member) {
+  if (member.date_joined_formatted) return member.date_joined_formatted;
+  if (member.created_at) {
+    try {
+      const shared = formatDate(member.created_at);
+      if (shared) return shared;
+    } catch { /* fall through to manual formatting */ }
+    const d = new Date(member.created_at);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+  }
+  return 'Registration date unavailable';
+}
+
+function getRegistrationRelativeLabel(member) {
+  if (!member.created_at) return null;
+  try {
+    return formatRelativeTime(member.created_at);
+  } catch {
+    return null;
+  }
+}
+
+function MemberGrowthModal({ item, onClose, navigate }) {
+  if (!item) return null;
+
+  const members = item.members || [];
+
+  // Use useEffect to prevent body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
+  const modalContent = (
+    <div 
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4" 
+      onClick={onClose}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+    >
+      <div 
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+        onClick={onClose}
+      />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
+        onClick={e => e.stopPropagation()}
+        style={{ zIndex: 101 }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">
+              New Members — {item.label}
+            </h3>
+            <p className="text-sm text-gray-500">
+              {members.length} member{members.length !== 1 ? 's' : ''} registered
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <X size={20} className="text-gray-400" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 overflow-y-auto max-h-[60vh]">
+          {members.length === 0 ? (
+            <div className="text-center py-12">
+              <Users size={40} className="text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-400">No members registered this month</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {members.map((member, index) => {
+                const dateLabel = getRegistrationDateLabel(member);
+                const relativeLabel = getRegistrationRelativeLabel(member);
+                return (
+                  <div
+                    key={member.id || index}
+                    className="flex items-start gap-3 p-4 rounded-xl border border-gray-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all cursor-pointer group"
+                    onClick={() => {
+                      onClose();
+                      navigate(`/members/${member.id}`);
+                    }}
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-semibold flex-shrink-0">
+                      {member.full_name?.charAt(0) || member.first_name?.charAt(0) || 'M'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate group-hover:text-emerald-700 transition-colors">
+                        {member.full_name || member.first_name || 'Unknown Member'}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-400 flex-wrap">
+                        {member.membership_type && (
+                          <span className="inline-flex items-center gap-1">
+                            <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                              member.membership_type === 'regular' ? 'bg-blue-500' : 
+                              member.membership_type === 'kiddy' ? 'bg-teal-500' : 'bg-indigo-500'
+                            }`} />
+                            {member.membership_type}
+                          </span>
+                        )}
+                        <span className="text-gray-300">·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarDays size={10} />
+                          {dateLabel}
+                        </span>
+                      </div>
+                      {relativeLabel && (
+                        <p className="mt-0.5 text-[11px] text-gray-400">{relativeLabel}</p>
+                      )}
+                      {member.email && (
+                        <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-400 truncate">
+                          <Mail size={10} />
+                          {member.email}
+                        </div>
+                      )}
+                    </div>
+                    <ArrowUpRight size={14} className="text-gray-300 group-hover:text-emerald-600 transition-colors flex-shrink-0 mt-1" />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-gray-50">
+          <span className="text-xs text-gray-400">
+            Click a member to view their profile
+          </span>
+          <button
+            onClick={() => {
+              onClose();
+              navigate('/members');
+            }}
+            className="text-sm font-medium text-emerald-700 hover:underline"
+          >
+            View all members →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Use createPortal to render at document.body level
+  return createPortal(modalContent, document.body);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drill-down Drawer — for other chart clicks (using Portal)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function DrillDownDrawer({ item, onClose, navigate }) {
   if (!item) return null;
+  if (item.members) return null; // Handled by MemberGrowthModal
 
-  const rows = item.rows || [];
-  const isMonthly = 'cashIn' in item || 'count' in item;
+  // Use useEffect to prevent body scroll when drawer is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+  const drawerContent = (
+    <div 
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center" 
+      onClick={onClose}
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+    >
+      <div 
+        className="absolute inset-0 bg-black/20 backdrop-blur-sm" 
+        onClick={onClose}
+      />
       <div
-        className="relative bg-white rounded-t-2xl sm:rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md mx-4 mb-0 sm:mb-4 p-5 z-50 max-h-[80vh] overflow-y-auto"
+        className="relative bg-white rounded-t-2xl sm:rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md mx-4 mb-0 sm:mb-4 p-5 z-[101] max-h-[80vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        {/* Handle */}
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4 sm:hidden" />
 
         <div className="flex items-center justify-between mb-4">
@@ -740,7 +892,6 @@ function DrillDownDrawer({ item, onClose, navigate }) {
           </button>
         </div>
 
-        {/* Action buttons based on item type */}
         <div className="flex gap-2 mb-4">
           {item.value !== undefined && (
             <button
@@ -768,7 +919,6 @@ function DrillDownDrawer({ item, onClose, navigate }) {
           )}
         </div>
 
-        {/* Breakdown stats */}
         {item.cashIn !== undefined && (
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3">
@@ -802,10 +952,13 @@ function DrillDownDrawer({ item, onClose, navigate }) {
       </div>
     </div>
   );
+
+  // Use createPortal to render at document.body level
+  return createPortal(drawerContent, document.body);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Time Period Filter — segmented control (Today / Week / Month / Year)
+// Time Period Filter — segmented control
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PERIOD_OPTIONS = [
@@ -840,7 +993,225 @@ function TimePeriodFilter({ value, onChange }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Product Balance Card — compact tile for CBU / Savings / TD / Booster / Kiddy
+// Date Picker Button — mini calendar popover for selecting a specific day.
+// Expands (zoom in) on open, collapses (zoom out) once a date is picked.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function toDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isSameDay(a, b) {
+  return !!a && !!b
+    && a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+// Year Picker — lets the user jump to a distant year quickly instead of
+// clicking the month arrows one step at a time.
+function YearPicker({ year, onSelect, onClose }) {
+  const [decadeStart, setDecadeStart] = useState(Math.floor(year / 12) * 12);
+  const years = Array.from({ length: 12 }, (_, i) => decadeStart + i);
+  const currentYear = new Date().getFullYear();
+
+  return (
+    <div className="absolute inset-0 z-10 rounded-2xl bg-white p-3">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          onClick={() => setDecadeStart(y => y - 12)}
+          className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        >
+          ‹
+        </button>
+        <p className="text-xs font-semibold text-gray-700">
+          {decadeStart} – {decadeStart + 11}
+        </p>
+        <button
+          type="button"
+          onClick={() => setDecadeStart(y => y + 12)}
+          className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        >
+          ›
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {years.map(y => {
+          const isSelected = y === year;
+          const isCurrent = y === currentYear;
+          return (
+            <button
+              key={y}
+              type="button"
+              onClick={() => onSelect(y)}
+              className={`rounded-lg py-1.5 text-xs font-medium transition-colors ${
+                isSelected
+                  ? 'bg-emerald-600 text-white font-semibold'
+                  : isCurrent
+                  ? 'border border-emerald-300 text-emerald-700 font-semibold'
+                  : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
+              }`}
+            >
+              {y}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="mt-2 w-full text-center text-[10px] text-gray-400 hover:text-gray-600"
+      >
+        Back to calendar
+      </button>
+    </div>
+  );
+}
+
+function DatePickerButton({ selectedDate, onSelect, onClear }) {
+  const [open, setOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(selectedDate || new Date());
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (selectedDate) setViewDate(selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setShowYearPicker(false); }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const today = new Date();
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+
+  const handlePick = (day) => {
+    const picked = new Date(year, month, day);
+    onSelect(picked);
+    setOpen(false); // collapses (zoom out) immediately after a date is chosen
+    setShowYearPicker(false);
+  };
+
+  const handleYearPick = (y) => {
+    setViewDate(new Date(y, month, 1));
+    setShowYearPicker(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        title="Pick a specific date"
+        className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${
+          selectedDate
+            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+            : 'bg-gray-100 text-gray-500 hover:text-gray-800 border border-transparent'
+        }`}
+      >
+        <CalendarDays size={14} />
+        {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Pick date'}
+        {selectedDate && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onClear(); }}
+            className="ml-0.5 text-emerald-400 hover:text-emerald-700"
+          >
+            ×
+          </span>
+        )}
+      </button>
+
+      {/* Popover — always mounted; scale/opacity animate the expand/collapse */}
+      <div
+        className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 origin-top-right rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl"
+        style={{
+          transform: open ? 'scale(1)' : 'scale(0.85)',
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? 'auto' : 'none',
+          transition: 'transform 0.16s ease, opacity 0.14s ease',
+        }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <button
+            type="button"
+            onClick={() => setViewDate(new Date(year, month - 1, 1))}
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowYearPicker(true)}
+            title="Pick a year"
+            className="rounded-lg px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+          >
+            {format(viewDate, 'MMMM yyyy')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewDate(new Date(year, month + 1, 1))}
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+          >
+            ›
+          </button>
+        </div>
+
+        {showYearPicker && (
+          <YearPicker
+            year={year}
+            onSelect={handleYearPick}
+            onClose={() => setShowYearPicker(false)}
+          />
+        )}
+
+        <div className="grid grid-cols-7 gap-y-1 text-center">
+          {WEEKDAY_LABELS.map((w, i) => (
+            <span key={i} className="text-[10px] font-medium text-gray-300">{w}</span>
+          ))}
+          {cells.map((day, i) => {
+            if (!day) return <span key={i} />;
+            const cellDate = new Date(year, month, day);
+            const isToday = isSameDay(cellDate, today);
+            const isSelected = isSameDay(cellDate, selectedDate);
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => handlePick(day)}
+                className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-xs transition-colors ${
+                  isSelected
+                    ? 'bg-emerald-600 text-white font-semibold'
+                    : isToday
+                    ? 'border border-emerald-300 text-emerald-700 font-semibold'
+                    : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product Balance Card
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProductStatCard({ label, value, sub, icon, iconColorClass = 'text-gray-400', valueHoverClass = '', onClick, delay = 0 }) {
@@ -866,13 +1237,26 @@ function ProductStatCard({ label, value, sub, icon, iconColorClass = 'text-gray-
 // MAIN DASHBOARD PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
-
-
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [period, setPeriod] = useState('month');
-  const { stats, loading, refetch } = useRealtimeDashboard(period);
+  const [customDate, setCustomDate] = useState(null);
+  const effectivePeriod = customDate ? `custom:${toDateKey(customDate)}` : period;
+  const { stats, loading, refetch } = useRealtimeDashboard(effectivePeriod);
+
+  // Presets and the custom date picker are mutually exclusive — choosing one clears the other.
+  const handlePeriodChange = useCallback((p) => {
+    setCustomDate(null);
+    setPeriod(p);
+  }, []);
+  const handleCustomDateSelect = useCallback((d) => {
+    setCustomDate(d);
+  }, []);
+  const handleCustomDateClear = useCallback(() => {
+    setCustomDate(null);
+  }, []);
   const [drillItem, setDrillItem] = useState(null);
+  const [memberGrowthItem, setMemberGrowthItem] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   async function handleRefetch() {
@@ -881,266 +1265,271 @@ export default function DashboardPage() {
     setTimeout(() => setIsRefreshing(false), 600);
   }
 
+  // Handle bar click on Member Growth chart
+  const handleMemberGrowthClick = useCallback((item) => {
+    // Find members who registered in this month
+    const members = stats?.monthlyMembers?.[item.label] || [];
+    setMemberGrowthItem({
+      ...item,
+      members: members,
+    });
+  }, [stats]);
+
   if (loading) return <DashboardSkeleton />;
 
-  const netCashFlow = (stats?.totalCashIn ?? 0) - (stats?.totalCashOut ?? 0);
+  const netCashFlow = (stats?.periodIncome ?? 0) - (stats?.periodExpense ?? 0);
 
   return (
-    <>
-      {/* Drill-down drawer */}
+    <div className="p-6 space-y-6">
+
+      {/* ── Header ── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="section-title">Dashboard</h1>
+          <p className="section-subtitle flex items-center gap-1.5 flex-wrap">
+            <span>WELLSERVE Cooperative — live overview</span>
+            {stats?.periodLabel && (
+              <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                <span className="text-gray-300">·</span>
+                <CalendarDays size={12} />
+                {stats.periodLabel}
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <TimePeriodFilter value={customDate ? null : period} onChange={handlePeriodChange} />
+          <DatePickerButton
+            selectedDate={customDate}
+            onSelect={handleCustomDateSelect}
+            onClear={handleCustomDateClear}
+          />
+          <button
+            onClick={handleRefetch}
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors px-3 py-2 rounded-xl hover:bg-gray-100"
+          >
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* ── Summary Cards (scoped to the selected period — no all-time totals) ── */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <SummaryCard
+          label="New Members"
+          value={stats?.periodNewMembers ?? 0}
+          sub={
+            <span className="flex gap-2 flex-wrap">
+              <span className="text-blue-600 font-medium">{stats?.periodRegularMembers ?? 0} Regular</span>
+              <span className="text-gray-300">·</span>
+              <span className="text-indigo-500 font-medium">{stats?.periodAssociateMembers ?? 0} Associate</span>
+            </span>
+          }
+          icon={<Users size={18} />}
+          accent="#2563EB"
+          accentBg="rgba(37,99,235,0.08)"
+          onClick={() => navigate('/members')}
+          delay={0}
+        />
+        <SummaryCard
+          label="New Kiddy Members"
+          value={stats?.periodNewKiddyMembers ?? 0}
+          sub="Registered this period"
+          icon={<Users size={18} />}
+          accent="#0D9488"
+          accentBg="rgba(13,148,136,0.08)"
+          onClick={() => navigate('/members?type=kiddy')}
+          delay={0.06}
+        />
+        <SummaryCard
+          label="New Loans"
+          value={stats?.periodNewLoans ?? 0}
+          sub={formatCurrency(stats?.periodLoanAmount ?? 0) + ' issued'}
+          icon={<CreditCard size={18} />}
+          accent="#059669"
+          accentBg="rgba(5,150,105,0.08)"
+          onClick={() => navigate('/loans')}
+          delay={0.12}
+        />
+        <SummaryCard
+          label="Overdue Payments"
+          value={stats?.periodOverdue ?? 0}
+          sub="Past due loans"
+          icon={<AlertTriangle size={18} />}
+          accent={stats?.periodOverdue > 0 ? '#D97706' : '#6B7280'}
+          accentBg={stats?.periodOverdue > 0 ? 'rgba(217,119,6,0.08)' : 'rgba(107,114,128,0.08)'}
+          onClick={() => navigate('/loans')}
+          delay={0.18}
+        />
+      </div>
+
+      {/* ── Hero row: Income + Cash Flow (2/3) · Loan Status (1/3) ── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+
+        {/* Hero: Income summary + Cash Flow chart combined */}
+        <div
+          className="app-card dash-fade-in lg:col-span-2 p-5 sm:p-6 flex flex-col gap-4"
+          style={{ animationDelay: '0.22s' }}
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 flex-shrink-0">
+                <PesoSign size={20} className="text-emerald-700" />
+              </div>
+              <div>
+                <p className="stat-label">Income</p>
+                <p className="text-2xl font-bold text-emerald-700 tabular-nums">{formatCurrency(stats?.periodIncome ?? 0)}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 sm:gap-6">
+              <div className="text-right">
+                <p className="stat-label">Net Cash Flow</p>
+                <p className={`text-lg font-bold tabular-nums ${netCashFlow >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {netCashFlow >= 0 ? '+' : ''}{formatCurrency(netCashFlow)}
+                </p>
+              </div>
+              <div className="hidden items-center gap-2.5 text-[10px] text-gray-400 md:flex">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" />
+                  In
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" />
+                  Out
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 border-t-2 border-dashed border-indigo-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
+                  Net
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-50 pt-4">
+            <CashFlowChart
+              data={stats?.cashFlowChart ?? []}
+              height={190}
+              onBarClick={(item) => setDrillItem(item)}
+            />
+          </div>
+
+          <p className="text-[10px] text-gray-400 border-t border-gray-50 pt-2">
+            {stats?.periodLabel || 'Selected period'} · click any bar to view its transaction breakdown.
+          </p>
+        </div>
+
+        {/* Loan Status Donut */}
+        <ChartCard
+          title="Loan Status"
+          subtitle="Click a segment to drill down"
+          footerNote="Click any segment or legend item to filter loans by status."
+          delay={0.28}
+          action={
+            <button onClick={() => navigate('/loans')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
+              All loans →
+            </button>
+          }
+        >
+          <DonutChart
+            data={stats?.loanStatusChart ?? []}
+            size={126}
+            onSegmentClick={(seg) => setDrillItem(seg)}
+          />
+        </ChartCard>
+      </div>
+
+      {/* ── Second row: Member Growth (1/3) · Product Balances (2/3) ── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <ChartCard
+          title="Member Growth"
+          subtitle="Click a bar to see members"
+          footerNote={`${stats?.periodLabel || 'Selected period'} · click any bar to see members who joined then.`}
+          delay={0.34}
+          action={
+            <button onClick={() => navigate('/members')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
+              All members →
+            </button>
+          }
+        >
+          <BarChart
+            data={stats?.memberGrowthChart ?? []}
+            valueKey="count"
+            color="#2563EB"
+            height={150}
+            formatValue={v => `${v} member${v !== 1 ? 's' : ''}`}
+            onBarClick={handleMemberGrowthClick}
+          />
+        </ChartCard>
+
+        <div className="lg:col-span-2">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Product Balances · {stats?.periodLabel || 'Selected period'} net flow
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            <ProductStatCard
+              label="Capital Build-Up"
+              value={`${(stats?.periodCBUNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodCBUNet ?? 0)}`}
+              sub={`Total balance: ${formatCurrency(stats?.totalCBU ?? 0)}`}
+              icon={<PiggyBank size={13} />}
+              iconColorClass="text-emerald-400"
+              valueHoverClass="group-hover:text-emerald-700"
+              onClick={() => navigate('/cbu')}
+              delay={0.4}
+            />
+            <ProductStatCard
+              label="Savings"
+              value={`${(stats?.periodSavingsNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodSavingsNet ?? 0)}`}
+              sub={`Total balance: ${formatCurrency(stats?.totalSavings ?? 0)}`}
+              icon={<Wallet size={13} />}
+              iconColorClass="text-emerald-400"
+              valueHoverClass="group-hover:text-emerald-700"
+              onClick={() => navigate('/savings')}
+              delay={0.44}
+            />
+            <ProductStatCard
+              label="Time Deposits"
+              value={`${(stats?.periodTimeDepositNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodTimeDepositNet ?? 0)}`}
+              sub={`${stats?.timeDepositCount ?? 0} active · total ${formatCurrency(stats?.totalTimeDeposit ?? 0)}`}
+              icon={<Clock size={13} />}
+              iconColorClass="text-violet-400"
+              valueHoverClass="group-hover:text-violet-700"
+              onClick={() => navigate('/time-deposit')}
+              delay={0.48}
+            />
+            <ProductStatCard
+              label="Savings Booster"
+              value={`${(stats?.periodSavingsBoosterNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodSavingsBoosterNet ?? 0)}`}
+              sub={`${stats?.savingsBoosterCount ?? 0} accounts · total ${formatCurrency(stats?.totalSavingsBooster ?? 0)}`}
+              icon={<TrendingUp size={13} />}
+              iconColorClass="text-amber-400"
+              valueHoverClass="group-hover:text-amber-600"
+              onClick={() => navigate('/savings-booster')}
+              delay={0.52}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Recent Transactions ── */}
+      <div className="dash-fade-in" style={{ animationDelay: '0.6s' }}>
+        <RecentTransactionsCard stats={stats} navigate={navigate} />
+      </div>
+
+      {/* ── Modals rendered via Portal ── */}
+      <MemberGrowthModal
+        item={memberGrowthItem}
+        onClose={() => setMemberGrowthItem(null)}
+        navigate={navigate}
+      />
+
       <DrillDownDrawer
         item={drillItem}
         onClose={() => setDrillItem(null)}
         navigate={navigate}
       />
 
-      <div className="p-6 space-y-6">
-
-        {/* ── Header ── */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="section-title">Dashboard</h1>
-            <p className="section-subtitle flex items-center gap-1.5 flex-wrap">
-              <span>WELLSERVE Cooperative — live overview</span>
-              {stats?.periodLabel && (
-                <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-                  <span className="text-gray-300">·</span>
-                  <CalendarDays size={12} />
-                  {stats.periodLabel}
-                </span>
-              )}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <TimePeriodFilter value={period} onChange={setPeriod} />
-            <button
-              onClick={handleRefetch}
-              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors px-3 py-2 rounded-xl hover:bg-gray-100"
-            >
-              <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* ── Summary Cards ── */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <SummaryCard
-            label="Total Members"
-            value={stats?.totalMembers ?? 0}
-            sub={
-              <span className="flex gap-2 flex-wrap">
-                <span className="text-blue-600 font-medium">{stats?.regularMembers ?? 0} Regular</span>
-                <span className="text-gray-300">·</span>
-                <span className="text-indigo-500 font-medium">{stats?.associateMembers ?? 0} Associate</span>
-              </span>
-            }
-            icon={<Users size={18} />}
-            accent="#2563EB"
-            accentBg="rgba(37,99,235,0.08)"
-            onClick={() => navigate('/members')}
-            delay={0}
-            trend={stats?.trends?.members}
-          />
-          <SummaryCard
-            label="Kiddy Members"
-            value={stats?.kiddyMembers ?? 0}
-            sub={
-              <span className="text-teal-600 font-medium">{stats?.activeKiddyMembers ?? 0} Active</span>
-            }
-            icon={<Users size={18} />}
-            accent="#0D9488"
-            accentBg="rgba(13,148,136,0.08)"
-            onClick={() => navigate('/members?type=kiddy')}
-            delay={0.06}
-          />
-          <SummaryCard
-            label="Active Loans"
-            value={stats?.activeLoans ?? 0}
-            sub={formatCurrency(stats?.totalLoanOutstanding ?? 0) + ' outstanding'}
-            icon={<CreditCard size={18} />}
-            accent="#059669"
-            accentBg="rgba(5,150,105,0.08)"
-            onClick={() => navigate('/loans')}
-            delay={0.12}
-            trend={stats?.trends?.loans}
-          />
-          <SummaryCard
-            label="Overdue Payments"
-            value={stats?.overduePayments ?? 0}
-            sub="Past due loans"
-            icon={<AlertTriangle size={18} />}
-            accent={stats?.overduePayments > 0 ? '#D97706' : '#6B7280'}
-            accentBg={stats?.overduePayments > 0 ? 'rgba(217,119,6,0.08)' : 'rgba(107,114,128,0.08)'}
-            onClick={() => navigate('/loans')}
-            delay={0.18}
-            trend={stats?.trends?.overdue}
-            trendInverse
-          />
-        </div>
-
-        {/* ── Hero row: Income + Cash Flow (2/3) · Loan Status (1/3) ── */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-
-          {/* Hero: Income summary + Cash Flow chart combined */}
-          <div
-            className="app-card dash-fade-in lg:col-span-2 p-5 sm:p-6 flex flex-col gap-4"
-            style={{ animationDelay: '0.22s' }}
-          >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 flex-shrink-0">
-                  <PesoSign size={20} className="text-emerald-700" />
-                </div>
-                <div>
-                  <p className="stat-label flex items-center gap-1.5">
-                    Total Income
-                    {stats?.trends?.income !== undefined && (
-                      <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${stats.trends.income >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {stats.trends.income >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}
-                        {stats.trends.income >= 0 ? '+' : ''}{stats.trends.income}%
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-2xl font-bold text-emerald-700 tabular-nums">{formatCurrency(stats?.totalIncome ?? 0)}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 sm:gap-6">
-                <div className="text-right">
-                  <p className="stat-label">Net Cash Flow</p>
-                  <p className={`text-lg font-bold tabular-nums ${netCashFlow >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {netCashFlow >= 0 ? '+' : ''}{formatCurrency(netCashFlow)}
-                  </p>
-                </div>
-                <div className="hidden items-center gap-2.5 text-[10px] text-gray-400 md:flex">
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" />
-                    In
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" />
-                    Out
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-3 border-t-2 border-dashed border-indigo-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
-                    Net
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-50 pt-4">
-              <CashFlowChart
-                data={stats?.cashFlowChart ?? []}
-                height={190}
-                onBarClick={(item) => setDrillItem(item)}
-              />
-            </div>
-
-            <p className="text-[10px] text-gray-400 border-t border-gray-50 pt-2">
-              Last 6 months · click any month to view its transaction breakdown.
-            </p>
-          </div>
-
-          {/* Loan Status Donut */}
-          <ChartCard
-            title="Loan Status"
-            subtitle="Click a segment to drill down"
-            footerNote="Click any segment or legend item to filter loans by status."
-            delay={0.28}
-            action={
-              <button onClick={() => navigate('/loans')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
-                All loans →
-              </button>
-            }
-          >
-            <DonutChart
-              data={stats?.loanStatusChart ?? []}
-              size={126}
-              onSegmentClick={(seg) => setDrillItem(seg)}
-            />
-          </ChartCard>
-        </div>
-
-        {/* ── Second row: Member Growth (1/3) · Product Balances (2/3) ── */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <ChartCard
-            title="Member Growth"
-            subtitle="Click a bar to drill down"
-            footerNote="Click any bar to see members who joined that month."
-            delay={0.34}
-            action={
-              <button onClick={() => navigate('/members')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
-                All members →
-              </button>
-            }
-          >
-            <BarChart
-              data={stats?.memberGrowthChart ?? []}
-              valueKey="count"
-              color="#2563EB"
-              height={150}
-              formatValue={v => `${v} member${v !== 1 ? 's' : ''}`}
-              onBarClick={(item) => setDrillItem(item)}
-            />
-          </ChartCard>
-
-          <div className="lg:col-span-2">
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-              Product Balances
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <ProductStatCard
-                label="Capital Build-Up"
-                value={formatCurrency(stats?.totalCBU ?? 0)}
-                sub="Total CBU balance"
-                icon={<PiggyBank size={13} />}
-                iconColorClass="text-emerald-400"
-                valueHoverClass="group-hover:text-emerald-700"
-                onClick={() => navigate('/cbu')}
-                delay={0.4}
-              />
-              <ProductStatCard
-                label="Savings"
-                value={formatCurrency(stats?.totalSavings ?? 0)}
-                sub="Member savings accounts"
-                icon={<Wallet size={13} />}
-                iconColorClass="text-emerald-400"
-                valueHoverClass="group-hover:text-emerald-700"
-                onClick={() => navigate('/savings')}
-                delay={0.44}
-              />
-              <ProductStatCard
-                label="Time Deposits"
-                value={formatCurrency(stats?.totalTimeDeposit ?? 0)}
-                sub={`${stats?.timeDepositCount ?? 0} active deposit${(stats?.timeDepositCount ?? 0) !== 1 ? 's' : ''}`}
-                icon={<Clock size={13} />}
-                iconColorClass="text-violet-400"
-                valueHoverClass="group-hover:text-violet-700"
-                onClick={() => navigate('/time-deposit')}
-                delay={0.48}
-              />
-              <ProductStatCard
-                label="Savings Booster"
-                value={formatCurrency(stats?.totalSavingsBooster ?? 0)}
-                sub={`${stats?.savingsBoosterCount ?? 0} account${(stats?.savingsBoosterCount ?? 0) !== 1 ? 's' : ''}`}
-                icon={<TrendingUp size={13} />}
-                iconColorClass="text-amber-400"
-                valueHoverClass="group-hover:text-amber-600"
-                onClick={() => navigate('/savings-booster')}
-                delay={0.52}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Recent Transactions ── */}
-        <div className="dash-fade-in" style={{ animationDelay: '0.6s' }}>
-          <RecentTransactionsCard stats={stats} navigate={navigate} />
-        </div>
-
-      </div>
-    </>
+    </div>
   );
 }

@@ -1,9 +1,12 @@
+// MembersPage.jsx - Enhanced UI Design
+
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload, Eye, Search, UserPlus, Pencil, Trash2, Users, Printer,
   Download, Filter, RotateCcw, CheckSquare, Square, MinusSquare,
   X, UserCheck, UserX, ChevronDown, CalendarDays, Baby,
+  Sparkles, LayoutGrid, List,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -23,11 +26,14 @@ import { exportToCSV } from '../../utils/csvExport';
 // ─── Avatar helpers ───────────────────────────────────────────────────────────
 
 const avatarColors = [
-  'bg-[#D6FADC] text-[#07A04E]',
-  'bg-[#AEECEF]/40 text-[#000066]',
-  'bg-[#D6FADC] text-[#273C2C]',
+  'bg-emerald-100 text-emerald-700',
+  'bg-blue-100 text-blue-700',
   'bg-amber-100 text-amber-700',
-  'bg-[#D6FADC] text-[#7EB751]',
+  'bg-violet-100 text-violet-700',
+  'bg-rose-100 text-rose-700',
+  'bg-cyan-100 text-cyan-700',
+  'bg-indigo-100 text-indigo-700',
+  'bg-pink-100 text-pink-700',
 ];
 
 const kiddyAvatarColors = [
@@ -36,6 +42,9 @@ const kiddyAvatarColors = [
   'bg-amber-100 text-amber-700',
   'bg-rose-100 text-rose-700',
   'bg-violet-100 text-violet-700',
+  'bg-lime-100 text-lime-700',
+  'bg-fuchsia-100 text-fuchsia-700',
+  'bg-cyan-100 text-cyan-700',
 ];
 
 const statusVariant = { active: 'success', inactive: 'warning', closed: 'dark' };
@@ -49,7 +58,6 @@ const membershipTypeClass = {
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
-// memberView controls which members are shown: 'regular' = associate+regular, 'kiddy' = kiddy only
 const MEMBER_VIEWS = [
   { id: 'regular', label: 'Members', icon: Users },
   { id: 'kiddy',   label: 'Kiddy & Youth', icon: Baby },
@@ -64,17 +72,19 @@ function BulkToolbar({
   const [showStatusMenu, setShowStatusMenu] = useState(false);
 
   return (
-    <div className="flex items-center gap-3 bg-[#07A04E] text-white px-4 py-3 rounded-xl shadow-md animate-in slide-in-from-top-2 duration-200">
+    <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white px-4 py-3 rounded-2xl shadow-lg shadow-emerald-200/50 animate-in slide-in-from-top-2 duration-200">
       <div className="flex items-center gap-2 min-w-0">
-        <CheckSquare size={16} className="flex-shrink-0" />
+        <div className="p-1 rounded-lg bg-white/20">
+          <CheckSquare size={14} className="flex-shrink-0" />
+        </div>
         <span className="text-sm font-semibold whitespace-nowrap">
           {selectedCount} of {totalCount} selected
         </span>
       </div>
-      <div className="h-4 w-px bg-white/30 flex-shrink-0" />
+      <div className="h-5 w-px bg-white/30 flex-shrink-0" />
       <button
         onClick={onSelectAll}
-        className="text-xs font-medium text-white/80 hover:text-white transition-colors whitespace-nowrap"
+        className="text-xs font-medium text-white/80 hover:text-white transition-colors whitespace-nowrap hover:underline"
       >
         Select all {totalCount}
       </button>
@@ -82,7 +92,7 @@ function BulkToolbar({
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={onBulkExport}
-          className="flex items-center gap-1.5 text-xs font-medium bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 text-xs font-medium bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-xl transition-colors"
         >
           <Download size={13} />
           Export CSV
@@ -90,7 +100,7 @@ function BulkToolbar({
         <div className="relative">
           <button
             onClick={() => setShowStatusMenu(v => !v)}
-            className="flex items-center gap-1.5 text-xs font-medium bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs font-medium bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-xl transition-colors"
           >
             <UserCheck size={13} />
             Change Status
@@ -99,24 +109,33 @@ function BulkToolbar({
           {showStatusMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowStatusMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[160px]">
+              <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-100 rounded-2xl shadow-xl z-20 overflow-hidden min-w-[170px]">
                 <button
                   onClick={() => { onBulkActivate(); setShowStatusMenu(false); }}
-                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-left text-emerald-700 hover:bg-emerald-50 transition-colors"
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-left text-emerald-700 hover:bg-emerald-50 transition-colors"
                 >
-                  <UserCheck size={14} /> Set Active
+                  <div className="w-6 h-6 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <UserCheck size={13} />
+                  </div>
+                  Set Active
                 </button>
                 <button
                   onClick={() => { onBulkDeactivate(); setShowStatusMenu(false); }}
-                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-left text-amber-700 hover:bg-amber-50 transition-colors"
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-left text-amber-700 hover:bg-amber-50 transition-colors"
                 >
-                  <UserX size={14} /> Set Inactive
+                  <div className="w-6 h-6 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <UserX size={13} />
+                  </div>
+                  Set Inactive
                 </button>
                 <button
                   onClick={() => { onBulkClose(); setShowStatusMenu(false); }}
-                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-100 transition-colors"
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors"
                 >
-                  <UserX size={14} /> Set Closed Account
+                  <div className="w-6 h-6 rounded-lg bg-gray-100 flex items-center justify-center">
+                    <UserX size={13} />
+                  </div>
+                  Set Closed Account
                 </button>
               </div>
             </>
@@ -124,7 +143,7 @@ function BulkToolbar({
         </div>
         <button
           onClick={onBulkDelete}
-          className="flex items-center gap-1.5 text-xs font-medium bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 text-xs font-medium bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-xl transition-colors"
         >
           <Trash2 size={13} />
           Delete
@@ -132,10 +151,10 @@ function BulkToolbar({
       </div>
       <button
         onClick={onClearSelection}
-        className="ml-1 p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors flex-shrink-0"
+        className="ml-1 p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors flex-shrink-0"
         title="Clear selection"
       >
-        <X size={15} />
+        <X size={14} />
       </button>
     </div>
   );
@@ -147,23 +166,18 @@ export default function MembersPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // Data
   const [members, setMembers]           = useState([]);
   const [loading, setLoading]           = useState(true);
 
-  // View: 'regular' (associate + regular) | 'kiddy'
   const [memberView, setMemberView]     = useState('regular');
 
-  // Filters
   const [search, setSearch]             = useState('');
   const [typeFilter, setTypeFilter]     = useState('all');
   const [statusTab, setStatusTab]       = useState('active');
   const [yearFilter, setYearFilter]     = useState('all');
 
-  // Selection
   const [selectedIds, setSelectedIds]   = useState(new Set());
 
-  // Dialogs
   const [confirmDelete, setConfirmDelete]             = useState(null);
   const [confirmBulkDelete, setConfirmBulkDelete]     = useState(false);
   const [confirmBulkStatus, setConfirmBulkStatus]     = useState(null);
@@ -171,13 +185,10 @@ export default function MembersPage() {
   const [importOpen, setImportOpen]                   = useState(false);
   const [importFinancialOpen, setImportFinancialOpen] = useState(false);
 
-  // Action loading states
   const [deleting, setDeleting]                       = useState(false);
   const [reactivatingId, setReactivatingId]           = useState(null);
   const [bulkDeleting, setBulkDeleting]               = useState(false);
   const [bulkStatusChanging, setBulkStatusChanging]   = useState(false);
-
-  // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchMembers = useCallback(async () => {
     try {
@@ -206,12 +217,10 @@ export default function MembersPage() {
 
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
-  // Clear selection when view/tab/filters change
   useEffect(() => {
     setSelectedIds(new Set());
   }, [memberView, statusTab, typeFilter, search, yearFilter]);
 
-  // Reset typeFilter when switching views (kiddy view has no type sub-filter)
   useEffect(() => {
     setTypeFilter('all');
     setSearch('');
@@ -219,11 +228,8 @@ export default function MembersPage() {
     setStatusTab('active');
   }, [memberView]);
 
-  // ── Split members by view ──────────────────────────────────────────────────
-
   const isKiddyView = memberView === 'kiddy';
 
-  // Counts for tab badges
   const regularMemberCount = useMemo(
     () => members.filter(m => m.membership_type !== 'kiddy' && (m.status || 'active') === 'active').length,
     [members]
@@ -232,8 +238,6 @@ export default function MembersPage() {
     () => members.filter(m => m.membership_type === 'kiddy' && (m.status || 'active') === 'active').length,
     [members]
   );
-
-  // ── Available join years ───────────────────────────────────────────────────
 
   const availableYears = useMemo(() => {
     const yearSet = new Set();
@@ -248,12 +252,9 @@ export default function MembersPage() {
     return [...yearSet].sort((a, b) => b - a);
   }, [members, isKiddyView]);
 
-  // ── Filtered list ──────────────────────────────────────────────────────────
-
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return members.filter(m => {
-      // Split by view first
       if (isKiddyView && m.membership_type !== 'kiddy') return false;
       if (!isKiddyView && m.membership_type === 'kiddy') return false;
 
@@ -287,8 +288,6 @@ export default function MembersPage() {
       return matchesSearch && matchesType && matchesStatus && matchesYear;
     });
   }, [members, search, typeFilter, statusTab, yearFilter, isKiddyView]);
-
-  // ── Selection helpers ──────────────────────────────────────────────────────
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(m => selectedIds.has(m.id));
   const someFilteredSelected = filtered.some(m => selectedIds.has(m.id));
@@ -326,8 +325,6 @@ export default function MembersPage() {
     [filtered, selectedIds]
   );
 
-  // ── Single-row actions ─────────────────────────────────────────────────────
-
   async function handleDelete(id) {
     if (deleting) return;
     const memberName = confirmDelete
@@ -364,8 +361,6 @@ export default function MembersPage() {
       setReactivatingId(null);
     }
   }
-
-  // ── Bulk actions ───────────────────────────────────────────────────────────
 
   function handleBulkExport() {
     try {
@@ -447,10 +442,8 @@ export default function MembersPage() {
 
   function handlePrint() { window.print(); }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div className="p-6 print:p-0">
+    <div className="p-4 md:p-6 print:p-0 bg-gray-50/30 min-h-screen">
       <style>{`
         @media print {
           body * { visibility: hidden; }
@@ -468,15 +461,29 @@ export default function MembersPage() {
             <div className="flex items-center gap-2">
               {!isKiddyView && (
                 <>
-                  <Button variant="outline" onClick={() => setImportFinancialOpen(true)} icon={<Upload size={16} />}>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setImportFinancialOpen(true)} 
+                    icon={<Upload size={16} />}
+                    className="border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  >
                     Import Financial
                   </Button>
-                  <Button variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={16} />}>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setImportOpen(true)} 
+                    icon={<Upload size={16} />}
+                    className="border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  >
                     Import Members
                   </Button>
                 </>
               )}
-              <Button onClick={() => setAddMemberOpen(true)} icon={<UserPlus size={16} />}>
+              <Button 
+                onClick={() => setAddMemberOpen(true)} 
+                icon={<UserPlus size={16} />}
+                className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 shadow-lg shadow-emerald-200/50"
+              >
                 Add Member
               </Button>
             </div>
@@ -484,8 +491,8 @@ export default function MembersPage() {
         />
       </div>
 
-      {/* ── View Tabs: Members | Kiddy & Youth ── */}
-      <div className="mt-4 flex gap-2 print:hidden">
+      {/* ── View Tabs ── */}
+      <div className="mt-6 flex gap-2 print:hidden">
         {MEMBER_VIEWS.map(view => {
           const Icon = view.icon;
           const count = view.id === 'kiddy' ? kiddyMemberCount : regularMemberCount;
@@ -495,22 +502,22 @@ export default function MembersPage() {
               key={view.id}
               onClick={() => setMemberView(view.id)}
               className={`
-                flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
+                group flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200
                 ${isActive
                   ? view.id === 'kiddy'
-                    ? 'bg-teal-600 text-white shadow-sm shadow-teal-200'
-                    : 'bg-[#07A04E] text-white shadow-sm shadow-green-200'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-200/50'
+                    : 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-200/50'
+                  : 'bg-white text-gray-600 hover:bg-gray-50 hover:shadow-sm border border-gray-100'
                 }
               `}
             >
-              <Icon size={15} />
+              <Icon size={16} />
               {view.label}
               <span className={`
-                text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center
+                text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center transition-all
                 ${isActive
                   ? 'bg-white/20 text-white'
-                  : 'bg-gray-200 text-gray-500'
+                  : 'bg-gray-100 text-gray-500'
                 }
               `}>
                 {count}
@@ -520,65 +527,74 @@ export default function MembersPage() {
         })}
       </div>
 
-      {/* ── Status Tabs: Active | Inactive | Closed Account (below view tabs) ── */}
+      {/* ── Status Tabs ── */}
       <div className="mt-3 flex gap-2 print:hidden">
-        {['active', 'inactive', 'closed'].map(tab => (
-          <button
-            key={tab}
-            onClick={() => setStatusTab(tab)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
-              statusTab === tab
-                ? isKiddyView
-                  ? 'bg-teal-50 text-teal-700 border border-teal-200'
-                  : 'bg-[#D6FADC] text-[#07A04E] border border-[#07A04E]/20'
-                : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
-            {statusLabel[tab]}
-          </button>
-        ))}
+        {['active', 'inactive', 'closed'].map(tab => {
+          const isActive = statusTab === tab;
+          const icon = tab === 'active' ? <Sparkles size={12} /> : tab === 'inactive' ? <UserX size={12} /> : <UserX size={12} />;
+          return (
+            <button
+              key={tab}
+              onClick={() => setStatusTab(tab)}
+              className={`
+                flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium capitalize transition-all duration-200
+                ${isActive
+                  ? isKiddyView
+                    ? 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
+                  : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50 hover:border-gray-200'
+                }
+              `}
+            >
+              {icon}
+              {statusLabel[tab]}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Kiddy info banner ── */}
+      {/* ── Kiddy Info Banner ── */}
       {isKiddyView && (
-        <div className="mt-4 flex items-start gap-3 p-3.5 bg-gradient-to-r from-teal-50 via-sky-50 to-amber-50 border border-teal-100 rounded-xl print:hidden">
-          <Baby size={16} className="text-teal-600 flex-shrink-0 mt-0.5" />
+        <div className="mt-4 flex items-start gap-3 p-4 bg-gradient-to-r from-teal-50 via-sky-50 to-amber-50 border border-teal-100/60 rounded-2xl print:hidden">
+          <div className="p-2 rounded-xl bg-teal-100/60">
+            <Baby size={16} className="text-teal-600" />
+          </div>
           <div className="text-xs text-teal-800 leading-relaxed">
-            <strong>Kiddy & Youth Savings</strong> members are managed separately.
-            Their member numbers use the <span className="font-mono font-semibold">KY-</span> prefix
+            <strong className="text-teal-900">Kiddy & Youth Savings</strong> members are managed separately.
+            Their member numbers use the <span className="font-mono font-semibold bg-teal-100/60 px-1.5 py-0.5 rounded text-teal-800">KY-</span> prefix
             to avoid conflicts with regular member numbers.
           </div>
         </div>
       )}
 
-      {/* ── Filters & Toolbar ── */}
+      {/* ── Filters ── */}
       <div className="mt-4 mb-4 flex flex-col gap-3 print:hidden">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
 
             {/* Search */}
             <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder={isKiddyView ? 'Search kiddy members…' : 'Search by name, ID, email, recruiter…'}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl
-                  focus:outline-none focus:ring-2 focus:ring-[#07A04E] focus:border-transparent
-                  w-72 bg-white shadow-sm"
+                className="pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-2xl
+                  focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500
+                  w-72 bg-white shadow-sm transition-all duration-200"
               />
             </div>
 
-            {/* Type filter — Associate/Regular for the regular view,
-                Regular Savings Account/Educational Savings Account for the Kiddy view */}
+            {/* Type filter */}
             <div className="relative">
-              <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <Filter size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value)}
-                className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                className="pl-10 pr-8 py-2.5 text-sm border border-gray-200 rounded-2xl bg-white shadow-sm
+                  focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500
+                  appearance-none cursor-pointer transition-all duration-200"
               >
                 {isKiddyView ? (
                   <>
@@ -598,16 +614,19 @@ export default function MembersPage() {
 
             {/* Year filter */}
             <div className="relative">
-              <CalendarDays size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <CalendarDays size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <select
                 value={yearFilter}
                 onChange={e => setYearFilter(e.target.value)}
-                className={`pl-9 pr-8 py-2 text-sm border rounded-xl bg-white shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-[#07A04E] transition-colors
+                className={`
+                  pl-10 pr-8 py-2.5 text-sm border rounded-2xl bg-white shadow-sm
+                  focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all duration-200
+                  appearance-none cursor-pointer
                   ${yearFilter !== 'all'
-                    ? 'border-[#07A04E] ring-1 ring-[#07A04E] text-[#07A04E] font-medium'
+                    ? 'border-emerald-400 bg-emerald-50/50 text-emerald-700 font-medium'
                     : 'border-gray-200 text-gray-700'
-                  }`}
+                  }
+                `}
               >
                 <option value="all">All Years</option>
                 {availableYears.map(yr => (
@@ -619,9 +638,9 @@ export default function MembersPage() {
             {yearFilter !== 'all' && (
               <button
                 onClick={() => setYearFilter('all')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium
-                  bg-[#D6FADC] text-[#07A04E] border border-[#07A04E]/20 rounded-lg
-                  hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium
+                  bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-2xl
+                  hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all group"
                 title="Clear year filter"
               >
                 <CalendarDays size={12} />
@@ -630,14 +649,31 @@ export default function MembersPage() {
               </button>
             )}
 
-            <Button variant="outline" icon={<Printer size={15} />} onClick={handlePrint}>Print</Button>
-            <Button variant="outline" icon={<Download size={15} />} onClick={handleExportCSV}>Export All</Button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-3.5 py-2.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+            >
+              <Printer size={15} />
+              <span className="hidden sm:inline">Print</span>
+            </button>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-3.5 py-2.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+            >
+              <Download size={15} />
+              <span className="hidden sm:inline">Export All</span>
+            </button>
           </div>
 
           {!loading && (
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              {isKiddyView ? <Baby size={14} /> : <Users size={14} />}
-              <span>{filtered.length} of {members.filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy').length} {isKiddyView ? 'kiddy members' : 'members'}</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-2xl border border-gray-100 shadow-sm">
+              {isKiddyView ? <Baby size={14} className="text-teal-500" /> : <Users size={14} className="text-emerald-500" />}
+              <span className="text-xs text-gray-500">
+                <span className="font-medium text-gray-700">{filtered.length}</span> of{' '}
+                <span className="font-medium text-gray-700">
+                  {members.filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy').length}
+                </span> {isKiddyView ? 'kiddy members' : 'members'}
+              </span>
             </div>
           )}
         </div>
@@ -691,23 +727,23 @@ export default function MembersPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : (
-          <div className={`bg-white rounded-2xl border overflow-hidden shadow-sm print:shadow-none print:rounded-none ${isKiddyView ? 'border-teal-100' : 'border-gray-100'}`}>
+          <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden print:shadow-none print:rounded-none transition-shadow
+            ${isKiddyView ? 'border-teal-100/60' : 'border-gray-100'}`}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className={`border-b ${isKiddyView ? 'bg-teal-50/70 border-teal-100' : 'bg-gray-50/80 border-gray-100'}`}>
-                    {/* Select-all checkbox */}
-                    <th className="pl-4 pr-2 py-3 w-10 print:hidden">
+                  <tr className={`border-b ${isKiddyView ? 'bg-gradient-to-r from-teal-50/80 to-teal-50/40 border-teal-100' : 'bg-gradient-to-r from-gray-50/80 to-gray-50/40 border-gray-100'}`}>
+                    <th className="pl-4 pr-2 py-3.5 w-10 print:hidden">
                       <button
                         type="button"
                         onClick={toggleAll}
-                        className="text-gray-400 hover:text-[#07A04E] transition-colors"
+                        className="text-gray-400 hover:text-emerald-600 transition-colors"
                         title={allFilteredSelected ? 'Deselect all' : 'Select all'}
                       >
                         {allFilteredSelected
-                          ? <CheckSquare size={16} className="text-[#07A04E]" />
+                          ? <CheckSquare size={16} className="text-emerald-600" />
                           : someFilteredSelected
-                            ? <MinusSquare size={16} className="text-[#07A04E]" />
+                            ? <MinusSquare size={16} className="text-emerald-600" />
                             : <Square size={16} />}
                       </button>
                     </th>
@@ -718,7 +754,7 @@ export default function MembersPage() {
                     ).map((h) => (
                       <th
                         key={h}
-                        className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide ${
+                        className={`px-4 py-3.5 text-[11px] font-semibold uppercase tracking-wider ${
                           isKiddyView ? 'text-teal-600' : 'text-gray-500'
                         } ${
                           ['Member No.', 'Joined', 'Status', 'Actions', 'Date of Birth'].includes(h)
@@ -735,13 +771,15 @@ export default function MembersPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-16 text-center">
-                        <div className="flex flex-col items-center gap-2 text-gray-400">
-                          {isKiddyView
-                            ? <Baby size={32} className="text-teal-200" />
-                            : <Users size={32} className="text-gray-200" />
-                          }
-                          <p className="text-sm">
+                      <td colSpan={10} className="py-20 text-center">
+                        <div className="flex flex-col items-center gap-3 text-gray-400">
+                          <div className={`p-4 rounded-full ${isKiddyView ? 'bg-teal-50' : 'bg-gray-50'}`}>
+                            {isKiddyView
+                              ? <Baby size={36} className="text-teal-300" />
+                              : <Users size={36} className="text-gray-300" />
+                            }
+                          </div>
+                          <p className="text-sm font-medium text-gray-500">
                             {search || typeFilter !== 'all' || yearFilter !== 'all'
                               ? 'No members match your filters.'
                               : statusTab === 'inactive'
@@ -758,7 +796,7 @@ export default function MembersPage() {
                               size="sm"
                               onClick={() => setAddMemberOpen(true)}
                               icon={<UserPlus size={13} />}
-                              className="print:hidden"
+                              className="print:hidden mt-2"
                             >
                               Add {isKiddyView ? 'Kiddy Member' : 'First Member'}
                             </Button>
@@ -770,37 +808,40 @@ export default function MembersPage() {
                     filtered.map((member, i) => {
                       const isSelected = selectedIds.has(member.id);
                       const colors = isKiddyView ? kiddyAvatarColors : avatarColors;
+                      const colorIndex = i % colors.length;
                       return (
                         <tr
                           key={member.id}
-                          className={`transition-colors cursor-pointer group print:hover:bg-transparent ${
+                          className={`transition-all duration-150 cursor-pointer group print:hover:bg-transparent ${
                             isSelected
-                              ? isKiddyView ? 'bg-teal-50/70 hover:bg-teal-50' : 'bg-emerald-50/60 hover:bg-emerald-50'
-                              : isKiddyView ? 'hover:bg-teal-50/40' : 'hover:bg-[#D6FADC]/30'
+                              ? isKiddyView 
+                                ? 'bg-teal-50/70 hover:bg-teal-50' 
+                                : 'bg-emerald-50/60 hover:bg-emerald-50'
+                              : isKiddyView 
+                                ? 'hover:bg-teal-50/40' 
+                                : 'hover:bg-gray-50/60'
                           }`}
                           onClick={() => navigate(`/members/${member.id}`)}
                         >
-                          {/* Checkbox */}
                           <td
-                            className="pl-4 pr-2 py-3 w-10 print:hidden"
+                            className="pl-4 pr-2 py-3.5 w-10 print:hidden"
                             onClick={e => { e.stopPropagation(); toggleOne(member.id); }}
                           >
-                            <button type="button" className="text-gray-400 hover:text-[#07A04E] transition-colors">
+                            <button type="button" className="text-gray-400 hover:text-emerald-600 transition-colors">
                               {isSelected
-                                ? <CheckSquare size={16} className="text-[#07A04E]" />
+                                ? <CheckSquare size={16} className="text-emerald-600" />
                                 : <Square size={16} />}
                             </button>
                           </td>
 
-                          {/* Member name + type */}
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-bold ${colors[i % colors.length]}`}>
+                              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 text-xs font-bold transition-transform group-hover:scale-105 ${colors[colorIndex]}`}>
                                 {(member.first_name?.[0] || '') + (member.last_name?.[0] || '')}
                               </div>
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-teal-700' : 'group-hover:text-[#07A04E]'}`}>
+                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-teal-700' : 'group-hover:text-emerald-700'}`}>
                                     {member.first_name} {member.last_name}
                                   </p>
                                   {member.membership_type && (
@@ -815,9 +856,8 @@ export default function MembersPage() {
                                   )}
                                 </div>
                                 {member.email && (
-                                  <p className="text-xs text-gray-400 mt-0.5">{member.email}</p>
+                                  <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[150px]">{member.email}</p>
                                 )}
-                                {/* School info for kiddy */}
                                 {isKiddyView && member.occupation && (
                                   <p className="text-xs text-sky-600 mt-0.5">{member.occupation}</p>
                                 )}
@@ -825,80 +865,73 @@ export default function MembersPage() {
                             </div>
                           </td>
 
-                          {/* Member No. */}
-                          <td className="px-4 py-3 text-center">
-                            <span className={`font-mono text-xs px-2 py-1 rounded-lg ring-1 ${
+                          <td className="px-4 py-3.5 text-center">
+                            <span className={`font-mono text-xs px-2.5 py-1 rounded-xl ring-1 ${
                               isKiddyView
-                                ? 'bg-teal-50 text-teal-700 ring-teal-200'
-                                : 'bg-gray-100 text-gray-700 ring-gray-200'
+                                ? 'bg-teal-50 text-teal-700 ring-teal-200/60'
+                                : 'bg-gray-50 text-gray-700 ring-gray-200/60'
                             }`}>
                               {member.member_no || '—'}
                             </span>
                           </td>
 
-                          {/* Savings Type (kiddy only) */}
                           {isKiddyView && (
-                            <td className="px-4 py-3 text-left">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                            <td className="px-4 py-3.5 text-left">
+                              <span className={`text-[10px] px-2.5 py-1 rounded-full font-medium ${
                                 member.kiddy_savings_type === 'educational_savings'
                                   ? 'bg-amber-100 text-amber-700 border border-amber-200'
                                   : 'bg-teal-100 text-teal-700 border border-teal-200'
                               }`}>
                                 {member.kiddy_savings_type === 'educational_savings'
-                                  ? 'Educational Savings Account'
-                                  : 'Regular Savings Account'}
+                                  ? 'Educational Savings'
+                                  : 'Regular Savings'}
                               </span>
                             </td>
                           )}
 
-                          {/* Guardian (kiddy) | Contact (regular) */}
                           {isKiddyView ? (
-                            <td className="px-4 py-3 text-gray-600 text-sm">
+                            <td className="px-4 py-3.5 text-gray-600 text-sm">
                               {member.guardian_name
                                 ? <span>{member.guardian_name} <span className="text-xs text-gray-400">({member.guardian_relationship || 'Guardian'})</span></span>
                                 : <span className="text-gray-400">—</span>
                               }
                             </td>
                           ) : (
-                            <td className="px-4 py-3 text-gray-600 text-sm">{member.phone || '—'}</td>
+                            <td className="px-4 py-3.5 text-gray-600 text-sm">{member.phone || '—'}</td>
                           )}
 
-                          {/* Contact (kiddy) | Referrer (regular) */}
                           {isKiddyView ? (
-                            <td className="px-4 py-3 text-gray-600 text-sm">{member.phone || '—'}</td>
+                            <td className="px-4 py-3.5 text-gray-600 text-sm">{member.phone || '—'}</td>
                           ) : (
-                            <td className="px-4 py-3 text-gray-600 text-sm">{member.recruiter_name || 'Self'}</td>
+                            <td className="px-4 py-3.5 text-gray-600 text-sm">{member.recruiter_name || 'Self'}</td>
                           )}
 
-                          {/* DOB (kiddy) | Joined (regular) */}
-                          <td className="px-4 py-3 text-gray-500 text-xs text-center">
+                          <td className="px-4 py-3.5 text-gray-500 text-xs text-center">
                             {isKiddyView
                               ? (member.date_of_birth ? formatDate(member.date_of_birth) : '—')
                               : (member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : '—'))
                             }
                           </td>
 
-                          {/* Status */}
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-4 py-3.5 text-center">
                             <Badge variant={statusVariant[member.status] || 'default'} dot>
                               {statusLabel[member.status] || 'Active'}
                             </Badge>
                           </td>
 
-                          {/* Row Actions */}
-                          <td className="px-4 py-3 print:hidden" onClick={e => e.stopPropagation()}>
+                          <td className="px-4 py-3.5 print:hidden" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => navigate(`/members/${member.id}`)}
                                 title="View profile"
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                className="p-1.5 rounded-xl text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
                               >
                                 <Eye size={15} />
                               </button>
                               <button
                                 onClick={() => navigate(`/members/${member.id}/edit`)}
                                 title="Edit member"
-                                className={`p-1.5 rounded-lg text-gray-400 transition-colors ${isKiddyView ? 'hover:text-teal-700 hover:bg-teal-50' : 'hover:text-[#07A04E] hover:bg-[#D6FADC]'}`}
+                                className={`p-1.5 rounded-xl text-gray-400 transition-all ${isKiddyView ? 'hover:text-teal-700 hover:bg-teal-50' : 'hover:text-emerald-700 hover:bg-emerald-50'}`}
                               >
                                 <Pencil size={15} />
                               </button>
@@ -907,7 +940,7 @@ export default function MembersPage() {
                                   onClick={() => handleReactivate(member)}
                                   disabled={reactivatingId === member.id}
                                   title="Reactivate member"
-                                  className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="p-1.5 rounded-xl text-gray-400 hover:text-green-600 hover:bg-green-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {reactivatingId === member.id
                                     ? <span className="inline-block w-[15px] h-[15px] border-2 border-green-400/40 border-t-green-600 rounded-full animate-spin" />
@@ -918,7 +951,7 @@ export default function MembersPage() {
                               <button
                                 onClick={() => setConfirmDelete(member)}
                                 title={member.status === 'inactive' ? 'Delete permanently' : 'Delete member'}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                className="p-1.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all"
                               >
                                 <Trash2 size={15} />
                               </button>
@@ -934,15 +967,15 @@ export default function MembersPage() {
 
             {/* Table footer */}
             {filtered.length > 0 && (
-              <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between print:hidden">
+              <div className="px-5 py-3.5 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between print:hidden">
                 <p className="text-xs text-gray-400">
                   Showing{' '}
                   <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
                   <span className="font-medium text-gray-600">
                     {members.filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy').length}
                   </span> {isKiddyView ? 'kiddy members' : 'members'}
-                  {yearFilter !== 'all' && <span className="ml-2 font-medium text-[#07A04E]">· joined {yearFilter}</span>}
-                  {selectedCount > 0 && <span className="ml-2 font-medium text-[#07A04E]">· {selectedCount} selected</span>}
+                  {yearFilter !== 'all' && <span className="ml-2 font-medium text-emerald-600">· joined {yearFilter}</span>}
+                  {selectedCount > 0 && <span className="ml-2 font-medium text-emerald-600">· {selectedCount} selected</span>}
                 </p>
                 {selectedCount > 0 && (
                   <button onClick={clearSelection} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
