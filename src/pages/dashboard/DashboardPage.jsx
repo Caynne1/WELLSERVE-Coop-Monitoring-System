@@ -1,4 +1,4 @@
-// DashboardPage.jsx - Updated with React Portal for modals
+// DashboardPage.jsx - Updated with consistent blue and green color scheme
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -16,6 +16,7 @@ import {
   Wallet,
   X,
   Mail,
+  Infinity,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
@@ -243,12 +244,12 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
           <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
             <defs>
               <linearGradient id="cf-div-green" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#047857" stopOpacity="1" />
+                <stop offset="0%"   stopColor="#059669" stopOpacity="1" />
                 <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.45" />
               </linearGradient>
               <linearGradient id="cf-div-red" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"   stopColor="#FCA5A5" stopOpacity="0.45" />
-                <stop offset="100%" stopColor="#B91C1C" stopOpacity="1" />
+                <stop offset="100%" stopColor="#DC2626" stopOpacity="1" />
               </linearGradient>
             </defs>
 
@@ -297,7 +298,7 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                 >
                   {isHov && (
                     <rect x={bx - 2} y={PAD.t} width={bw + 4} height={iH}
-                      fill="#6366F1" opacity={0.05} rx={3} />
+                      fill="#2563EB" opacity={0.05} rx={3} />
                   )}
 
                   {ciH > 0 && (
@@ -347,16 +348,16 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
 
             {netPts.length > 1 && (
               <g style={{ pointerEvents: 'none' }}>
-                <path d={linePath} fill="none" stroke="#818CF8"
+                <path d={linePath} fill="none" stroke="#60A5FA"
                   strokeWidth={5} strokeLinejoin="round" strokeLinecap="round" opacity={0.18} />
-                <path d={linePath} fill="none" stroke="#6366F1"
+                <path d={linePath} fill="none" stroke="#2563EB"
                   strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round"
                   strokeDasharray="5 3" />
 
                 {netPts.map((p, i) => {
                   const isHov    = hoveredIdx === i;
                   const neg      = p.net < 0;
-                  const dotColor = neg ? '#F59E0B' : '#6366F1';
+                  const dotColor = neg ? '#F59E0B' : '#2563EB';
                   const ringR    = isHov ? 5 : 3;
                   const dotR     = isHov ? 3 : 1.75;
                   const lw       = 58;
@@ -373,12 +374,12 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
                         <g>
                           <rect
                             x={p.x - lw / 2} y={rectY} width={lw} height={14} rx={4}
-                            fill={neg ? '#FEF3C7' : '#EEF2FF'}
-                            stroke={neg ? '#FCD34D' : '#C7D2FE'} strokeWidth={0.75}
+                            fill={neg ? '#FEF3C7' : '#EFF6FF'}
+                            stroke={neg ? '#FCD34D' : '#93C5FD'} strokeWidth={0.75}
                           />
                           <text x={p.x} y={textY} textAnchor="middle"
                             fontSize={7.5} fontWeight="700"
-                            fill={neg ? '#B45309' : '#4338CA'}>
+                            fill={neg ? '#B45309' : '#1D4ED8'}>
                             {fmtNet(p.net)}
                           </text>
                         </g>
@@ -399,7 +400,7 @@ function CashFlowChart({ data, height = 152, onBarClick }) {
 // DonutChart
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DONUT_COLORS = ['#059669', '#2563EB', '#F59E0B', '#DC2626', '#8B5CF6', '#6B7280'];
+const DONUT_COLORS = ['#059669', '#2563EB', '#F59E0B', '#DC2626', '#6B7280'];
 
 function DonutChart({ data, size = 110, onSegmentClick }) {
   const { tooltip, show, move, hide } = useTooltip();
@@ -604,10 +605,13 @@ function StatusBadge({ isInflow }) {
 }
 
 function RecentTransactionsCard({ stats, navigate }) {
+  const periodLabel = stats?.periodLabel || 'all time';
+  const isOverall = stats?.periodFilter === 'overall';
+  
   return (
     <ChartCard
       title="Recent Transactions"
-      subtitle={`Latest activity · ${stats?.periodLabel || 'selected period'}`}
+      subtitle={`Latest activity · ${isOverall ? 'all time' : periodLabel}`}
       action={
         <button
           onClick={() => navigate('/transactions')}
@@ -618,7 +622,9 @@ function RecentTransactionsCard({ stats, navigate }) {
       }
     >
       {!stats?.recentTransactions?.length ? (
-        <div className="text-center text-sm text-gray-400 py-8">No transactions in this period</div>
+        <div className="text-center text-sm text-gray-400 py-8">
+          {isOverall ? 'No transactions recorded' : 'No transactions in this period'}
+        </div>
       ) : (
         <div className="overflow-x-auto -mx-1">
           <table className="w-full text-sm border-separate" style={{ borderSpacing: '0 2px' }}>
@@ -683,9 +689,6 @@ function RecentTransactionsCard({ stats, navigate }) {
 // Member Growth Drill-down Modal - Using React Portal
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Always resolves to a readable, complete date — falls back through the
-// service-formatted string, the shared formatDate utility, then a manual
-// long-form date, so the modal never shows a blank/missing registration date.
 function getRegistrationDateLabel(member) {
   if (member.date_joined_formatted) return member.date_joined_formatted;
   if (member.created_at) {
@@ -715,7 +718,6 @@ function MemberGrowthModal({ item, onClose, navigate }) {
 
   const members = item.members || [];
 
-  // Use useEffect to prevent body scroll when modal is open
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => {
@@ -738,7 +740,6 @@ function MemberGrowthModal({ item, onClose, navigate }) {
         onClick={e => e.stopPropagation()}
         style={{ zIndex: 101 }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
             <h3 className="text-lg font-bold text-gray-900">
@@ -756,7 +757,6 @@ function MemberGrowthModal({ item, onClose, navigate }) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-6 overflow-y-auto max-h-[60vh]">
           {members.length === 0 ? (
             <div className="text-center py-12">
@@ -789,7 +789,7 @@ function MemberGrowthModal({ item, onClose, navigate }) {
                           <span className="inline-flex items-center gap-1">
                             <span className={`inline-block w-1.5 h-1.5 rounded-full ${
                               member.membership_type === 'regular' ? 'bg-blue-500' : 
-                              member.membership_type === 'kiddy' ? 'bg-teal-500' : 'bg-indigo-500'
+                              member.membership_type === 'kiddy' ? 'bg-emerald-500' : 'bg-blue-400'
                             }`} />
                             {member.membership_type}
                           </span>
@@ -818,7 +818,6 @@ function MemberGrowthModal({ item, onClose, navigate }) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-gray-50">
           <span className="text-xs text-gray-400">
             Click a member to view their profile
@@ -837,7 +836,6 @@ function MemberGrowthModal({ item, onClose, navigate }) {
     </div>
   );
 
-  // Use createPortal to render at document.body level
   return createPortal(modalContent, document.body);
 }
 
@@ -847,9 +845,8 @@ function MemberGrowthModal({ item, onClose, navigate }) {
 
 function DrillDownDrawer({ item, onClose, navigate }) {
   if (!item) return null;
-  if (item.members) return null; // Handled by MemberGrowthModal
+  if (item.members) return null;
 
-  // Use useEffect to prevent body scroll when drawer is open
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => {
@@ -953,15 +950,15 @@ function DrillDownDrawer({ item, onClose, navigate }) {
     </div>
   );
 
-  // Use createPortal to render at document.body level
   return createPortal(drawerContent, document.body);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Time Period Filter — segmented control
+// Time Period Filter — segmented control with "Overall" option
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PERIOD_OPTIONS = [
+  { value: 'overall', label: 'Overall' },
   { value: 'today', label: 'Today' },
   { value: 'week',  label: 'Week' },
   { value: 'month', label: 'Month' },
@@ -973,17 +970,21 @@ function TimePeriodFilter({ value, onChange }) {
     <div className="inline-flex items-center gap-0.5 rounded-xl bg-gray-100 p-1">
       {PERIOD_OPTIONS.map(opt => {
         const active = opt.value === value;
+        const isOverall = opt.value === 'overall';
         return (
           <button
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1 ${
               active
-                ? 'bg-white text-emerald-700 shadow-sm'
+                ? isOverall
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-white text-emerald-700 shadow-sm'
                 : 'text-gray-500 hover:text-gray-800'
             }`}
           >
+            {isOverall && <Infinity size={10} />}
             {opt.label}
           </button>
         );
@@ -994,7 +995,7 @@ function TimePeriodFilter({ value, onChange }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Date Picker Button — mini calendar popover for selecting a specific day.
-// Expands (zoom in) on open, collapses (zoom out) once a date is picked.
+// Only shown when a period other than 'overall' is selected.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -1010,8 +1011,6 @@ function isSameDay(a, b) {
     && a.getDate() === b.getDate();
 }
 
-// Year Picker — lets the user jump to a distant year quickly instead of
-// clicking the month arrows one step at a time.
 function YearPicker({ year, onSelect, onClose }) {
   const [decadeStart, setDecadeStart] = useState(Math.floor(year / 12) * 12);
   const years = Array.from({ length: 12 }, (_, i) => decadeStart + i);
@@ -1049,10 +1048,10 @@ function YearPicker({ year, onSelect, onClose }) {
               onClick={() => onSelect(y)}
               className={`rounded-lg py-1.5 text-xs font-medium transition-colors ${
                 isSelected
-                  ? 'bg-emerald-600 text-white font-semibold'
+                  ? 'bg-blue-600 text-white font-semibold'
                   : isCurrent
-                  ? 'border border-emerald-300 text-emerald-700 font-semibold'
-                  : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
+                  ? 'border border-blue-300 text-blue-700 font-semibold'
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
               }`}
             >
               {y}
@@ -1100,7 +1099,7 @@ function DatePickerButton({ selectedDate, onSelect, onClear }) {
   const handlePick = (day) => {
     const picked = new Date(year, month, day);
     onSelect(picked);
-    setOpen(false); // collapses (zoom out) immediately after a date is chosen
+    setOpen(false);
     setShowYearPicker(false);
   };
 
@@ -1135,7 +1134,6 @@ function DatePickerButton({ selectedDate, onSelect, onClear }) {
         )}
       </button>
 
-      {/* Popover — always mounted; scale/opacity animate the expand/collapse */}
       <div
         className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 origin-top-right rounded-2xl border border-gray-200 bg-white p-3 shadow-2xl"
         style={{
@@ -1157,7 +1155,7 @@ function DatePickerButton({ selectedDate, onSelect, onClear }) {
             type="button"
             onClick={() => setShowYearPicker(true)}
             title="Pick a year"
-            className="rounded-lg px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+            className="rounded-lg px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
           >
             {format(viewDate, 'MMMM yyyy')}
           </button>
@@ -1194,10 +1192,10 @@ function DatePickerButton({ selectedDate, onSelect, onClear }) {
                 onClick={() => handlePick(day)}
                 className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-xs transition-colors ${
                   isSelected
-                    ? 'bg-emerald-600 text-white font-semibold'
+                    ? 'bg-blue-600 text-white font-semibold'
                     : isToday
-                    ? 'border border-emerald-300 text-emerald-700 font-semibold'
-                    : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
+                    ? 'border border-blue-300 text-blue-700 font-semibold'
+                    : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
                 }`}
               >
                 {day}
@@ -1239,22 +1237,35 @@ function ProductStatCard({ label, value, sub, icon, iconColorClass = 'text-gray-
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [period, setPeriod] = useState('month');
+  const [period, setPeriod] = useState('overall');
   const [customDate, setCustomDate] = useState(null);
-  const effectivePeriod = customDate ? `custom:${toDateKey(customDate)}` : period;
+  
+  const effectivePeriod = period === 'overall' 
+    ? 'overall' 
+    : customDate 
+      ? `custom:${toDateKey(customDate)}` 
+      : period;
+  
   const { stats, loading, refetch } = useRealtimeDashboard(effectivePeriod);
 
-  // Presets and the custom date picker are mutually exclusive — choosing one clears the other.
   const handlePeriodChange = useCallback((p) => {
-    setCustomDate(null);
+    if (p === 'overall') {
+      setCustomDate(null);
+    }
     setPeriod(p);
   }, []);
+
   const handleCustomDateSelect = useCallback((d) => {
+    if (period === 'overall') {
+      setPeriod('today');
+    }
     setCustomDate(d);
-  }, []);
+  }, [period]);
+
   const handleCustomDateClear = useCallback(() => {
     setCustomDate(null);
   }, []);
+
   const [drillItem, setDrillItem] = useState(null);
   const [memberGrowthItem, setMemberGrowthItem] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1265,9 +1276,7 @@ export default function DashboardPage() {
     setTimeout(() => setIsRefreshing(false), 600);
   }
 
-  // Handle bar click on Member Growth chart
   const handleMemberGrowthClick = useCallback((item) => {
-    // Find members who registered in this month
     const members = stats?.monthlyMembers?.[item.label] || [];
     setMemberGrowthItem({
       ...item,
@@ -1275,9 +1284,13 @@ export default function DashboardPage() {
     });
   }, [stats]);
 
+  const isOverall = period === 'overall' && !customDate;
+
   if (loading) return <DashboardSkeleton />;
 
-  const netCashFlow = (stats?.periodIncome ?? 0) - (stats?.periodExpense ?? 0);
+  const displayIncome = isOverall ? stats?.totalIncome : stats?.periodIncome;
+  const displayExpense = isOverall ? stats?.totalCashOut : stats?.periodExpense;
+  const netCashFlow = (displayIncome ?? 0) - (displayExpense ?? 0);
 
   return (
     <div className="p-6 space-y-6">
@@ -1288,22 +1301,31 @@ export default function DashboardPage() {
           <h1 className="section-title">Dashboard</h1>
           <p className="section-subtitle flex items-center gap-1.5 flex-wrap">
             <span>WELLSERVE Cooperative — live overview</span>
-            {stats?.periodLabel && (
+            {!isOverall && stats?.periodLabel && (
               <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
                 <span className="text-gray-300">·</span>
                 <CalendarDays size={12} />
                 {stats.periodLabel}
               </span>
             )}
+            {isOverall && (
+              <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
+                <span className="text-gray-300">·</span>
+                <Infinity size={12} />
+                All Time
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <TimePeriodFilter value={customDate ? null : period} onChange={handlePeriodChange} />
-          <DatePickerButton
-            selectedDate={customDate}
-            onSelect={handleCustomDateSelect}
-            onClear={handleCustomDateClear}
-          />
+          <TimePeriodFilter value={period} onChange={handlePeriodChange} />
+          {!isOverall && (
+            <DatePickerButton
+              selectedDate={customDate}
+              onSelect={handleCustomDateSelect}
+              onClear={handleCustomDateClear}
+            />
+          )}
           <button
             onClick={handleRefetch}
             className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors px-3 py-2 rounded-xl hover:bg-gray-100"
@@ -1314,60 +1336,74 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Summary Cards (scoped to the selected period — no all-time totals) ── */}
+      {/* ── Summary Cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <SummaryCard
-          label="New Members"
-          value={stats?.periodNewMembers ?? 0}
+          label={isOverall ? "Total Members" : "New Members"}
+          value={isOverall ? (stats?.totalMembers ?? 0) : (stats?.periodNewMembers ?? 0)}
           sub={
-            <span className="flex gap-2 flex-wrap">
-              <span className="text-blue-600 font-medium">{stats?.periodRegularMembers ?? 0} Regular</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-indigo-500 font-medium">{stats?.periodAssociateMembers ?? 0} Associate</span>
-            </span>
+            isOverall ? (
+              <span className="flex gap-2 flex-wrap">
+                <span className="text-blue-600 font-medium">{stats?.regularMembers ?? 0} Regular</span>
+                <span className="text-gray-300">·</span>
+                <span className="text-blue-500 font-medium">{stats?.associateMembers ?? 0} Associate</span>
+              </span>
+            ) : (
+              <span className="flex gap-2 flex-wrap">
+                <span className="text-blue-600 font-medium">{stats?.periodRegularMembers ?? 0} Regular</span>
+                <span className="text-gray-300">·</span>
+                <span className="text-blue-500 font-medium">{stats?.periodAssociateMembers ?? 0} Associate</span>
+              </span>
+            )
           }
           icon={<Users size={18} />}
           accent="#2563EB"
           accentBg="rgba(37,99,235,0.08)"
           onClick={() => navigate('/members')}
           delay={0}
+          trend={isOverall ? undefined : stats?.trends?.members}
         />
         <SummaryCard
-          label="New Kiddy Members"
-          value={stats?.periodNewKiddyMembers ?? 0}
-          sub="Registered this period"
+          label={isOverall ? "Total Kiddy Members" : "New Kiddy Members"}
+          value={isOverall ? (stats?.kiddyMembers ?? 0) : (stats?.periodNewKiddyMembers ?? 0)}
+          sub={isOverall ? `${stats?.activeKiddyMembers ?? 0} Active` : "Registered this period"}
           icon={<Users size={18} />}
-          accent="#0D9488"
-          accentBg="rgba(13,148,136,0.08)"
+          accent="#059669"
+          accentBg="rgba(5,150,105,0.08)"
           onClick={() => navigate('/members?type=kiddy')}
           delay={0.06}
         />
         <SummaryCard
-          label="New Loans"
-          value={stats?.periodNewLoans ?? 0}
-          sub={formatCurrency(stats?.periodLoanAmount ?? 0) + ' issued'}
+          label={isOverall ? "Active Loans" : "New Loans"}
+          value={isOverall ? (stats?.activeLoans ?? 0) : (stats?.periodNewLoans ?? 0)}
+          sub={isOverall 
+            ? formatCurrency(stats?.totalLoanOutstanding ?? 0) + ' outstanding'
+            : formatCurrency(stats?.periodLoanAmount ?? 0) + ' issued'
+          }
           icon={<CreditCard size={18} />}
           accent="#059669"
           accentBg="rgba(5,150,105,0.08)"
           onClick={() => navigate('/loans')}
           delay={0.12}
+          trend={isOverall ? undefined : stats?.trends?.loans}
         />
         <SummaryCard
-          label="Overdue Payments"
-          value={stats?.periodOverdue ?? 0}
+          label={isOverall ? "Overdue Payments" : "Overdue Payments"}
+          value={isOverall ? (stats?.overduePayments ?? 0) : (stats?.periodOverdue ?? 0)}
           sub="Past due loans"
           icon={<AlertTriangle size={18} />}
-          accent={stats?.periodOverdue > 0 ? '#D97706' : '#6B7280'}
-          accentBg={stats?.periodOverdue > 0 ? 'rgba(217,119,6,0.08)' : 'rgba(107,114,128,0.08)'}
+          accent={((isOverall ? stats?.overduePayments : stats?.periodOverdue) ?? 0) > 0 ? '#D97706' : '#6B7280'}
+          accentBg={((isOverall ? stats?.overduePayments : stats?.periodOverdue) ?? 0) > 0 ? 'rgba(217,119,6,0.08)' : 'rgba(107,114,128,0.08)'}
           onClick={() => navigate('/loans')}
           delay={0.18}
+          trend={isOverall ? undefined : stats?.trends?.overdue}
+          trendInverse
         />
       </div>
 
       {/* ── Hero row: Income + Cash Flow (2/3) · Loan Status (1/3) ── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 
-        {/* Hero: Income summary + Cash Flow chart combined */}
         <div
           className="app-card dash-fade-in lg:col-span-2 p-5 sm:p-6 flex flex-col gap-4"
           style={{ animationDelay: '0.22s' }}
@@ -1378,8 +1414,18 @@ export default function DashboardPage() {
                 <PesoSign size={20} className="text-emerald-700" />
               </div>
               <div>
-                <p className="stat-label">Income</p>
-                <p className="text-2xl font-bold text-emerald-700 tabular-nums">{formatCurrency(stats?.periodIncome ?? 0)}</p>
+                <p className="stat-label flex items-center gap-1.5">
+                  {isOverall ? 'Total Income' : 'Income'}
+                  {!isOverall && stats?.trends?.income !== undefined && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${stats.trends.income >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {stats.trends.income >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}
+                      {stats.trends.income >= 0 ? '+' : ''}{stats.trends.income}%
+                    </span>
+                  )}
+                </p>
+                <p className="text-2xl font-bold text-emerald-700 tabular-nums">
+                  {formatCurrency(displayIncome ?? 0)}
+                </p>
               </div>
             </div>
 
@@ -1400,7 +1446,7 @@ export default function DashboardPage() {
                   Out
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-3 border-t-2 border-dashed border-indigo-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
+                  <span className="inline-block w-3 border-t-2 border-dashed border-blue-500" style={{ height: 0, verticalAlign: 'middle', display: 'inline-block' }} />
                   Net
                 </span>
               </div>
@@ -1416,11 +1462,10 @@ export default function DashboardPage() {
           </div>
 
           <p className="text-[10px] text-gray-400 border-t border-gray-50 pt-2">
-            {stats?.periodLabel || 'Selected period'} · click any bar to view its transaction breakdown.
+            {isOverall ? 'Last 6 months' : (stats?.periodLabel || 'Selected period')} · click any bar to view its transaction breakdown.
           </p>
         </div>
 
-        {/* Loan Status Donut */}
         <ChartCard
           title="Loan Status"
           subtitle="Click a segment to drill down"
@@ -1444,8 +1489,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <ChartCard
           title="Member Growth"
-          subtitle="Click a bar to see members"
-          footerNote={`${stats?.periodLabel || 'Selected period'} · click any bar to see members who joined then.`}
+          subtitle={isOverall ? "Last 6 months" : "Click a bar to see members"}
+          footerNote={`${isOverall ? 'Last 6 months' : (stats?.periodLabel || 'Selected period')} · click any bar to see members who joined then.`}
           delay={0.34}
           action={
             <button onClick={() => navigate('/members')} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
@@ -1465,13 +1510,16 @@ export default function DashboardPage() {
 
         <div className="lg:col-span-2">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-            Product Balances · {stats?.periodLabel || 'Selected period'} net flow
+            Product Balances {isOverall ? '' : `· ${stats?.periodLabel || 'Selected period'} net flow`}
           </h2>
           <div className="grid grid-cols-2 gap-4">
             <ProductStatCard
               label="Capital Build-Up"
-              value={`${(stats?.periodCBUNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodCBUNet ?? 0)}`}
-              sub={`Total balance: ${formatCurrency(stats?.totalCBU ?? 0)}`}
+              value={isOverall 
+                ? formatCurrency(stats?.totalCBU ?? 0)
+                : `${(stats?.periodCBUNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodCBUNet ?? 0)}`
+              }
+              sub={isOverall ? 'Total balance' : `Total balance: ${formatCurrency(stats?.totalCBU ?? 0)}`}
               icon={<PiggyBank size={13} />}
               iconColorClass="text-emerald-400"
               valueHoverClass="group-hover:text-emerald-700"
@@ -1480,31 +1528,46 @@ export default function DashboardPage() {
             />
             <ProductStatCard
               label="Savings"
-              value={`${(stats?.periodSavingsNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodSavingsNet ?? 0)}`}
-              sub={`Total balance: ${formatCurrency(stats?.totalSavings ?? 0)}`}
+              value={isOverall 
+                ? formatCurrency(stats?.totalSavings ?? 0)
+                : `${(stats?.periodSavingsNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodSavingsNet ?? 0)}`
+              }
+              sub={isOverall ? 'Total balance' : `Total balance: ${formatCurrency(stats?.totalSavings ?? 0)}`}
               icon={<Wallet size={13} />}
-              iconColorClass="text-emerald-400"
-              valueHoverClass="group-hover:text-emerald-700"
+              iconColorClass="text-blue-400"
+              valueHoverClass="group-hover:text-blue-700"
               onClick={() => navigate('/savings')}
               delay={0.44}
             />
             <ProductStatCard
               label="Time Deposits"
-              value={`${(stats?.periodTimeDepositNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodTimeDepositNet ?? 0)}`}
-              sub={`${stats?.timeDepositCount ?? 0} active · total ${formatCurrency(stats?.totalTimeDeposit ?? 0)}`}
+              value={isOverall 
+                ? formatCurrency(stats?.totalTimeDeposit ?? 0)
+                : `${(stats?.periodTimeDepositNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodTimeDepositNet ?? 0)}`
+              }
+              sub={isOverall 
+                ? `${stats?.timeDepositCount ?? 0} active deposits`
+                : `${stats?.timeDepositCount ?? 0} active · total ${formatCurrency(stats?.totalTimeDeposit ?? 0)}`
+              }
               icon={<Clock size={13} />}
-              iconColorClass="text-violet-400"
-              valueHoverClass="group-hover:text-violet-700"
+              iconColorClass="text-blue-400"
+              valueHoverClass="group-hover:text-blue-700"
               onClick={() => navigate('/time-deposit')}
               delay={0.48}
             />
             <ProductStatCard
               label="Savings Booster"
-              value={`${(stats?.periodSavingsBoosterNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodSavingsBoosterNet ?? 0)}`}
-              sub={`${stats?.savingsBoosterCount ?? 0} accounts · total ${formatCurrency(stats?.totalSavingsBooster ?? 0)}`}
+              value={isOverall 
+                ? formatCurrency(stats?.totalSavingsBooster ?? 0)
+                : `${(stats?.periodSavingsBoosterNet ?? 0) >= 0 ? '+' : ''}${formatCurrency(stats?.periodSavingsBoosterNet ?? 0)}`
+              }
+              sub={isOverall 
+                ? `${stats?.savingsBoosterCount ?? 0} accounts`
+                : `${stats?.savingsBoosterCount ?? 0} accounts · total ${formatCurrency(stats?.totalSavingsBooster ?? 0)}`
+              }
               icon={<TrendingUp size={13} />}
-              iconColorClass="text-amber-400"
-              valueHoverClass="group-hover:text-amber-600"
+              iconColorClass="text-emerald-400"
+              valueHoverClass="group-hover:text-emerald-600"
               onClick={() => navigate('/savings-booster')}
               delay={0.52}
             />
