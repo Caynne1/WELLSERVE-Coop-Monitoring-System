@@ -24,7 +24,7 @@ import { trackActivity } from '../../services/logService';
 import { getAllSavingsAccounts } from '../../services/accountService';
 import { createTransaction, deleteTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
-import { getApprovedWithdrawalVouchers } from '../../services/voucherService';
+import { getApprovedWithdrawalVouchers, markVoucherUsed } from '../../services/voucherService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
@@ -288,6 +288,14 @@ export default function SavingsPage() {
         transaction_date: paymentDate,
         payment_mode: paymentMode || voucher.payment_mode || null,
         payment_mode_note: paymentModeNote || voucher.reference || null,
+      });
+
+      await markVoucherUsed(voucher.id, {
+        status: 'used',
+        notes: [
+          voucher.notes || null,
+          `Posted as Savings withdrawal on ${paymentDate}`,
+        ].filter(Boolean).join(' | '),
       });
 
       toast.success('Savings withdrawal posted from approved voucher.');

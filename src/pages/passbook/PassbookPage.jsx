@@ -20,7 +20,12 @@ import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
-import { supabase } from '../../services/supabase';
+import {
+  getPassbookData,
+  buildPassbookLedger,
+  computeAccountMap,
+  updatePassbookStatus,
+} from '../../services/passbookService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { printHtmlDocument } from '../../utils/print';
 
@@ -101,59 +106,14 @@ export default function PassbookPage() {
     try {
       setLoading(true);
 
-      const [
-        membersRes,
-        accountsRes,
-        transactionsRes,
-      ] = await Promise.all([
-        supabase
-          .from('members')
-          .select(`
-            id,
-            member_no,
-            first_name,
-            last_name,
-            middle_initial,
-            date_joined,
-            recruiter_name,
-            passbook_status,
-            passbook_print_status,
-            created_at,
-            status
-          `)
-          .order('created_at', { ascending: true }),
+      // getPassbookData() transparently pages through members, accounts, and
+      // transactions in chunks of 1000 rows so that no member or transaction
+      // silently drops off the passbook once the coop grows past Supabase's
+      // default 1000-row query cap.
+      const { members: memberRows, accounts: accountRows, transactions: transactionRows } =
+        await getPassbookData();
 
-        supabase
-          .from('accounts')
-          .select(`
-            id,
-            member_id,
-            account_no,
-            account_type,
-            balance,
-            created_at
-          `),
-
-        supabase
-          .from('transactions')
-          .select(`
-            id,
-            member_id,
-            account_id,
-            category,
-            type,
-            amount,
-            reference,
-            created_at
-          `)
-          .order('created_at', { ascending: true }),
-      ]);
-
-      if (membersRes.error) throw membersRes.error;
-      if (accountsRes.error) throw accountsRes.error;
-      if (transactionsRes.error) throw transactionsRes.error;
-
-      const normalizedMembers = (membersRes.data || []).map((member, index) => ({
+      const normalizedMembers = memberRows.map((member, index) => ({
         ...member,
         registry_no: index + 1,
         recruiter_name: member.recruiter_name?.trim() || 'Self',
@@ -162,8 +122,8 @@ export default function PassbookPage() {
       }));
 
       setMembers(normalizedMembers);
-      setAccounts(accountsRes.data || []);
-      setTransactions(transactionsRes.data || []);
+      setAccounts(accountRows);
+      setTransactions(transactionRows);
 
       if (normalizedMembers.length > 0) {
         setSelectedMemberId(normalizedMembers[0].id);
@@ -188,18 +148,7 @@ export default function PassbookPage() {
     }
   }
 
-  const accountMap = useMemo(() => {
-    const map = new Map();
-
-    for (const account of accounts) {
-      if (!map.has(account.member_id)) {
-        map.set(account.member_id, {});
-      }
-      map.get(account.member_id)[String(account.account_type).toLowerCase()] = account;
-    }
-
-    return map;
-  }, [accounts]);
+  const accountMap = useMemo(() => computeAccountMap(accounts), [accounts]);
 
   const registryRows = useMemo(() => {
     return members
@@ -262,27 +211,30 @@ export default function PassbookPage() {
   const passbookTransactions = useMemo(() => {
     if (!selectedMemberId) return [];
 
-    return transactions.filter(tx => {
-      if (tx.member_id !== selectedMemberId) return false;
+    const linked = accountMap.get(selectedMemberId) || {};
+    const targetAccount = linked[selectedPassbookType];
 
-      if (selectedPassbookType === 'savings') {
-        return tx.category === 'savings' || tx.category === 'loan';
-      }
-
-      return tx.category === 'cbu';
+    const matched = buildPassbookLedger({
+      transactions,
+      memberId: selectedMemberId,
+      accountType: selectedPassbookType,
+      accountId: targetAccount?.id || null,
     });
-  }, [transactions, selectedMemberId, selectedPassbookType]);
+
+    // Most recent entry first for on-screen review; print view re-numbers
+    // chronologically (oldest first) to read like a physical passbook.
+    return [...matched].sort((a, b) => {
+      const dateA = new Date(a.transaction_date || a.created_at).getTime();
+      const dateB = new Date(b.transaction_date || b.created_at).getTime();
+      return dateB - dateA;
+    });
+  }, [transactions, accountMap, selectedMemberId, selectedPassbookType]);
 
   async function handleUpdatePassbookStatus(memberId, newStatus) {
     setStatusUpdating(memberId);
     setOpenStatusMenu(null);
     try {
-      const { error } = await supabase
-        .from('members')
-        .update({ passbook_status: newStatus })
-        .eq('id', memberId);
-
-      if (error) throw error;
+      await updatePassbookStatus(memberId, newStatus);
 
       setMembers(prev =>
         prev.map(m => m.id === memberId ? { ...m, passbook_status: newStatus } : m)
@@ -402,8 +354,14 @@ export default function PassbookPage() {
         ? selectedAccounts.savings?.account_no || '—'
         : selectedAccounts.cbu?.account_no || '—';
 
-    const rows = passbookTransactions.map((tx, index) => {
-      const date = formatDate(tx.created_at);
+    const chronological = [...passbookTransactions].sort((a, b) => {
+      const dateA = new Date(a.transaction_date || a.created_at).getTime();
+      const dateB = new Date(b.transaction_date || b.created_at).getTime();
+      return dateA - dateB;
+    });
+
+    const rows = chronological.map((tx, index) => {
+      const date = formatDate(tx.transaction_date || tx.created_at);
       const particulars =
         tx.category === 'loan'
           ? 'Loan Deduction / Payment'
@@ -832,7 +790,7 @@ export default function PassbookPage() {
                               passbookTransactions.map((tx, index) => (
                                 <tr key={tx.id} className="hover:bg-gray-50/60">
                                   <td className="px-4 py-3">{index + 1}</td>
-                                  <td className="px-4 py-3 whitespace-nowrap">{formatDate(tx.created_at)}</td>
+                                  <td className="px-4 py-3 whitespace-nowrap">{formatDate(tx.transaction_date || tx.created_at)}</td>
                                   <td className="px-4 py-3">
                                     {tx.category === 'loan'
                                       ? 'Loan Deduction / Payment'

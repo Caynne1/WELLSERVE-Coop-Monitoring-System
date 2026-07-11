@@ -22,6 +22,21 @@ const VOUCHER_COLUMNS = [
   'account_type',   // 'cbu' | 'savings'
   'payment_mode',
   'reference',
+
+  // added to match the physical WELLSERVE Cash Voucher slip layout
+  // (see /mnt migration note in voucherService.js header). All optional —
+  // existing expense/withdrawal flows keep working without them.
+  'address',
+  'loan_amount',
+  'pf_amount',
+  'del_amount',
+  'pb_amount',
+  'adv_amount',
+  'amount_in_words',
+  'prepared_by_name',
+  'verified_by_name',
+  'approved_by_name',
+  'received_by_name',
 ];
 
 function sanitizeVoucherPayload(payload) {

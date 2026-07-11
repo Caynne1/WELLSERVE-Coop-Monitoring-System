@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, Search, Plus, Pencil, Ban, Eye,
-  CheckCircle, AlertTriangle, Printer, Download,
+  CheckCircle, AlertTriangle, Printer, Download, Receipt,
 } from 'lucide-react';
+import { amountToWords } from '../../utils/numberToWords';
 import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
@@ -70,6 +71,21 @@ const EMPTY_FORM = {
   account_type: '',
   payment_mode: '',
   reference: '',
+
+  // Cash Voucher slip fields (optional — mirror the physical WELLSERVE
+  // MICROFINANCE CORP. Cash Voucher form: address, account-name breakdown,
+  // amount in words, and the four signatory lines).
+  address: '',
+  loan_amount: '',
+  pf_amount: '',
+  del_amount: '',
+  pb_amount: '',
+  adv_amount: '',
+  amount_in_words: '',
+  prepared_by_name: '',
+  verified_by_name: '',
+  approved_by_name: '',
+  received_by_name: '',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -228,6 +244,181 @@ export default function VouchersPage() {
     if (win) toast.success('Print dialog opened.');
   }
 
+  // Prints a single voucher in the exact layout of the physical WELLSERVE
+  // MICROFINANCE CORP. Cash Voucher pad (Cogon, Ormoc City): No./Date header,
+  // Payee/Address, NL/RL columns, LOAN/PF/DEL/PB/ADV/TOTAL account-name
+  // breakdown with Debit/Credit, Amount in Words, Particulars/Amount, and
+  // the four signatory boxes.
+  function handlePrintSlip(voucher) {
+    const fmt = (n) => (n === null || n === undefined || n === '')
+      ? ''
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const breakdownRows = [
+      ['LOAN:', voucher.loan_amount],
+      ['PF:', voucher.pf_amount],
+      ['DEL.:', voucher.del_amount],
+      ['PB:', voucher.pb_amount],
+      ['ADV:', voucher.adv_amount],
+    ];
+
+    const breakdownTotal = breakdownRows.reduce((s, [, v]) => s + (Number(v) || 0), 0);
+    const isWithdrawal = (voucher.voucher_kind || 'expense') === 'member_withdrawal';
+    const debitAmount = voucher.amount;
+    const debitTotal = breakdownTotal > 0 ? breakdownTotal : debitAmount;
+
+    const address = voucher.address
+      || [voucher.members?.member_no ? `Member No. ${voucher.members.member_no}` : null].filter(Boolean).join(' ')
+      || '';
+
+    const amountWords = voucher.amount_in_words || amountToWords(voucher.amount);
+
+    const breakdownHtml = breakdownRows.map(([label, value]) => `
+      <tr>
+        <td class="acct-label">${label}</td>
+        <td class="debit">${fmt(value)}</td>
+        <td class="credit"></td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8"/>
+          <title>Cash Voucher — ${voucher.voucher_no}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: 'Courier New', Courier, monospace; color: #111; padding: 24px; }
+            .sheet { max-width: 720px; margin: 0 auto; border: 2px solid #000; padding: 16px 20px; }
+            .co-name { text-align: center; font-size: 20px; font-weight: 800; letter-spacing: 0.03em; margin: 0; }
+            .co-addr { text-align: center; font-size: 11px; margin: 2px 0 6px; }
+            .title-row { display: flex; align-items: center; justify-content: center; position: relative; margin: 6px 0 14px; }
+            .title-row h2 { font-size: 16px; font-weight: 800; letter-spacing: 0.06em; margin: 0; }
+            .voucher-no { position: absolute; right: 0; font-size: 13px; font-weight: 700; color: #b91c1c; }
+            .row { display: flex; gap: 10px; font-size: 12px; margin-bottom: 6px; align-items: flex-end; }
+            .row .label { font-weight: 700; white-space: nowrap; }
+            .row .line { flex: 1; border-bottom: 1px solid #000; min-height: 15px; padding: 0 4px; }
+            table.acct { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+            table.acct th, table.acct td { border: 1px solid #000; padding: 4px 6px; }
+            table.acct th { text-align: center; font-weight: 700; }
+            table.acct .nlrl-col { width: 12%; text-align: center; vertical-align: top; }
+            table.acct .acctname-col { width: 46%; }
+            table.acct .debit, table.acct .credit { width: 21%; text-align: right; }
+            .acct-label { padding-left: 18px; }
+            .total-row td { font-weight: 800; border-top: 2px solid #000; }
+            .words-row { display: flex; font-size: 12px; margin-top: 10px; gap: 8px; align-items: baseline; }
+            .words-row .label { font-weight: 700; white-space: nowrap; }
+            .words-row .line { flex: 1; border-bottom: 1px solid #000; padding: 0 4px; }
+            table.particulars { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+            table.particulars th, table.particulars td { border: 1px solid #000; padding: 6px; }
+            table.particulars th { text-align: left; font-weight: 700; }
+            table.particulars .amt-col { width: 25%; text-align: right; }
+            .sign-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+            .sign-box { border: 1px solid #000; height: 70px; padding: 6px; position: relative; }
+            .sign-box .sign-label { position: absolute; bottom: -18px; left: 0; font-size: 11px; font-weight: 700; }
+            .sign-box .sign-name { font-size: 12px; text-align: center; margin-top: 40px; }
+            .sign-wrap { margin-bottom: 24px; }
+            @page { size: A5 portrait; margin: 10mm; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">
+            <p class="co-name">WELLSERVE MICROFINANCE CORP.</p>
+            <p class="co-addr">COGON, ORMOC CITY</p>
+
+            <div class="title-row">
+              <h2>CASH VOUCHER</h2>
+              <span class="voucher-no">No. ${voucher.voucher_no || '—'}</span>
+            </div>
+
+            <div class="row">
+              <span class="label">PAYEE :</span>
+              <span class="line">${voucher.payee || ''}</span>
+              <span class="label" style="margin-left:16px;">DATE:</span>
+              <span class="line" style="flex:0 0 110px;">${formatDate(voucher.date)}</span>
+            </div>
+            <div class="row">
+              <span class="label">ADDRESS :</span>
+              <span class="line">${address}</span>
+            </div>
+
+            <table class="acct">
+              <thead>
+                <tr>
+                  <th class="nlrl-col">NL</th>
+                  <th class="nlrl-col">RL</th>
+                  <th class="acctname-col">ACCOUNT NAME</th>
+                  <th class="debit">DEBIT</th>
+                  <th class="credit">CREDIT</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td rowspan="7" class="nlrl-col"></td>
+                  <td rowspan="7" class="nlrl-col"></td>
+                  <td class="acct-label" style="font-weight:700;">${isWithdrawal ? (voucher.account_type || '').toUpperCase() || 'ACCOUNT' : 'EXPENSE'}:</td>
+                  <td class="debit"></td>
+                  <td class="credit"></td>
+                </tr>
+                ${breakdownHtml}
+                <tr class="total-row">
+                  <td class="acct-label">TOTAL:</td>
+                  <td class="debit">${fmt(debitTotal)}</td>
+                  <td class="credit">${fmt(debitAmount)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="words-row">
+              <span class="label">AMOUNT IN WORDS:</span>
+              <span class="line">${amountWords}</span>
+            </div>
+
+            <table class="particulars">
+              <thead>
+                <tr><th>PARTICULARS</th><th class="amt-col">AMOUNT</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>${voucher.purpose || ''}${voucher.notes ? `<br/><span style="color:#555;">${voucher.notes}</span>` : ''}</td>
+                  <td class="amt-col">${fmt(voucher.amount)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="sign-grid">
+              <div class="sign-wrap">
+                <div class="sign-box"><p class="sign-name">${voucher.prepared_by_name || ''}</p></div>
+                <span class="sign-label">Prepared by:</span>
+              </div>
+              <div class="sign-wrap">
+                <div class="sign-box"><p class="sign-name">${voucher.verified_by_name || ''}</p></div>
+                <span class="sign-label">Verified by:</span>
+              </div>
+              <div class="sign-wrap">
+                <div class="sign-box"><p class="sign-name">${voucher.approved_by_name || ''}</p></div>
+                <span class="sign-label">Approved by:</span>
+              </div>
+              <div class="sign-wrap">
+                <div class="sign-box"><p class="sign-name">${voucher.received_by_name || ''}</p></div>
+                <span class="sign-label">Received by:</span>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const win = printHtmlDocument(html, {
+      width: 820,
+      height: 1050,
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Voucher slip print dialog opened.');
+  }
+
   function handleExportCSV() {
     try {
       if (filtered.length === 0) { toast.error('No vouchers to export.'); return; }
@@ -276,6 +467,18 @@ export default function VouchersPage() {
       account_type: voucher.account_type || '',
       payment_mode: voucher.payment_mode || '',
       reference: voucher.reference || '',
+
+      address: voucher.address || '',
+      loan_amount: voucher.loan_amount?.toString() || '',
+      pf_amount: voucher.pf_amount?.toString() || '',
+      del_amount: voucher.del_amount?.toString() || '',
+      pb_amount: voucher.pb_amount?.toString() || '',
+      adv_amount: voucher.adv_amount?.toString() || '',
+      amount_in_words: voucher.amount_in_words || '',
+      prepared_by_name: voucher.prepared_by_name || '',
+      verified_by_name: voucher.verified_by_name || '',
+      approved_by_name: voucher.approved_by_name || '',
+      received_by_name: voucher.received_by_name || '',
     });
     setFormErr({});
     setFormOpen(true);
@@ -380,6 +583,20 @@ export default function VouchersPage() {
         amount: parseFloat(form.amount),
         notes: form.notes.trim() || null,
         created_by: user?.id ?? null,
+
+        // Cash Voucher slip fields — all optional, only sent if the user
+        // filled them in (sanitizeVoucherPayload drops empty strings).
+        address: form.address.trim() || null,
+        loan_amount: form.loan_amount === '' ? null : parseFloat(form.loan_amount),
+        pf_amount: form.pf_amount === '' ? null : parseFloat(form.pf_amount),
+        del_amount: form.del_amount === '' ? null : parseFloat(form.del_amount),
+        pb_amount: form.pb_amount === '' ? null : parseFloat(form.pb_amount),
+        adv_amount: form.adv_amount === '' ? null : parseFloat(form.adv_amount),
+        amount_in_words: form.amount_in_words.trim() || null,
+        prepared_by_name: form.prepared_by_name.trim() || null,
+        verified_by_name: form.verified_by_name.trim() || null,
+        approved_by_name: form.approved_by_name.trim() || null,
+        received_by_name: form.received_by_name.trim() || null,
       };
 
       if (form.voucher_kind === 'member_withdrawal') {
@@ -656,6 +873,14 @@ export default function VouchersPage() {
                           <Eye size={15} />
                         </button>
 
+                        <button
+                          onClick={() => handlePrintSlip(voucher)}
+                          title="Print Cash Voucher Slip"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-blue-50 transition-colors"
+                        >
+                          <Receipt size={15} />
+                        </button>
+
                         {voucher.status === 'draft' && (
                           <button
                             onClick={() => openEdit(voucher)}
@@ -923,6 +1148,69 @@ export default function VouchersPage() {
             />
           </div>
 
+          <details className="rounded-lg border border-gray-200">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg">
+              Cash Voucher slip details <span className="font-normal text-gray-400">(optional — for the printable slip)</span>
+            </summary>
+            <div className="p-3 space-y-4">
+              <Input
+                label="Payee Address"
+                type="text"
+                placeholder="Payee's address"
+                value={form.address}
+                onChange={e => setField('address', e.target.value)}
+              />
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Account Name Breakdown</label>
+                <p className="text-xs text-gray-400 mb-2">
+                  Matches the LOAN / PF / DEL / PB / ADV lines on the printed slip. Leave blank if not applicable.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Input label="LOAN" type="number" step="0.01" min="0" value={form.loan_amount} onChange={e => setField('loan_amount', e.target.value)} />
+                  <Input label="PF" type="number" step="0.01" min="0" value={form.pf_amount} onChange={e => setField('pf_amount', e.target.value)} />
+                  <Input label="DEL." type="number" step="0.01" min="0" value={form.del_amount} onChange={e => setField('del_amount', e.target.value)} />
+                  <Input label="PB" type="number" step="0.01" min="0" value={form.pb_amount} onChange={e => setField('pb_amount', e.target.value)} />
+                  <Input label="ADV" type="number" step="0.01" min="0" value={form.adv_amount} onChange={e => setField('adv_amount', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">Amount in Words</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Five Thousand Pesos and 00/100"
+                    value={form.amount_in_words}
+                    onChange={e => setField('amount_in_words', e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg
+                      focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setField('amount_in_words', amountToWords(form.amount))}
+                    disabled={!form.amount}
+                  >
+                    Auto-fill
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Signatories</label>
+                <p className="text-xs text-gray-400 mb-2">Names printed under Prepared by / Verified by / Approved by / Received by.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Prepared by" type="text" value={form.prepared_by_name} onChange={e => setField('prepared_by_name', e.target.value)} />
+                  <Input label="Verified by" type="text" value={form.verified_by_name} onChange={e => setField('verified_by_name', e.target.value)} />
+                  <Input label="Approved by" type="text" value={form.approved_by_name} onChange={e => setField('approved_by_name', e.target.value)} />
+                  <Input label="Received by" type="text" value={form.received_by_name} onChange={e => setField('received_by_name', e.target.value)} />
+                </div>
+              </div>
+            </div>
+          </details>
+
           {!editTarget && (
             <p className="text-xs text-gray-400">
               Voucher number will be assigned automatically.
@@ -1023,6 +1311,17 @@ export default function VouchersPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="flex justify-end mt-5">
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Receipt size={13} />}
+                onClick={() => handlePrintSlip(viewTarget)}
+              >
+                Print Voucher Slip
+              </Button>
             </div>
 
             {(viewTarget.status === 'draft' || viewTarget.status === 'approved') && (
