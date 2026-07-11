@@ -20,6 +20,7 @@ import {
   periodLabel,
   computeSchedule,
   computeDeductions,
+  computeTotalRoiPercent,
   buildScheduleSummary,
   applyPaymentToSchedule,
   computeLoanStatus,
@@ -34,6 +35,7 @@ export { round2, round4, safeNum, toDateStr };
 export { computeNumberOfPayments, computeNumberOfPayments as computeDisplayPeriods };
 export { computeWeeklyTotalPeriods };
 export { getRatePerPeriod, advanceDueDate };
+export { computeTotalRoiPercent };
 export { computeSchedule as generateLoanSchedule };
 export { computeDeductions as computeLoanDeductions };
 export { buildScheduleSummary, applyPaymentToSchedule, computeLoanStatus };
@@ -166,6 +168,13 @@ export function generateLoanPreview({
   const summary    = buildScheduleSummary(scheduleResult.schedule, {
     amount: principal, frequency: paymentFrequency, method: loanMethod,
   });
+  const totalLoanPayable = round2(principal + (summary.total_interest_earned || 0));
+  const totalRoiPercent = computeTotalRoiPercent(totalLoanPayable, deductions.net_proceeds);
+  const weeklyInterestRate = round4(getRatePerPeriod(monthlyInterestRate, 'weekly_fixed4') * 100);
+  const firstScheduleRow = scheduleResult.schedule[0] || {};
+  const loanPaymentPerPeriod = paymentFrequency === 'weekly'
+    ? firstScheduleRow.principal || 0
+    : firstScheduleRow.payment || 0;
 
   // ── Named deduction lookups ────────────────────────────────────────────────
   // `computeDeductions` only returns a flat `items` array + `total` +
@@ -190,9 +199,13 @@ export function generateLoanPreview({
       rate_per_period:          scheduleResult.meta?.rate_per_period ?? 0,
       // Principal + interest only (no CBU/Savings) — distinct from
       // `payment_per_period`, which already includes CBU + Savings.
-      loan_payment_per_period:  scheduleResult.schedule[0]?.payment || 0,
+      loan_payment_per_period:  loanPaymentPerPeriod,
+      monthly_interest_rate:    round4(monthlyInterestRate),
+      weekly_interest_rate:     weeklyInterestRate,
+      total_loan_payable:       totalLoanPayable,
       total_cash_out:          deductions.net_proceeds,
-      total_payments_collected: scheduleResult.totals.total_payment,
+      total_payments_collected: totalLoanPayable,
+      total_roi_percent:        totalRoiPercent,
     },
     deductions: {
       ...deductions,
@@ -200,6 +213,7 @@ export function generateLoanPreview({
       cbu_retention:    findDeductionAmount(/cbu \(share capital\)/i),
       insurance:        findDeductionAmount(/protection|clpp|insurance/i),
       notarial_fee:     findDeductionAmount(/notarial/i),
+      annual_dues:      findDeductionAmount(/annual/i),
       total_deductions: deductions.total,
     },
   };

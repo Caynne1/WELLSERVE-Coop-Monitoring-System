@@ -819,8 +819,8 @@ export default function LoanFormPage() {
       return;
     }
 
-    setValue('monthly_amortization', String(round2(preview.summary.payment_per_period)));
-    setValue('total_loan_payable', String(round2(preview.summary.total_payments_collected)));
+    setValue('monthly_amortization', String(round2(preview.summary.loan_payment_per_period || preview.summary.payment_per_period)));
+    setValue('total_loan_payable', String(round2(preview.summary.total_loan_payable)));
     setValue('loan_insurance', String(round2(preview.deductions.insurance)));
   }, [preview, setValue]);
 
@@ -1033,19 +1033,15 @@ export default function LoanFormPage() {
     const memberName = [selectedMember?.first_name, selectedMember?.last_name].filter(Boolean).join(' ') || '—';
     const printedAt = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
 
-    const scheduleRowsHTML = preview.schedule.map(row => {
-      const freqTotal = round2(row.total_due != null ? row.total_due : (row.principal || 0) + (row.interest || 0));
-      return `
+    const scheduleRowsHTML = preview.schedule.map(row => `
         <tr>
           <td>${row.period}</td>
           <td>${formatCurrency(row.balance || 0)}</td>
           <td>${formatCurrency(row.principal || 0)}</td>
           <td>${formatCurrency(row.interest || 0)}</td>
-          <td>${formatCurrency(freqTotal)}</td>
           <td>${formatDate(row.due_date)}</td>
         </tr>
-      `;
-    }).join('');
+      `).join('');
 
     const contentHtml = `
       <div class="doc-meta-row">
@@ -1066,7 +1062,8 @@ export default function LoanFormPage() {
         <div class="col">
           <h3>Loan Terms</h3>
           ${loanFormKvRow('Loan Proposal', formatCurrency(proposalAmount))}
-          ${loanFormKvRow('Interest Rate', `${values.interest_rate || 0}% / month`)}
+          ${loanFormKvRow('Monthly Interest Rate', `${preview.summary.monthly_interest_rate ?? values.interest_rate ?? 0}%`)}
+          ${loanFormKvRow('Weekly Interest Rate', `${preview.summary.weekly_interest_rate ?? 0}%`)}
           ${loanFormKvRow('Term', `${values.term_months || 0} months`)}
           ${loanFormKvRow('Frequency', frequencyDisplayLabel(watchedFrequency))}
           ${loanFormKvRow('Method', titleCase(watchedMethod))}
@@ -1082,16 +1079,17 @@ export default function LoanFormPage() {
           ${loanFormKvRow('Notarial Fee', formatCurrency(preview.deductions.notarial_fee))}
           ${loanFormKvRow('Insurance', formatCurrency(preview.deductions.insurance))}
           ${loanFormKvRow('Total Deductions', formatCurrency(preview.deductions.total_deductions))}
-          ${loanFormKvRow('Net Proceeds', formatCurrency(preview.deductions.net_proceeds), true)}
         </div>
         <div class="col">
           <h3>Computed Summary</h3>
           ${loanFormKvRow('No. of Payments', preview.summary.number_of_payments)}
-          ${loanFormKvRow('Rate / Period', `${preview.summary.rate_per_period}%`)}
+          ${loanFormKvRow('Monthly Interest Rate', `${preview.summary.monthly_interest_rate ?? values.interest_rate ?? 0}%`)}
+          ${loanFormKvRow('Weekly Interest Rate', `${preview.summary.weekly_interest_rate ?? 0}%`)}
           ${loanFormKvRow('Loan Payment / Period', formatCurrency(preview.summary.loan_payment_per_period))}
-          ${loanFormKvRow('Total / Period (w/ CBU+Savings)', formatCurrency(preview.summary.payment_per_period))}
           ${loanFormKvRow('Total Interest', formatCurrency(preview.summary.total_interest_earned))}
-          ${loanFormKvRow('Total Payable', formatCurrency(preview.summary.total_payments_collected), true)}
+          ${loanFormKvRow('ROI (%)', `${preview.summary.total_roi_percent}%`)}
+          ${loanFormKvRow('Total Loan Payable', formatCurrency(preview.summary.total_loan_payable), true)}
+          ${loanFormKvRow('Net Proceeds', formatCurrency(preview.deductions.net_proceeds), true)}
         </div>
       </div>
 
@@ -1106,7 +1104,6 @@ export default function LoanFormPage() {
             <th style="text-align:left">Principal</th>
             <th>Principal Amort.</th>
             <th>Interest</th>
-            <th>${frequencyDisplayLabel(watchedFrequency)} Total</th>
             <th>Due Date</th>
           </tr>
         </thead>
@@ -1123,8 +1120,8 @@ export default function LoanFormPage() {
           <span class="tot-value">${formatCurrency(preview.summary.total_interest_earned)}</span>
         </div>
         <div class="tot-item">
-          <span class="tot-label">Total Payable</span>
-          <span class="tot-value">${formatCurrency(preview.summary.total_payments_collected)}</span>
+          <span class="tot-label">Total Loan Payable</span>
+          <span class="tot-value">${formatCurrency(preview.summary.total_loan_payable)}</span>
         </div>
       </div>
 
@@ -1195,8 +1192,8 @@ export default function LoanFormPage() {
         source: 'manual',
         amount: principalAmount,
         balance: principalAmount,
-        monthly_amortization: round2(preview.summary?.payment_per_period || 0),
-        total_loan_payable: round2(preview.summary?.total_payments_collected || 0),
+        monthly_amortization: round2(preview.summary?.loan_payment_per_period || preview.summary?.payment_per_period || 0),
+        total_loan_payable: round2(preview.summary?.total_loan_payable || 0),
         service_fee: chargeIncluded.service_fee ? round2(preview.deductions?.items?.find(d => d.label?.toLowerCase().includes('service'))?.amount
           || preview.deductions?.service_fee || 0) : 0,
         loan_insurance: chargeIncluded.insurance ? round2(preview.deductions?.items?.find(d =>
@@ -1574,9 +1571,9 @@ export default function LoanFormPage() {
 
             <div>
               <Input
-                label="Preview Payment / Period"
+                label="Loan Payment / Period"
                 readOnly
-                value={preview ? formatCurrency(preview.summary.payment_per_period) : ''}
+                value={preview ? formatCurrency(preview.summary.loan_payment_per_period) : ''}
               />
               <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Auto-calculated — read only</p>
             </div>
@@ -1884,117 +1881,73 @@ export default function LoanFormPage() {
               <h3 className="text-sm font-semibold text-gray-700">Loan Preview</h3>
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePreview}
-              icon={<Eye size={14} />}
-            >
-              Preview Schedule
-            </Button>
           </div>
 
           {!preview ? (
-            <p className="text-sm text-gray-400">
-              Enter loan details first to generate a preview.
-            </p>
+            <div className="py-8 text-center border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
+              <Calculator size={22} className="mx-auto text-gray-300 mb-2" />
+              <p className="text-sm font-medium text-gray-500">No preview generated yet</p>
+              <p className="text-xs text-gray-400 mt-1">Enter loan details, then click Preview Schedule.</p>
+            </div>
           ) : (
             <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <CalcCard
-                  label="Method"
-                  value={watchedMethod === 'straight' ? 'Straight' : 'Diminishing'}
-                />
-                <CalcCard
-                  label="Frequency"
-                  value={frequencyDisplayLabel(watchedFrequency)}
-                />
-                <CalcCard
-                  label="No. of Payments"
-                  value={String(preview.summary.number_of_payments)}
-                />
-                <CalcCard
-                  label="Monthly Rate"
-                  value={`${preview.summary.rate_per_period}%`}
-                />
-                <CalcCard
-                  label="Loan Payment / Period"
-                  value={formatCurrency(preview.summary.loan_payment_per_period)}
-                  highlight
-                />
-                <CalcCard
-                  label="Total / Period (w/ CBU+Savings)"
-                  value={formatCurrency(preview.summary.payment_per_period)}
-                  highlight
-                />
-                <CalcCard
-                  label="Total Principal"
-                  value={formatCurrency(preview.summary.total_principal_collected)}
-                />
-                <CalcCard
-                  label="Total Interest"
-                  value={formatCurrency(preview.summary.total_interest_earned)}
-                />
-                <CalcCard
-                  label="Total Payments"
-                  value={formatCurrency(preview.summary.total_payments_collected)}
-                />
-                <CalcCard
-                  label="ROI"
-                  value={`${preview.summary.total_roi_percent}%`}
-                />
-                <CalcCard
-                  label="Service Fee"
-                  value={formatCurrency(preview.deductions.service_fee)}
-                />
-                <CalcCard
-                  label="CBU Retention"
-                  value={formatCurrency(preview.deductions.cbu_retention)}
-                />
-                <CalcCard
-                  label="Insurance"
-                  value={formatCurrency(preview.deductions.insurance)}
-                />
-                <CalcCard
-                  label="Notarial Fee"
-                  value={formatCurrency(preview.deductions.notarial_fee)}
-                />
-                <CalcCard
-                  label="Total Deductions"
-                  value={formatCurrency(preview.deductions.total_deductions)}
-                />
-                <CalcCard
-                  label="Net Proceeds"
-                  value={formatCurrency(preview.deductions.net_proceeds)}
-                  highlight
-                />
-                {parseFloat(watchedPenaltyDue || 0) > 0 && (
-                  <CalcCard label="Penalty Due" value={formatCurrency(parseFloat(watchedPenaltyDue))} />
-                )}
-                {parseFloat(watchedAnnualDues || 0) > 0 && (
-                  <CalcCard label="Annual Due" value={formatCurrency(parseFloat(watchedAnnualDues))} />
-                )}
-                {parseFloat(watchedCbuCompletion || 0) > 0 && (
-                  <CalcCard label="CBU Completion" value={formatCurrency(parseFloat(watchedCbuCompletion))} />
-                )}
-                {parseFloat(watchedPettyCash || 0) > 0 && (
-                  <CalcCard label="Petty Cash" value={formatCurrency(parseFloat(watchedPettyCash))} />
-                )}
-                {chargeIncluded.membership_regulatory_fee && parseFloat(watchedMembershipRegulatoryFee || 0) > 0 && (
-                  <CalcCard label="Regulatory Fee (Membership)" value={formatCurrency(parseFloat(watchedMembershipRegulatoryFee))} />
-                )}
-                {chargeIncluded.membership_initial_savings && parseFloat(watchedMembershipInitialSavings || 0) > 0 && (
-                  <CalcCard label="Initial Savings Deposit" value={formatCurrency(parseFloat(watchedMembershipInitialSavings))} />
-                )}
-                {chargeIncluded.membership_vip_card && parseFloat(watchedMembershipVipCard || 0) > 0 && (
-                  <CalcCard label="WELLife VIP Card" value={formatCurrency(parseFloat(watchedMembershipVipCard))} />
-                )}
-                {coMakerRequired && (
-                  <CalcCard
-                    label="Co-Maker"
-                    value={watchedCoMakerName?.trim() ? watchedCoMakerName : 'Required — not yet filled in'}
-                  />
-                )}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <PreviewStat label="Net Proceeds" value={formatCurrency(preview.deductions.net_proceeds)} tone="green" />
+                <PreviewStat label="Payment / Period" value={formatCurrency(preview.summary.loan_payment_per_period)} tone="blue" />
+                <PreviewStat label="Total Payable" value={formatCurrency(preview.summary.total_loan_payable)} />
+                <PreviewStat label="ROI" value={`${preview.summary.total_roi_percent}%`} />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div className="space-y-4">
+                  <PreviewGroup title="Terms">
+                    <PreviewRow label="Method" value={watchedMethod === 'straight' ? 'Straight' : 'Diminishing'} />
+                    <PreviewRow label="Frequency" value={frequencyDisplayLabel(watchedFrequency)} />
+                    <PreviewRow label="No. of Payments" value={String(preview.summary.number_of_payments)} />
+                    <PreviewRow label="Monthly Interest Rate" value={`${preview.summary.monthly_interest_rate ?? watchedRate ?? 0}%`} />
+                    <PreviewRow label="Weekly Interest Rate" value={`${preview.summary.weekly_interest_rate ?? 0}%`} />
+                    {coMakerRequired && (
+                      <PreviewRow label="Co-Maker" value={watchedCoMakerName?.trim() ? watchedCoMakerName : 'Required - not yet filled in'} />
+                    )}
+                  </PreviewGroup>
+                </div>
+
+                <div className="lg:col-span-2 space-y-4">
+                  <PreviewGroup title="Loan Totals">
+                    <PreviewRow label="Total Principal" value={formatCurrency(preview.summary.total_principal_collected)} strong />
+                    <PreviewRow label="Total Interest Earned" value={formatCurrency(preview.summary.total_interest_earned)} strong />
+                    <PreviewRow label="Total Payments Collected" value={formatCurrency(preview.summary.total_loan_payable)} strong />
+                    <PreviewRow label="Total Deductions" value={formatCurrency(preview.deductions.total_deductions)} />
+                  </PreviewGroup>
+
+                  <PreviewGroup title="Deductions">
+                    <PreviewRow label="Service Fee" value={formatCurrency(preview.deductions.service_fee)} />
+                    <PreviewRow label="CBU Retention" value={formatCurrency(preview.deductions.cbu_retention)} />
+                    <PreviewRow label="Insurance" value={formatCurrency(preview.deductions.insurance)} />
+                    <PreviewRow label="Notarial Fee" value={formatCurrency(preview.deductions.notarial_fee)} />
+                    {parseFloat(watchedPenaltyDue || 0) > 0 && (
+                      <PreviewRow label="Penalty Due" value={formatCurrency(parseFloat(watchedPenaltyDue))} />
+                    )}
+                    {parseFloat(watchedAnnualDues || 0) > 0 && (
+                      <PreviewRow label="Annual Due" value={formatCurrency(parseFloat(watchedAnnualDues))} />
+                    )}
+                    {parseFloat(watchedCbuCompletion || 0) > 0 && (
+                      <PreviewRow label="CBU Completion" value={formatCurrency(parseFloat(watchedCbuCompletion))} />
+                    )}
+                    {parseFloat(watchedPettyCash || 0) > 0 && (
+                      <PreviewRow label="Petty Cash" value={formatCurrency(parseFloat(watchedPettyCash))} />
+                    )}
+                    {chargeIncluded.membership_regulatory_fee && parseFloat(watchedMembershipRegulatoryFee || 0) > 0 && (
+                      <PreviewRow label="Regulatory Fee (Membership)" value={formatCurrency(parseFloat(watchedMembershipRegulatoryFee))} />
+                    )}
+                    {chargeIncluded.membership_initial_savings && parseFloat(watchedMembershipInitialSavings || 0) > 0 && (
+                      <PreviewRow label="Initial Savings Deposit" value={formatCurrency(parseFloat(watchedMembershipInitialSavings))} />
+                    )}
+                    {chargeIncluded.membership_vip_card && parseFloat(watchedMembershipVipCard || 0) > 0 && (
+                      <PreviewRow label="WELLife VIP Card" value={formatCurrency(parseFloat(watchedMembershipVipCard))} />
+                    )}
+                  </PreviewGroup>
+                </div>
               </div>
 
               <div>
@@ -2008,7 +1961,6 @@ export default function LoanFormPage() {
                           'Principal',
                           'Principal Amort.',
                           'Interest',
-                          (watchedFrequency === 'semi_monthly' || watchedFrequency === 'semi_monthly_old') ? 'Kinsenas Total' : (watchedFrequency === 'weekly' || watchedFrequency === 'weekly_fixed4') ? 'Weekly Total' : watchedFrequency === 'yearly' ? 'Yearly Total' : watchedFrequency === 'quarterly' ? 'Quarterly Total' : 'Monthly Total',
                           'Due Date',
                         ].map(h => (
                           <th
@@ -2021,19 +1973,15 @@ export default function LoanFormPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {preview.schedule.map(row => {
-                        const freqTotal = round2((row.total_due != null ? row.total_due : (row.principal || 0) + (row.interest || 0)));
-                        return (
+                      {preview.schedule.map(row => (
                           <tr key={row.period} className="hover:bg-gray-50/60 text-gray-700">
                             <td className="px-3 py-2 font-mono">{row.period}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.balance || 0)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.principal || 0)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatCurrency(row.interest || 0)}</td>
-                            <td className="px-3 py-2 whitespace-nowrap font-semibold">{formatCurrency(freqTotal)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.due_date)}</td>
                           </tr>
-                        );
-                      })}
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -2049,6 +1997,14 @@ export default function LoanFormPage() {
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => navigate('/loans')}>
             Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handlePreview}
+            icon={<Eye size={15} />}
+          >
+            Preview Schedule
           </Button>
           <Button
             type="button"
@@ -2073,11 +2029,41 @@ export default function LoanFormPage() {
   );
 }
 
-function CalcCard({ label, value, highlight }) {
+function PreviewStat({ label, value, tone }) {
+  const toneClass = tone === 'green'
+    ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+    : tone === 'blue'
+      ? 'bg-blue-50 border-blue-100 text-blue-700'
+      : 'bg-gray-50 border-gray-100 text-gray-800';
+
   return (
-    <div className={`rounded-lg p-3 border ${highlight ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'}`}>
-      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className={`text-sm font-semibold ${highlight ? 'text-blue-700' : 'text-gray-800'}`}>{value}</p>
+    <div className={`rounded-lg p-3 border ${toneClass}`}>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className="text-base font-bold leading-tight break-words">{value}</p>
+    </div>
+  );
+}
+
+function PreviewGroup({ title, children }) {
+  return (
+    <div className="border border-gray-100 rounded-lg overflow-hidden">
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h4>
+      </div>
+      <div className="divide-y divide-gray-50">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PreviewRow({ label, value, strong = false }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-3 py-2.5">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className={`text-sm text-right ${strong ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
+        {value}
+      </span>
     </div>
   );
 }

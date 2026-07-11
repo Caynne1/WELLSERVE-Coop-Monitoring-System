@@ -131,9 +131,17 @@ export function computeNumberOfPayments(termMonths, frequency = 'monthly') {
  */
 export function getRatePerPeriod(monthlyRatePercent, frequency = 'monthly') {
   const monthly = safeNum(monthlyRatePercent) / 100;
+  if (frequency === 'weekly') return round4(monthly / 4);
   const cfg = FREQUENCY[frequency] || FREQUENCY.monthly;
   // Periods per month = periodsPerYear / 12
   return round2(monthly / (cfg.periodsPerYear / 12) * 10000) / 10000;
+}
+
+export function computeTotalRoiPercent(totalPaymentsCollected = 0, totalCashOut = 0) {
+  const payments = safeNum(totalPaymentsCollected);
+  const cashOut = safeNum(totalCashOut);
+  if (cashOut <= 0) return 0;
+  return round2(((payments - cashOut) / cashOut) * 100);
 }
 
 /**
@@ -273,7 +281,7 @@ export function computeSchedule({
   // divisor is simply the (integer) number of payments, and interest is
   // still computed normally.
   const isOldWeeklyFrequency = frequency === 'weekly';
-  const isOldNoInterestFrequency = isOldWeeklyFrequency || frequency === 'monthly_old' || frequency === 'semi_monthly_old';
+  const isOldNoInterestFrequency = frequency === 'monthly_old' || frequency === 'semi_monthly_old';
   const weeklyTotalExact = safeNum(termMonths) * 30 / 7; // full precision, not pre-rounded
   const principalDivisor = (isOldWeeklyFrequency && numPaymentsOverride == null)
     ? Math.max(weeklyTotalExact, 0.0001)
@@ -534,6 +542,7 @@ export function buildScheduleSummary(schedule, loanParams = {}) {
   const totalCbu = round2(schedule.reduce((s, r) => s + (r.cbu_paid || 0), 0));
   const totalSavings = round2(schedule.reduce((s, r) => s + (r.savings_paid || 0), 0));
   const totalPayment = round2(totalPrincipal + totalInterest + totalCbu + totalSavings);
+  const totalLoanPayable = round2(totalPrincipal + totalInterest);
 
   const principal = safeNum(loanParams.amount ?? loanParams.loan_amount ?? totalPrincipal);
   const roiPercent = principal > 0 ? round2((totalInterest / principal) * 100) : 0;
@@ -549,7 +558,8 @@ export function buildScheduleSummary(schedule, loanParams = {}) {
     total_interest_earned: totalInterest,
     total_cbu_collected: totalCbu,
     total_savings_collected: totalSavings,
-    total_payments_collected: totalPayment,
+    total_loan_payable: totalLoanPayable,
+    total_payments_collected: totalLoanPayable,
     total_roi_percent: roiPercent,
     next_due_date: nextUnpaid?.due_date || null,
     next_due_amount: round2(nextUnpaid?.remaining_due ?? nextUnpaid?.total_due ?? nextUnpaid?.payment ?? 0),
@@ -646,6 +656,11 @@ export function buildLoanRecord(params, source = LOAN_SOURCE.MANUAL, importedSch
     frequency,
     method,
   });
+  summary.total_cash_out = deductions.net_proceeds;
+  summary.total_roi_percent = computeTotalRoiPercent(
+    summary.total_loan_payable ?? round2(totals.principal + totals.interest),
+    deductions.net_proceeds
+  );
 
   // ── Due date ───────────────────────────────────────────────────────────────
   const nextUnpaid = schedule.find(r => !r.paid);
@@ -682,7 +697,7 @@ export function buildLoanRecord(params, source = LOAN_SOURCE.MANUAL, importedSch
     previous_loan_balance: deductions.items.find(d => d.label?.toLowerCase().includes('previous'))?.amount || 0,
     annual_dues: deductions.items.find(d => d.label?.toLowerCase().includes('annual'))?.amount || 0,
     notarial_fee: deductions.items.find(d => d.label?.toLowerCase().includes('notarial'))?.amount || safeNum(params.notarialFee),
-    total_loan_payable: totals.total_payment,
+    total_loan_payable: round2(totals.principal + totals.interest),
 
     // CBU & savings per period
     cbu_per_period: safeNum(cbuPerPeriod),

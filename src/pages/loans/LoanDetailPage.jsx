@@ -29,6 +29,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
 import {
   buildScheduleByFrequency,
+  computeTotalRoiPercent,
   frequencyDisplayLabel,
   frequencyPeriodLabel,
 } from '../../utils/loanCalculator';
@@ -61,6 +62,62 @@ function parseJsonSafely(value, fallback = null) {
 function titleCase(value) {
   if (!value) return '—';
   return String(value).replaceAll('_', ' ').replace(/\b\w/g, m => m.toUpperCase());
+}
+
+function round2(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function round4(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
+}
+
+function periodsPerMonth(frequency = 'monthly') {
+  const map = {
+    weekly: 4,
+    weekly_fixed4: 4,
+    semi_monthly: 2,
+    semi_monthly_old: 2,
+    monthly: 1,
+    monthly_old: 1,
+    chattel: 1,
+    quarterly: 1 / 3,
+    yearly: 1 / 12,
+  };
+  return map[frequency] || 1;
+}
+
+function estimateInterestFromTerms(loan, rows, monthlyRate) {
+  const principal = Number(loan?.amount || 0);
+  const rate = Number(monthlyRate || 0) / 100;
+  const frequency = loan?.repayment_frequency || 'monthly';
+  const weeklyOldTotal = frequency === 'weekly'
+    ? Number(loan?.term_months || 0) * 30 / 7
+    : 0;
+  const count = frequency === 'weekly' && weeklyOldTotal > 0
+    ? Math.ceil(weeklyOldTotal)
+    : Math.max(1, rows?.length || 0);
+  if (principal <= 0 || rate <= 0 || count <= 0) return 0;
+
+  const ratePerPeriod = frequency === 'weekly'
+    ? rate / 4
+    : rate / periodsPerMonth(frequency);
+  if ((loan?.loan_method || '').toLowerCase() === 'straight') {
+    return round2(principal * ratePerPeriod * count);
+  }
+
+  const amort = frequency === 'weekly' && weeklyOldTotal > 0
+    ? round2(principal / weeklyOldTotal)
+    : principal / count;
+  let balance = principal;
+  let interest = 0;
+  for (let i = 0; i < count; i += 1) {
+    const beginBalance = round2(balance);
+    interest = round2(interest + round2(beginBalance * ratePerPeriod));
+    const principalAmort = i === count - 1 ? beginBalance : amort;
+    balance = Math.max(0, round2(beginBalance - principalAmort));
+  }
+  return round2(interest);
 }
 
 // ─── Print helpers ────────────────────────────────────────────────────────────
@@ -406,9 +463,51 @@ export default function LoanDetailPage() {
   // ── Totals for footer row ──────────────────────────────────────────────────
   const totalPrincipal = scheduleRows.reduce((s, r) => s + (r.principal_amount ?? r.principal ?? 0), 0);
   const totalInterest  = scheduleRows.reduce((s, r) => s + (r.interest_amount  ?? r.interest  ?? 0), 0);
-  const totalCBU       = scheduleRows.reduce((s, r) => s + (r.cbu_amount       ?? 0), 0);
-  const totalSavings   = scheduleRows.reduce((s, r) => s + (r.savings_amount   ?? 0), 0);
-  const totalDue       = scheduleRows.reduce((s, r) => s + (r.total_due        ?? r.payment   ?? 0), 0);
+  const deductionItems = Array.isArray(previewDeductions?.items) ? previewDeductions.items : [];
+  const deductionAmount = (matcher, fallback = 0) => {
+    const item = deductionItems.find(d => matcher.test(d.label || ''));
+    return item ? Number(item.amount || 0) : Number(fallback || 0);
+  };
+  const monthlyInterestRate = previewSummary?.monthly_interest_rate != null
+    ? Number(previewSummary.monthly_interest_rate)
+    : Number(loan.interest_rate || 0);
+  const weeklyInterestRate = previewSummary?.weekly_interest_rate != null
+    ? Number(previewSummary.weekly_interest_rate)
+    : round4(monthlyInterestRate / 4);
+  const ratePerPeriod = previewSummary?.rate_per_period ?? previewSummary?.rate_per_period_percent ?? 0;
+  const summaryInterest = Number(previewSummary?.total_interest_earned || 0);
+  const summaryPayments = Number(previewSummary?.total_payments_collected || previewSummary?.total_loan_payable || loan.total_loan_payable || 0);
+  const estimatedInterest = estimateInterestFromTerms(loan, scheduleRows, monthlyInterestRate);
+  const computedTotalInterest = summaryInterest > 0
+    ? summaryInterest
+    : totalInterest > 0
+      ? totalInterest
+      : summaryPayments > (loan.amount || 0)
+        ? round2(summaryPayments - (loan.amount || 0))
+        : estimatedInterest;
+  const summaryLoanPayable = Number(previewSummary?.total_loan_payable || 0);
+  const computedTotalLoanPayable = summaryLoanPayable > (loan.amount || 0)
+    ? summaryLoanPayable
+    : round2((loan.amount || totalPrincipal) + computedTotalInterest);
+  const computedPaymentPerPeriod =
+    previewSummary?.loan_payment_per_period ??
+    previewSummary?.payment_per_period ??
+    loan.monthly_amortization ??
+    0;
+  const totalCashOut = Number(
+    previewSummary?.total_cash_out ??
+    previewDeductions?.net_proceeds ??
+    ((loan.amount || 0) - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0))
+  );
+  const summaryRoi = Number(previewSummary?.total_roi_percent || 0);
+  const computedRoi = totalCashOut > 0
+    ? computeTotalRoiPercent(computedTotalLoanPayable, totalCashOut)
+    : summaryRoi > 0
+      ? summaryRoi
+      : loan.amount > 0
+        ? round2((computedTotalInterest / loan.amount) * 100)
+        : 0;
+  const annualDuesAmount = previewDeductions?.annual_dues ?? deductionAmount(/annual/i, loan.annual_dues || 0);
 
   // ── Schedule table rows HTML ───────────────────────────────────────────────
   function scheduleRowsHTML(rows) {
@@ -422,9 +521,6 @@ export default function LoanDetailPage() {
           <td>${row.beginning_balance != null ? formatCurrency(row.beginning_balance) : '—'}</td>
           <td>${formatCurrency(row.principal_amount ?? row.principal ?? 0)}</td>
           <td>${formatCurrency(row.interest_amount  ?? row.interest  ?? 0)}</td>
-          <td>${formatCurrency(row.cbu_amount     ?? 0)}</td>
-          <td>${formatCurrency(row.savings_amount ?? 0)}</td>
-          <td><strong>${formatCurrency(row.total_due ?? row.payment ?? 0)}</strong></td>
           <td>${formatCurrency(row.ending_balance ?? row.balance ?? 0)}</td>
           <td>
             <span class="status-pill" style="background:${style.bg};color:${style.color}">
@@ -444,9 +540,6 @@ export default function LoanDetailPage() {
           <td colspan="3">Totals (${scheduleRows.length} payments)</td>
           <td>${formatCurrency(totalPrincipal)}</td>
           <td>${formatCurrency(totalInterest)}</td>
-          <td>${formatCurrency(totalCBU)}</td>
-          <td>${formatCurrency(totalSavings)}</td>
-          <td><strong>${formatCurrency(totalDue)}</strong></td>
           <td colspan="2"></td>
         </tr>
       </tfoot>
@@ -481,11 +574,12 @@ export default function LoanDetailPage() {
             <h3>Loan Terms</h3>
             ${kvRow('Loan Amount', formatCurrency(loan.amount))}
             ${kvRow('Outstanding Balance', formatCurrency(loan.balance ?? loan.amount), true)}
-            ${kvRow('Interest Rate', loan.interest_rate ? `${loan.interest_rate}% / month` : '—')}
+            ${kvRow('Monthly Interest Rate', `${round2(monthlyInterestRate)}%`)}
+            ${kvRow('Weekly Interest', `${round4(weeklyInterestRate)}%`)}
             ${kvRow('Term', loan.term_months ? `${loan.term_months} months` : '—')}
             ${kvRow('Frequency', frequencyDisplayLabel(loan.repayment_frequency || 'monthly'))}
             ${kvRow('Method', titleCase(loan.loan_method || 'diminishing'))}
-            ${kvRow('Payment / Period', formatCurrency(previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0), true)}
+            ${kvRow('Payment / Period', formatCurrency(computedPaymentPerPeriod), true)}
             ${kvRow('Release Date', formatDate(loan.release_date))}
             ${kvRow('Due Date', formatDate(loan.due_date))}
           </div>
@@ -501,14 +595,16 @@ export default function LoanDetailPage() {
             ${kvRow(`Insurance (${titleCase(loan.insurance_mode || 'fixed')})`, formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0))}
             ${kvRow('CBU', formatCurrency(loan.share_capital ?? 0))}
             ${kvRow('Regular Savings', formatCurrency(loan.regular_savings ?? 0))}
+            ${kvRow('Annual Dues', formatCurrency(annualDuesAmount))}
             ${kvRow('Total Deductions', formatCurrency(previewDeductions?.total_deductions ?? 0))}
           </div>
           <div class="col">
             <h3>Computed Summary</h3>
             ${kvRow('No. of Payments', previewSummary?.number_of_payments ?? scheduleRows.length)}
-            ${kvRow('Rate / Period', `${previewSummary?.rate_per_period_percent ?? 0}%`)}
-            ${kvRow('Total Interest', formatCurrency(previewSummary?.total_interest_earned ?? totalInterest))}
-            ${kvRow('Total Payable', formatCurrency(previewSummary?.total_payments_collected ?? totalDue))}
+            ${kvRow('Rate / Period', `${ratePerPeriod}%`)}
+            ${kvRow('Total Interest', formatCurrency(computedTotalInterest))}
+            ${kvRow('ROI (%)', `${computedRoi}%`)}
+            ${kvRow('Total Payments', formatCurrency(computedTotalLoanPayable))}
             ${kvRow('Net Proceeds', formatCurrency(previewDeductions?.net_proceeds ?? loan.amount ?? 0), true)}
           </div>
         </div>
@@ -525,9 +621,6 @@ export default function LoanDetailPage() {
               <th>Beg. Balance</th>
               <th>Principal</th>
               <th>Interest</th>
-              <th>CBU</th>
-              <th>Savings</th>
-              <th>Total Due</th>
               <th>End. Balance</th>
               <th>Status</th>
             </tr>
@@ -547,7 +640,7 @@ export default function LoanDetailPage() {
           </div>
           <div class="tot-item">
             <span class="tot-label">Total Payable</span>
-            <span class="tot-value">${formatCurrency(totalDue)}</span>
+            <span class="tot-value">${formatCurrency(computedTotalLoanPayable)}</span>
           </div>
         </div>
 
@@ -691,9 +784,6 @@ export default function LoanDetailPage() {
               <th style="text-align:left">Due Date</th>
               <th>Principal</th>
               <th>Interest</th>
-              <th>CBU</th>
-              <th>Savings</th>
-              <th>Total Due</th>
               <th>Balance</th>
               <th>Status</th>
             </tr>
@@ -709,9 +799,6 @@ export default function LoanDetailPage() {
                   <td>${formatDate(row.due_date)}</td>
                   <td>${formatCurrency(row.principal_amount ?? row.principal ?? 0)}</td>
                   <td>${formatCurrency(row.interest_amount  ?? row.interest  ?? 0)}</td>
-                  <td>${formatCurrency(row.cbu_amount     ?? 0)}</td>
-                  <td>${formatCurrency(row.savings_amount ?? 0)}</td>
-                  <td><strong>${formatCurrency(row.total_due ?? row.payment ?? 0)}</strong></td>
                   <td>${formatCurrency(row.ending_balance ?? row.balance ?? 0)}</td>
                   <td>
                     <span class="status-pill" style="background:${style.bg};color:${style.color}">
@@ -727,9 +814,6 @@ export default function LoanDetailPage() {
               <td colspan="2">Totals</td>
               <td>${formatCurrency(totalPrincipal)}</td>
               <td>${formatCurrency(totalInterest)}</td>
-              <td>${formatCurrency(totalCBU)}</td>
-              <td>${formatCurrency(totalSavings)}</td>
-              <td><strong>${formatCurrency(totalDue)}</strong></td>
               <td colspan="2"></td>
             </tr>
           </tfoot>
@@ -774,11 +858,15 @@ export default function LoanDetailPage() {
         ['Loan No.', loan.loan_no || '—'],
         ['Loan Amount', loan.amount || 0],
         ['Outstanding Balance', loan.balance ?? loan.amount ?? 0],
-        ['Monthly Interest Rate', loan.interest_rate ? `${loan.interest_rate}%` : '—'],
+        ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
+        ['Weekly Interest', `${round4(weeklyInterestRate)}%`],
         ['Term', loan.term_months ? `${loan.term_months} months` : '—'],
         ['Payment Frequency', frequencyDisplayLabel(loan.repayment_frequency || 'monthly')],
         ['Loan Method', titleCase(loan.loan_method || 'diminishing')],
-        ['Payment / Period', previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0],
+        ['Payment / Period', computedPaymentPerPeriod],
+        ['Total Interest Earned', computedTotalInterest],
+        ['Total Payments Collected', computedTotalLoanPayable],
+        ['Total ROI (%)', `${computedRoi}%`],
         ['Release Date', formatDate(loan.release_date)],
         ['Due Date', formatDate(loan.due_date)],
         ['Status', loan.status || '—'],
@@ -799,6 +887,7 @@ export default function LoanDetailPage() {
         ['Insurance', previewDeductions?.insurance ?? loan.loan_insurance ?? 0],
         ['CBU', loan.share_capital ?? 0],
         ['Regular Savings', loan.regular_savings ?? 0],
+        ['Annual Dues', annualDuesAmount],
         ['Total Deductions', previewDeductions?.total_deductions ?? 0],
         ['Net Proceeds', previewDeductions?.net_proceeds ?? (loan.amount || 0)],
       ]);
@@ -810,9 +899,6 @@ export default function LoanDetailPage() {
           'Beginning Balance': row.beginning_balance ?? '',
           Principal: row.principal_amount ?? row.principal ?? 0,
           Interest: row.interest_amount ?? row.interest ?? 0,
-          CBU: row.cbu_amount ?? 0,
-          Savings: row.savings_amount ?? 0,
-          'Total Due': row.total_due ?? row.payment ?? 0,
           'Ending Balance': row.ending_balance ?? row.balance ?? 0,
           Status: titleCase(row.status || 'unpaid'),
         }))
@@ -889,18 +975,18 @@ export default function LoanDetailPage() {
               ['Loan Type', <Badge key="loan_type" variant={loan.loan_type === 'existing' ? 'warning' : 'success'}>{loan.loan_type === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
               ['Loan Principal', formatCurrency(loan.amount)],
               ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(loan.balance ?? loan.amount)}</span>],
-              ['Monthly Interest Rate', loan.interest_rate ? `${(parseFloat(loan.interest_rate) / 12).toFixed(2)}%` : '—'],
-              ['Semi-Monthly Interest', loan.interest_rate ? `${(parseFloat(loan.interest_rate) / 24).toFixed(2)}%` : '—'],
+              ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
+              ['Weekly Interest', `${round4(weeklyInterestRate)}%`],
               ['Start Date', formatDate(loan.release_date)],
               ['Loan Term (Months)', loan.term_months ? `${loan.term_months} months` : '—'],
               ['Payment Frequency', <Badge key="freq" variant="default">{frequencyDisplayLabel(loan.repayment_frequency || 'monthly')}</Badge>],
               ['No. of Payments', previewSummary?.number_of_payments ?? scheduleRows.length ?? '—'],
-              ['Total Payment per Period', formatCurrency(previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0)],
+              ['Total Payment per Period', formatCurrency(computedPaymentPerPeriod)],
               ['Total Cash Out (Net Proceeds)', formatCurrency(previewDeductions?.net_proceeds ?? (loan.amount - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0)))],
               ['Total Principal Collected', formatCurrency(totalPrincipal)],
-              ['Total Interest Earned', <span key="int" className="text-emerald-700 font-semibold">{formatCurrency(totalInterest)}</span>],
-              ['Total Payments Collected', formatCurrency(totalDue)],
-              ['Total ROI (%)', <span key="roi" className="text-emerald-700 font-semibold">{loan.amount > 0 ? `${((totalInterest / loan.amount) * 100).toFixed(2)}%` : '—'}</span>],
+              ['Total Interest Earned', <span key="int" className="text-emerald-700 font-semibold">{formatCurrency(computedTotalInterest)}</span>],
+              ['Total Payments Collected', formatCurrency(computedTotalLoanPayable)],
+              ['Total ROI (%)', <span key="roi" className="text-emerald-700 font-semibold">{computedRoi}%</span>],
               ['Status', <Badge key="status" variant={statusVariant[loan.status] || 'default'}>{loan.status}</Badge>],
               ['Purpose', loan.purpose || '—'],
               ['Notes', loan.notes || '—'],
@@ -934,8 +1020,7 @@ export default function LoanDetailPage() {
                   ['CBU (Share Capital)', formatCurrency(loan.share_capital ?? 0)],
                   ['Regular Savings', formatCurrency(loan.regular_savings ?? 0)],
                   ['Coop Loan Protection Plan', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
-                  ['Previous Loan Balance', formatCurrency(previewDeductions?.previous_loan_balance ?? 0)],
-                  ['Annual Dues', formatCurrency(previewDeductions?.annual_dues ?? 0)],
+                  ['Annual Dues', formatCurrency(annualDuesAmount)],
                   ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
                   ['Total Deductions', <span key="td" className="font-semibold text-red-600">{formatCurrency(
                     (previewDeductions?.total_deductions ?? 0) ||
@@ -962,13 +1047,13 @@ export default function LoanDetailPage() {
             <h3 className="text-sm font-semibold text-gray-700 mb-4">Computed Summary</h3>
             <div className="grid grid-cols-2 gap-3">
               <MiniStat label="No. of Payments" value={String(previewSummary?.number_of_payments ?? scheduleRows.length ?? 0)} />
-              <MiniStat label="Rate / Period" value={`${previewSummary?.rate_per_period_percent ?? 0}%`} />
-              <MiniStat label="Payment / Period" value={formatCurrency(previewSummary?.payment_per_period ?? loan.monthly_amortization ?? 0)} highlight />
+              <MiniStat label="Rate / Period" value={`${ratePerPeriod}%`} />
+              <MiniStat label="Payment / Period" value={formatCurrency(computedPaymentPerPeriod)} highlight />
               <MiniStat label="Method" value={titleCase(previewSummary?.loan_method ?? loan.loan_method ?? 'diminishing')} />
               <MiniStat label="Frequency" value={frequencyDisplayLabel(previewSummary?.payment_frequency ?? loan.repayment_frequency ?? 'monthly')} />
-              <MiniStat label="ROI" value={`${previewSummary?.total_roi_percent ?? 0}%`} />
-              <MiniStat label="Total Interest" value={formatCurrency(previewSummary?.total_interest_earned ?? 0)} />
-              <MiniStat label="Total Payments" value={formatCurrency(previewSummary?.total_payments_collected ?? loan.total_loan_payable ?? 0)} />
+              <MiniStat label="ROI" value={`${computedRoi}%`} />
+              <MiniStat label="Total Interest" value={formatCurrency(computedTotalInterest)} />
+              <MiniStat label="Total Payments" value={formatCurrency(computedTotalLoanPayable)} />
             </div>
           </div>
 

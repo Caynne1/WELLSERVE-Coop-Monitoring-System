@@ -12,6 +12,13 @@ function safeNum(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function computeTotalRoiPercent(totalPaymentsCollected = 0, totalCashOut = 0) {
+  const payments = safeNum(totalPaymentsCollected);
+  const cashOut = safeNum(totalCashOut);
+  if (cashOut <= 0) return 0;
+  return round2(((payments - cashOut) / cashOut) * 100);
+}
+
 function loanFingerprint(memberId, releaseDate, amount) {
   return `${memberId}|${releaseDate || ''}|${round2(safeNum(amount))}`;
 }
@@ -105,9 +112,14 @@ function buildScheduleSummary(schedule, loanParams = {}) {
   const totalInterest  = round2(schedule.reduce((s, r) => s + (r.interest  || 0), 0));
   const totalCbu       = round2(schedule.reduce((s, r) => s + (r.cbu_paid  || 0), 0));
   const totalSavings   = round2(schedule.reduce((s, r) => s + (r.savings_paid || 0), 0));
-  const totalPayment   = round2(totalPrincipal + totalInterest + totalCbu + totalSavings);
+  const totalLoanPayable = round2(totalPrincipal + totalInterest);
   const principal      = safeNum(loanParams.amount ?? totalPrincipal);
-  const roiPercent     = principal > 0 ? round2((totalInterest / principal) * 100) : 0;
+  const totalCashOut   = safeNum(loanParams.total_cash_out ?? loanParams.net_proceeds);
+  const roiPercent     = totalCashOut > 0
+    ? computeTotalRoiPercent(totalLoanPayable, totalCashOut)
+    : principal > 0
+      ? round2((totalInterest / principal) * 100)
+      : 0;
   return {
     number_of_payments:       schedule.length,
     paid_periods:             paidRows.length,
@@ -118,7 +130,9 @@ function buildScheduleSummary(schedule, loanParams = {}) {
     total_interest_earned:    totalInterest,
     total_cbu_collected:      totalCbu,
     total_savings_collected:  totalSavings,
-    total_payments_collected: totalPayment,
+    total_loan_payable:       totalLoanPayable,
+    total_payments_collected: totalLoanPayable,
+    total_cash_out:           totalCashOut || undefined,
     total_roi_percent:        roiPercent,
     next_due_date:            nextUnpaid?.due_date || null,
     next_due_amount:          round2(nextUnpaid?.remaining_due ?? nextUnpaid?.total_due ?? nextUnpaid?.payment ?? 0),
@@ -384,6 +398,7 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount) {
     amount: loan.amount,
     frequency: loan.repayment_frequency,
     method: loan.loan_method,
+    total_cash_out: summary.total_cash_out,
   });
 
   const { data, error } = await supabase
