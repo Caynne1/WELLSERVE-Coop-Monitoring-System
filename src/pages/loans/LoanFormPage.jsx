@@ -24,8 +24,6 @@ import MemberSearchInput from '../../components/shared/MemberSearchInput';
 
 import { createLoan, updateLoan, getLoanById } from '../../services/loanService';
 import { trackActivity } from '../../services/logService';
-import { createTransaction } from '../../services/transactionService';
-import { createInvoiceForPayment } from '../../services/invoiceService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import {
   getMemberById,
@@ -367,7 +365,7 @@ export default function LoanFormPage() {
       term_months: '',
       monthly_amortization: '',
       release_date: '',
-      status: 'active',
+      status: 'draft',
       purpose: '',
       notes: '',
       repayment_frequency: 'weekly_fixed4',
@@ -1278,44 +1276,6 @@ export default function LoanFormPage() {
           description: `Created loan for ${memberDisplayName} — Amount: ₱${principalAmount.toLocaleString()}`,
         });
 
-        await createTransaction({
-          member_id: loan.member_id,
-          loan_id: loan.id,
-          category: 'loan',
-          type: 'loan_release',
-          amount: loan.amount,
-          created_by: user?.id ?? null,
-        });
-
-        if (regularSavings > 0) {
-          const savingsAccountId = memberAccounts.savingsAccountId;
-
-          if (savingsAccountId) {
-            await createTransaction({
-              member_id: loan.member_id,
-              account_id: savingsAccountId,
-              category: 'savings',
-              type: 'deposit',
-              amount: regularSavings,
-              created_by: user?.id ?? null,
-            });
-
-            try {
-              await createInvoiceForPayment({
-                payment_type: 'savings',
-                member_id: loan.member_id,
-                member_name: memberDisplayName,
-                amount: regularSavings,
-                purpose: 'Regular Savings Deposit',
-                ref_id: savingsAccountId,
-                account_id: savingsAccountId,
-                created_by: user?.id ?? null,
-              });
-            } catch (e) {
-              console.error('[LoanFormPage] savings invoice failed:', e);
-            }
-          }
-        }
       }
 
       toast.success(isEdit ? 'Loan updated' : 'Loan created');

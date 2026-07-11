@@ -1,5 +1,6 @@
 import { notifyPayment } from './notificationService';
 import { supabase } from './supabase';
+import { trackActivity } from './logService';
 
 export async function getTransactions(filters = {}) {
   let query = supabase
@@ -103,6 +104,16 @@ export async function createTransaction(payload) {
   }
 
   console.log('[createTransaction] success → id:', data.id);
+
+  if (data.created_by) {
+    trackActivity({
+      userId: data.created_by,
+      module: 'transaction',
+      action: data.type || 'create',
+      description: `${data.category || 'Transaction'} recorded for PHP ${Number(data.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}.`,
+      recordId: data.id,
+    });
+  }
 
   // Fire payment notification (non-blocking)
   try {

@@ -20,7 +20,7 @@ import {
   getIncomeBreakdown,
 } from '../../services/coopFundService';
 import { supabase } from '../../services/supabase';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -500,7 +500,6 @@ function CashInBreakdown({ transactions }) {
     { key: 'savings',      label: 'Savings Deposits',     color: '#3b82f6', bg: 'bg-blue-400'   },
     { key: 'membership',   label: 'Membership Fees',      color: '#a855f7', bg: 'bg-purple-400' },
     { key: 'capital',      label: 'Capital / Fund',       color: '#6366f1', bg: 'bg-indigo-400' },
-    { key: 'penalty',      label: 'Penalty Income',       color: '#ef4444', bg: 'bg-red-400'    },
     { key: 'time_deposit', label: 'Time Deposits',        color: '#8b5cf6', bg: 'bg-violet-400' },
     { key: 'invoice',      label: 'Other Invoices',       color: '#9ca3af', bg: 'bg-gray-400'   },
   ].map(g => ({
@@ -553,7 +552,7 @@ function CashInBreakdown({ transactions }) {
 // Dashboard Charts Panel — enhanced 2-row layout
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
+function DashboardCharts({ transactions }) {
   const now = new Date();
   const months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
@@ -583,7 +582,6 @@ function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
     { key: 'savings',      label: 'Savings',        color: '#3b82f6' },
     { key: 'membership',   label: 'Membership',     color: '#a855f7' },
     { key: 'capital',      label: 'Capital',        color: '#6366f1' },
-    { key: 'penalty',      label: 'Penalties',      color: '#ef4444' },
     { key: 'time_deposit', label: 'Time Deposits',  color: '#8b5cf6' },
     { key: 'invoice',      label: 'Other',          color: '#9ca3af' },
   ];
@@ -655,10 +653,10 @@ function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
       </div>
 
       {/* ── Row 2: Monthly Diverging Bars + Penalty Card ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4">
 
         {/* Diverging monthly comparison */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-800">Monthly Comparison</h3>
@@ -681,37 +679,6 @@ function DashboardCharts({ transactions, penaltyTotal, penaltyCount }) {
           />
         </div>
 
-        {/* Penalty Income Card */}
-        <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
-          <div className="flex items-center gap-2.5 mb-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={16} className="text-amber-500" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800">Penalty Income</h3>
-              <p className="text-xs text-gray-400">Collected penalty charges</p>
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-amber-600 tabular-nums mb-1">
-            {formatCurrency(penaltyTotal)}
-          </p>
-          <p className="text-xs text-gray-400">
-            {penaltyCount} penalt{penaltyCount !== 1 ? 'ies' : 'y'} recorded
-          </p>
-          {penaltyCount > 0 && (
-            <div className="mt-3 pt-3 border-t border-amber-100">
-              <p className="text-xs text-gray-500">
-                Avg. per penalty:{' '}
-                <span className="font-semibold text-gray-700">
-                  {formatCurrency(penaltyTotal / penaltyCount)}
-                </span>
-              </p>
-            </div>
-          )}
-          <div className="mt-4 h-1 w-full bg-amber-100 rounded-full overflow-hidden">
-            <div className="h-full bg-amber-400 rounded-full w-full" />
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -766,24 +733,7 @@ function TxRow({ tx }) {
   return (
     <tr className="hover:bg-gray-50/60 transition-colors">
       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-        {tx.created_at ? formatDate(tx.created_at) : '—'}
-      </td>
-      <td className="px-4 py-3">
-        <CategoryBadge category={tx.category} />
-      </td>
-      <td className="px-4 py-3 text-sm text-gray-700">
-        {tx.description || '—'}
-      </td>
-      <td className="px-4 py-3 text-xs text-gray-500">
-        {tx.member_name || tx.ref_no || '—'}
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span className={`text-sm font-semibold flex items-center justify-end gap-1 ${isCashIn ? 'text-green-700' : 'text-red-600'}`}>
-          {isCashIn
-            ? <ArrowUpRight size={14} className="flex-shrink-0" />
-            : <ArrowDownRight size={14} className="flex-shrink-0" />}
-          {formatCurrency(tx.amount)}
-        </span>
+        {tx.created_at ? formatDateTime(tx.created_at) : '—'}
       </td>
       <td className="px-4 py-3 text-center">
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -791,8 +741,28 @@ function TxRow({ tx }) {
             ? 'bg-green-50 text-green-700 border border-green-200'
             : 'bg-red-50 text-red-600 border border-red-200'
         }`}>
-          {isCashIn ? 'Cash In' : 'Cash Out'}
+          {isCashIn ? 'IN' : 'OUT'}
         </span>
+      </td>
+      <td className="px-4 py-3">
+        <CategoryBadge category={tx.category} />
+      </td>
+      <td className="px-4 py-3 text-right">
+        <span className={`text-sm font-semibold ${isCashIn ? 'text-green-700' : 'text-red-600'}`}>
+          {formatCurrency(tx.amount)}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-xs text-gray-500">
+        {tx.member_name || '—'}
+      </td>
+      <td className="px-4 py-3 text-xs font-mono text-gray-500">
+        {tx.ref_no || '—'}
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-700">
+        {tx.description || '—'}
+      </td>
+      <td className="px-4 py-3 text-xs text-gray-500">
+        {tx.created_by || '—'}
       </td>
     </tr>
   );
@@ -1046,7 +1016,7 @@ export default function CoopMonitoringPage() {
   function handlePrint() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
     const rows = filtered.map(tx => `<tr>
-      <td style="white-space:nowrap">${tx.created_at?tx.created_at.slice(0,10):'—'}</td>
+      <td style="white-space:nowrap">${tx.created_at?formatDateTime(tx.created_at):'—'}</td>
       <td>${CATEGORY_LABEL[tx.category]||tx.category||'—'}</td>
       <td>${tx.description||'—'}</td>
       <td style="font-family:monospace">${tx.ref_no||'—'}</td>
@@ -1079,12 +1049,14 @@ export default function CoopMonitoringPage() {
     try {
       if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
       const rows = filtered.map(tx => ({
-        date:        tx.created_at ? formatDate(tx.created_at) : '',
+        date:        tx.created_at ? formatDateTime(tx.created_at) : '',
+        type:        tx.type === 'cash_in' ? 'IN' : 'OUT',
         category:    CATEGORY_LABEL[tx.category] || tx.category || '',
-        description: tx.description || '',
-        reference:   tx.ref_no || '',
         amount:      tx.amount || 0,
-        flow:        tx.type === 'cash_in' ? 'Cash In' : 'Cash Out',
+        member:      tx.member_name || '',
+        loan_no:     tx.ref_no || '',
+        description: tx.description || '',
+        created_by:  tx.created_by || '',
       }));
       exportToCSV('coop_monitoring_transactions.csv', rows);
       toast.success('CSV exported successfully');
@@ -1120,7 +1092,7 @@ export default function CoopMonitoringPage() {
       ) : (
         <>
           {/* ── Stat Cards ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 mb-6">
             <StatCard
               icon={<PesoSign size={22} className="text-emerald-600" />}
               label="Current Fund Balance"
@@ -1132,9 +1104,9 @@ export default function CoopMonitoringPage() {
             />
             <StatCard
               icon={<TrendingUp size={22} className="text-green-600" />}
-              label="Total Cash In"
-              value={formatCurrency(fund.cash_in)}
-              sub="All paid invoices"
+              label="Loan Interest"
+              value={formatCurrency(incomeData?.loan_interest || 0)}
+              sub="Interest earned from loan payments"
               bg="bg-green-50"
               textColor="text-green-700"
               accentColor="bg-green-400"
@@ -1148,30 +1120,13 @@ export default function CoopMonitoringPage() {
               textColor="text-red-600"
               accentColor="bg-red-400"
             />
-            <StatCard
-              icon={<AlertTriangle size={22} className="text-amber-500" />}
-              label="Total Penalty Income"
-              value={formatCurrency(penaltyTotal)}
-              sub={`${filteredPenalties.length} penalt${filteredPenalties.length !== 1 ? 'ies' : 'y'} recorded`}
-              bg="bg-amber-50"
-              textColor="text-amber-600"
-              accentColor="bg-amber-400"
-              border="border-amber-200"
-            />
           </div>
 
           {/* ── Dashboard Charts ── */}
-          <DashboardCharts
-            transactions={transactions}
-            penaltyTotal={penaltyTotal}
-            penaltyCount={filteredPenalties.length}
-          />
+          <DashboardCharts transactions={transactions} />
 
           {/* ── Cash-In Breakdown ── */}
           <CashInBreakdown transactions={transactions} />
-
-          {/* ── Penalty Income Table ── */}
-          <PenaltyIncomeTable penalties={filteredPenalties} loading={penaltiesLoading} />
 
           {/* ── Income Monitoring Breakdown ── */}
           <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -1245,7 +1200,7 @@ export default function CoopMonitoringPage() {
                       <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wide">Total Coop Income</p>
                       <p className="text-2xl font-bold text-emerald-800 mt-0.5">{formatCurrency(incomeData.total_income)}</p>
                       <p className="text-xs text-emerald-600 mt-0.5">
-                        {incomeData.loan_count} loan{incomeData.loan_count !== 1 ? 's' : ''} · {incomeData.tx_count} membership tx
+                        {incomeData.loan_count} loan{incomeData.loan_count !== 1 ? 's' : ''} · {incomeData.tx_count} fund tx
                         {incomePeriod !== 'all' ? ` · ${incomePeriod.replace('_', '-')}` : ' · all time'}
                       </p>
                     </div>
@@ -1253,16 +1208,20 @@ export default function CoopMonitoringPage() {
                   </div>
 
                   {/* Income cards grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     {[
-                      { label: 'Loan Interest', value: incomeData.loan_interest,   color: 'bg-blue-50 border-blue-100',   text: 'text-blue-700',   sub: 'Interest earned from loans' },
-                      { label: 'Service Fee',   value: incomeData.service_fee,     color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
-                      { label: 'CLPP / Insurance', value: incomeData.clpp,         color: 'bg-red-50 border-red-100',     text: 'text-red-700',    sub: 'Loan protection plan' },
-                      { label: 'Annual Dues',   value: incomeData.annual_dues,     color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
+                      { label: 'Service Fee', value: incomeData.service_fee, color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
+                      { label: 'CBU Retention', value: incomeData.cbu_retention, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Capital build-up deductions' },
+                      { label: 'Legal Fees', value: incomeData.legal_fees, color: 'bg-slate-50 border-slate-100', text: 'text-slate-700', sub: 'Legal and notarial deductions' },
+                      { label: 'CLPI/Insurance', value: incomeData.clpi_insurance, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Loan protection and insurance' },
+                      { label: 'Regular Savings', value: incomeData.regular_savings, color: 'bg-blue-50 border-blue-100', text: 'text-blue-700', sub: 'Savings deductions' },
+                      { label: 'Penalty Due', value: incomeData.penalty_due, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Penalty deductions' },
+                      { label: 'Annual Due', value: incomeData.annual_dues, color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
+                      { label: 'CBU Completion', value: incomeData.cbu_completion, color: 'bg-teal-50 border-teal-100', text: 'text-teal-700', sub: 'CBU completion deductions' },
+                      { label: 'Petty Cash', value: incomeData.petty_cash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Petty cash deductions' },
                       { label: 'Membership Fee', value: incomeData.membership_fee, color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Registration fees' },
-                      { label: 'WELLife VIP Card / T-Shirt', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'From membership breakdown' },
-                      { label: 'Loan Principal',  value: incomeData.loan_principal, color: 'bg-teal-50 border-teal-100',  text: 'text-teal-700',   sub: 'Total principal released' },
-                      { label: 'Total Cash Out (Net Proceeds)', value: incomeData.net_proceeds, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Net amount disbursed to members' },
+                      { label: 'WELLife VIP Card', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'VIP card collections' },
+                      { label: 'Admin & Regulatory Fees', value: incomeData.admin_regulatory_fees, color: 'bg-cyan-50 border-cyan-100', text: 'text-cyan-700', sub: 'Administrative charges' },
                     ].map(card => (
                       <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
                         <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
@@ -1341,11 +1300,11 @@ export default function CoopMonitoringPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-100">
-                    {['Date', 'Category', 'Description', 'Member / Payee', 'Amount', 'Flow'].map((h, i) => (
+                    {['Date', 'Type', 'Category', 'Amount', 'Member', 'Loan No.', 'Description', 'Created By'].map((h, i) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          i === 4 ? 'text-right' : i === 5 ? 'text-center' : 'text-left'
+                          i === 1 ? 'text-center' : i === 3 ? 'text-right' : 'text-left'
                         }`}
                       >
                         {h}
@@ -1356,7 +1315,7 @@ export default function CoopMonitoringPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-16 text-center">
+                      <td colSpan={8} className="py-16 text-center">
                         <div className="flex flex-col items-center gap-2 text-gray-400">
                           <PesoSign size={32} className="text-gray-200" />
                           <p className="text-sm">

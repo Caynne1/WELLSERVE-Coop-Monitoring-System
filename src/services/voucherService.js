@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getLoanByReference, getLoanDeductionItems } from './loanWorkflowService';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
 // Only these fields are ever written to the DB.
@@ -22,21 +23,6 @@ const VOUCHER_COLUMNS = [
   'account_type',   // 'cbu' | 'savings'
   'payment_mode',
   'reference',
-
-  // added to match the physical WELLSERVE Cash Voucher slip layout
-  // (see /mnt migration note in voucherService.js header). All optional —
-  // existing expense/withdrawal flows keep working without them.
-  'address',
-  'loan_amount',
-  'pf_amount',
-  'del_amount',
-  'pb_amount',
-  'adv_amount',
-  'amount_in_words',
-  'prepared_by_name',
-  'verified_by_name',
-  'approved_by_name',
-  'received_by_name',
 ];
 
 function sanitizeVoucherPayload(payload) {
@@ -175,19 +161,36 @@ export async function createVoucherFromExpense(expense, createdBy) {
   const categoryLabel = expense.category === 'others'
     ? (expense.category_other || 'Others')
     : expense.category;
+  const loanReference = extractLoanReference(expense.notes) || extractLoanReference(expense.description);
+  const loan = loanReference ? await getLoanByReference(loanReference) : null;
+  const deductionItems = loan ? getLoanDeductionItems(loan) : [];
+  const deductionNotes = deductionItems.length
+    ? `Loan Deductions: ${deductionItems.map(item => `${item.label} - ${item.amount}`).join('; ')}`
+    : null;
 
   return createVoucher({
     date: expense.date,
     payee: expense.payee,
     purpose: expense.description || categoryLabel,
     amount: expense.amount,
-    notes: expense.notes || undefined,
+    notes: [expense.notes, deductionNotes].filter(Boolean).join('\n') || undefined,
     expense_id: expense.id,
     created_by: createdBy ?? null,
     // The expense approval IS the approval — the voucher shouldn't need a
     // second, separate approval step in the Vouchers module.
-    status: 'approved',
+    reference: loan?.loan_no || loan?.id || loanReference || undefined,
+    member_id: loan?.member_id || undefined,
+    status: 'draft',
   });
+}
+
+function extractLoanReference(value = '') {
+  const text = String(value || '');
+  const match =
+    text.match(/Loan No:\s*([A-Za-z0-9-]+)/i) ||
+    text.match(/Loan ID:\s*([0-9a-f-]{20,})/i) ||
+    text.match(/Loan net proceeds\s*-\s*([A-Za-z0-9-]+)/i);
+  return match?.[1] || null;
 }
 
 // helper specifically for member-account withdrawals

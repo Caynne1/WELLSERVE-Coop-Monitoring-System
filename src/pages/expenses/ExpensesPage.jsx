@@ -23,12 +23,14 @@ import {
   linkExpenseVoucher,
 } from '../../services/expenseService';
 import { createVoucherFromExpense, voidVoucher } from '../../services/voucherService';
+import { getLoansForExpenseCreation, buildLoanExpensePayload } from '../../services/loanWorkflowService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
+  { value: 'loan_net_proceeds', label: 'Loan Net Proceeds' },
   { value: 'utilities',   label: 'Utilities' },
   { value: 'office',      label: 'Office' },
   { value: 'salaries',    label: 'Salaries' },
@@ -88,6 +90,7 @@ export default function ExpensesPage() {
 
   // Data
   const [expenses, setExpenses]     = useState([]);
+  const [loanList, setLoanList]     = useState([]);
   const [loading, setLoading]       = useState(true);
 
   // Filters
@@ -142,6 +145,12 @@ export default function ExpensesPage() {
   }, []);
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+
+  useEffect(() => {
+    getLoansForExpenseCreation()
+      .then(setLoanList)
+      .catch(() => setLoanList([]));
+  }, []);
 
   // ── Client-side filtering ────────────────────────────────────────────────────
 
@@ -209,6 +218,22 @@ export default function ExpensesPage() {
     setEditTarget(null);
     setForm({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
     setFormErr({});
+    setModalOpen(true);
+  }
+
+  function openLoanExpense(loan) {
+    setEditTarget(null);
+    setFormErr({});
+    const payload = buildLoanExpensePayload(loan, user?.id ?? null);
+    setForm({
+      date: payload.date,
+      description: payload.description,
+      category: payload.category,
+      categoryOther: '',
+      amount: String(payload.amount || ''),
+      payee: payload.payee,
+      notes: payload.notes || '',
+    });
     setModalOpen(true);
   }
 
@@ -391,9 +416,26 @@ export default function ExpensesPage() {
         title="Expenses"
         subtitle="Track and manage cooperative operational expenses"
         action={
-          <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
-            Add Expense
-          </Button>
+          <div className="flex items-center gap-2">
+            <select
+              value=""
+              onChange={e => {
+                const loan = loanList.find(l => l.id === e.target.value);
+                if (loan) openLoanExpense(loan);
+              }}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+            >
+              <option value="">Create Loan Expense</option>
+              {loanList.map(loan => (
+                <option key={loan.id} value={loan.id}>
+                  {loan.loan_no || loan.id} - {loan.payee || `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim()} - {formatCurrency(loan.net_proceeds || 0)}
+                </option>
+              ))}
+            </select>
+            <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
+              Add Expense
+            </Button>
+          </div>
         }
       />
 

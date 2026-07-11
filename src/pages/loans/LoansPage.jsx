@@ -58,6 +58,10 @@ import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 
 const statusVariant = {
+  draft: 'default',
+  credit_committee_approval: 'warning',
+  approved: 'success',
+  released: 'info',
   active: 'success',
   ongoing: 'success',
   paid: 'info',
@@ -88,15 +92,19 @@ const DUE_FILTER_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'credit_committee_approval', label: 'Credit Committee Approval' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'released', label: 'Released' },
   { value: 'delinquent', label: 'Delinquent' },
 ];
 
 const STATUS_FILTER_OPTIONS = [
   { value: 'all', label: 'All Status' },
-  { value: 'active', label: 'Active' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'credit_committee_approval', label: 'Credit Committee Approval' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'released', label: 'Released' },
   { value: 'delinquent', label: 'Delinquent' },
 ];
 
@@ -104,7 +112,11 @@ const STATUS_FILTER_OPTIONS = [
 // to one of the 3 statuses now supported: active, pending, delinquent.
 function normalizeLoanStatus(status) {
   const s = (status || '').toLowerCase();
-  if (s === 'pending') return 'pending';
+  if (s === 'draft') return 'draft';
+  if (s === 'credit_committee_approval') return 'credit_committee_approval';
+  if (s === 'approved') return 'approved';
+  if (s === 'released') return 'released';
+  if (s === 'pending') return 'draft';
   if (s === 'delinquent' || s === 'defaulted' || s === 'overdue') return 'delinquent';
   return 'active';
 }
@@ -252,7 +264,7 @@ function getNextDueInfo(loan) {
 
 export default function LoansPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
 
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -333,6 +345,25 @@ export default function LoansPage() {
     } finally {
       setStatusSavingId(null);
     }
+  }
+
+  async function handleWorkflowAction(loan) {
+    const current = normalizeLoanStatus(loan.status);
+    const nextStatus = current === 'draft' ? 'credit_committee_approval' : 'approved';
+
+    if (nextStatus === 'approved') {
+      const canApproveLoan =
+        isAdmin ||
+        profile?.role === 'credit_committee' ||
+        profile?.permissions?.loans?.approve === true;
+
+      if (!canApproveLoan) {
+        toast.error('Only the Credit Committee can approve loans.');
+        return;
+      }
+    }
+
+    await handleStatusChange(loan, nextStatus);
   }
 
   const filtered = useMemo(() => {
@@ -437,8 +468,10 @@ export default function LoansPage() {
   }, [filtered, sortConfig]);
 
   const stats = useMemo(() => {
-    const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'ongoing');
-    const totalReleased = loans.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+  const activeLoans = loans.filter(l => ['approved', 'released', 'active', 'ongoing'].includes(l.status));
+  const totalReleased = loans
+    .filter(l => l.status === 'released')
+    .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
     const totalOutstanding = activeLoans.reduce((sum, l) => sum + (Number(l.balance) || 0), 0);
 
     return {
@@ -836,20 +869,22 @@ export default function LoansPage() {
                         </td>
 
                         <td className="px-4 py-3">
-                          <select
-                            value={normalizedStatus}
-                            onChange={e => handleStatusChange(loan, e.target.value)}
-                            disabled={statusSavingId === loan.id}
-                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-                          >
-                            {STATUS_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
+                          <Badge variant={statusVariant[normalizedStatus] || 'default'}>
+                            {STATUS_OPTIONS.find(opt => opt.value === normalizedStatus)?.label || titleCase(loan.status)}
+                          </Badge>
                         </td>
 
                         <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
+                          <div className="flex items-center justify-end gap-2">
+                            {['draft', 'credit_committee_approval'].includes(normalizedStatus) && (
+                              <button
+                                onClick={() => handleWorkflowAction(loan)}
+                                disabled={statusSavingId === loan.id}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 transition-colors disabled:opacity-50"
+                              >
+                                {normalizedStatus === 'draft' ? 'For Approval' : 'Approve'}
+                              </button>
+                            )}
                             <button
                               onClick={() => navigate(`/loans/${loan.id}`)}
                               title="View loan"

@@ -49,6 +49,14 @@ function getInvoiceCategory(inv) {
   return inv.payment_type || 'invoice';
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function profileName(profile) {
+  return profile?.full_name || profile?.email || null;
+}
+
 // ── Unified Coop Fund Summary ────────────────────────────────────────────────
 
 /**
@@ -61,6 +69,7 @@ const CASH_IN_TX_TYPES = new Set([
   'membership_payment', // membership fees
   'penalty_payment',    // penalty income
   'other_payment',      // miscellaneous income
+  'loan_deduction',     // release-time loan deductions
   'cbu',                // legacy type
   'savings',            // legacy type
   'membership',         // legacy type
@@ -73,6 +82,7 @@ const CASH_OUT_TX_TYPES = new Set([
   'withdrawal',
   'cbu_withdrawal',
   'savings_withdrawal',
+  'loan_release',
 ]);
 
 /**
@@ -97,28 +107,40 @@ export async function computeCoopSummaryFromInvoices() {
     // All transactions
     supabase
       .from('transactions')
-      .select('id, type, category, amount, transaction_date, created_at, notes')
+      .select('id, type, category, amount, transaction_date, created_at, notes, reference, member_id, loan_id, created_by')
       .order('transaction_date', { ascending: false }),
     // Only admin-level invoices not captured in transactions
     supabase
       .from('invoices')
-      .select('id, invoice_no, date, payee, purpose, amount, payment_type, created_at')
+      .select('id, invoice_no, date, payee, purpose, amount, payment_type, created_at, created_by')
       .eq('status', 'paid'),
-    // Approved vouchers = Cash Out (expenses)
-    supabase
-      .from('vouchers')
-      .select('id, voucher_no, date, payee, purpose, amount, created_at')
-      .eq('status', 'approved'),
-    // Loans: compute net proceeds (Cash Out = money released to members)
-    supabase
-      .from('loans')
-      .select('id, amount, preview_deductions_json, release_date, created_at'),
+    Promise.resolve({ data: [] }),
+    Promise.resolve({ data: [] }),
   ]);
 
   const txList     = txRes.data     || [];
   const invList    = invRes.data    || [];
   const vchList    = vchRes.data    || [];
   const loansList  = loansRes.data  || [];
+  const memberIds = [...new Set(txList.map(t => t.member_id).filter(Boolean))];
+  const createdByIds = [...new Set([
+    ...txList.map(t => t.created_by),
+    ...invList.map(inv => inv.created_by),
+    ...vchList.map(vch => vch.created_by),
+  ].filter(isUuid))];
+  const [membersRes, profilesRes] = await Promise.all([
+    memberIds.length
+      ? supabase.from('members').select('id, first_name, last_name, member_no').in('id', memberIds)
+      : Promise.resolve({ data: [] }),
+    createdByIds.length
+      ? supabase.from('profiles').select('id, full_name, email').in('id', createdByIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const memberMap = Object.fromEntries((membersRes.data || []).map(m => [
+    m.id,
+    `${m.member_no ? `${m.member_no} - ` : ''}${[m.first_name, m.last_name].filter(Boolean).join(' ')}`.trim(),
+  ]));
+  const profileMap = Object.fromEntries((profilesRes.data || []).map(p => [p.id, profileName(p)]));
 
   // ── Cash In from transactions ─────────────────────────────────────────────
   const cashInTx = txList.filter(t => {
@@ -148,29 +170,6 @@ export async function computeCoopSummaryFromInvoices() {
   );
 
   // ── Cash Out: net proceeds released to members (loan disbursements) ───────
-  let totalNetProceeds = 0;
-  const netProceedsRows = [];
-  for (const loan of loansList) {
-    try {
-      const d = typeof loan.preview_deductions_json === 'string'
-        ? JSON.parse(loan.preview_deductions_json)
-        : (loan.preview_deductions_json || {});
-      const np = Number(d.net_proceeds || 0);
-      if (np > 0) {
-        totalNetProceeds += np;
-        netProceedsRows.push({
-          id:          `loan-np-${loan.id}`,
-          type:        'cash_out',
-          category:    'loan_release',
-          amount:      np,
-          description: `Loan disbursement (net proceeds)`,
-          ref_no:      null,
-          created_at:  loan.release_date || loan.created_at,
-        });
-      }
-    } catch { /* skip malformed JSON */ }
-  }
-
   // ── Totals ────────────────────────────────────────────────────────────────
   const totalCashIn =
     cashInTx.reduce((s, t) => s + (t.amount || 0), 0) +
@@ -178,9 +177,7 @@ export async function computeCoopSummaryFromInvoices() {
 
   const totalCashOut =
     cashOutTx.reduce((s, t) => s + (t.amount || 0), 0) +
-    cashOutInv.reduce((s, i) => s + (i.amount || 0), 0) +
-    vchList.reduce((s, v) => s + (v.amount || 0), 0) +
-    totalNetProceeds;
+    cashOutInv.reduce((s, i) => s + (i.amount || 0), 0);
 
   // ── Build unified transaction ledger rows for display ─────────────────────
   const txRows = cashInTx.map(t => ({
@@ -189,8 +186,11 @@ export async function computeCoopSummaryFromInvoices() {
     category:    t.category || t.type,
     amount:      t.amount,
     description: t.notes || t.type,
-    ref_no:      null,
-    created_at:  t.transaction_date || t.created_at,
+    ref_no:      t.reference || null,
+    member_name: memberMap[t.member_id] || null,
+    loan_id:     t.loan_id || null,
+    created_by:  profileMap[t.created_by] || t.created_by || 'System',
+    created_at:  t.created_at || t.transaction_date,
   }));
 
   const cashOutTxRows = cashOutTx.map(t => ({
@@ -199,8 +199,11 @@ export async function computeCoopSummaryFromInvoices() {
     category:    t.category || t.type,
     amount:      t.amount,
     description: t.notes || 'Withdrawal',
-    ref_no:      null,
-    created_at:  t.transaction_date || t.created_at,
+    ref_no:      t.reference || null,
+    member_name: memberMap[t.member_id] || null,
+    loan_id:     t.loan_id || null,
+    created_by:  profileMap[t.created_by] || t.created_by || 'System',
+    created_at:  t.created_at || t.transaction_date,
   }));
 
   const invRows = [...cashInInv, ...cashOutInv].map(inv => ({
@@ -211,6 +214,7 @@ export async function computeCoopSummaryFromInvoices() {
     description: inv.purpose || inv.payee,
     member_name: inv.payee || '—',
     ref_no:      inv.invoice_no,
+    created_by:  profileMap[inv.created_by] || inv.created_by || 'System',
     created_at:  inv.created_at,
   }));
 
@@ -224,7 +228,7 @@ export async function computeCoopSummaryFromInvoices() {
     created_at:  vch.created_at,
   }));
 
-  const allRows = [...txRows, ...cashOutTxRows, ...invRows, ...vchRows, ...netProceedsRows]
+  const allRows = [...txRows, ...cashOutTxRows, ...invRows, ...vchRows]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return {
@@ -304,88 +308,143 @@ export async function recordManualFundDeposit({
  */
 export async function getIncomeBreakdown({ from = null, to = null } = {}) {
   const toEndOfDay = to ? `${to}T23:59:59` : null;
+  const hasDateFilter = Boolean(from || toEndOfDay);
 
-  // ── Loans ────────────────────────────────────────────────────────────────
-  let loanQuery = supabase
+  const inRange = (value) => {
+    if (!value) return !from && !toEndOfDay;
+    const d = new Date(value);
+    if (from && d < new Date(from)) return false;
+    if (toEndOfDay && d > new Date(toEndOfDay)) return false;
+    return true;
+  };
+
+  const { data: loans = [], error: loanErr } = await supabase
     .from('loans')
-    .select('id, amount, service_fee, loan_insurance, annual_dues, release_date, preview_summary_json, preview_deductions_json');
-
-  if (from)        loanQuery = loanQuery.gte('release_date', from);
-  if (toEndOfDay)  loanQuery = loanQuery.lte('release_date', toEndOfDay);
-
-  const { data: loans = [], error: loanErr } = await loanQuery;
+    .select('id, preview_schedule_json');
   if (loanErr) throw loanErr;
 
-  let loanInterest    = 0;
-  let loanPrincipal   = 0;
-  let serviceFee      = 0;
-  let clpp            = 0;
-  let annualDues      = 0;
-  let netProceeds     = 0;
-
+  let loanInterest = 0;
   for (const loan of loans) {
-    loanPrincipal += Number(loan.amount || 0);
-    serviceFee    += Number(loan.service_fee || 0);
-    clpp          += Number(loan.loan_insurance || 0);
-    annualDues    += Number(loan.annual_dues || 0);
-
-    // Parse interest + net proceeds from JSON columns
     try {
-      const summary    = typeof loan.preview_summary_json === 'string'
-        ? JSON.parse(loan.preview_summary_json) : (loan.preview_summary_json || {});
-      loanInterest += Number(summary.total_interest_earned || 0);
+      const schedule = typeof loan.preview_schedule_json === 'string'
+        ? JSON.parse(loan.preview_schedule_json)
+        : (loan.preview_schedule_json || []);
+
+      if (Array.isArray(schedule)) {
+        for (const row of schedule) {
+          const paidDate = row.last_interest_paid_at || row.paid_at || row.last_partial_paid_at || null;
+          if ((row.paid || row.partial_paid) && inRange(paidDate)) {
+            const fullInterest = Number(row.interest || row.interest_amount || 0);
+            const totalDue = Number(row.total_due || row.payment || ((row.principal || 0) + fullInterest));
+            const proportionalInterest = totalDue > 0
+              ? Math.min(fullInterest, fullInterest * (Number(row.paid_amount || 0) / totalDue))
+              : fullInterest;
+            loanInterest += Number(
+              hasDateFilter && row.last_interest_paid_amount != null
+                ? row.last_interest_paid_amount
+                : row.interest_paid_amount != null
+                  ? row.interest_paid_amount
+                  : row.paid
+                    ? fullInterest
+                    : proportionalInterest
+            );
+          }
+        }
+      }
     } catch { /* skip malformed JSON */ }
-
-    try {
-      const deductions = typeof loan.preview_deductions_json === 'string'
-        ? JSON.parse(loan.preview_deductions_json) : (loan.preview_deductions_json || {});
-      netProceeds += Number(deductions.net_proceeds || 0);
-    } catch { /* skip */ }
   }
 
-  // ── Membership transactions ───────────────────────────────────────────────
   let txQuery = supabase
     .from('transactions')
-    .select('id, amount, notes, category, type, transaction_date')
-    .eq('category', 'membership');
+    .select('id, amount, notes, category, type, transaction_date');
 
-  if (from)       txQuery = txQuery.gte('transaction_date', from);
+  if (from) txQuery = txQuery.gte('transaction_date', from);
   if (toEndOfDay) txQuery = txQuery.lte('transaction_date', toEndOfDay);
 
-  const { data: membershipTx = [], error: txErr } = await txQuery;
+  const { data: txList = [], error: txErr } = await txQuery;
   if (txErr) throw txErr;
 
-  let membershipFee = 0;
-  let vipCardIncome = 0; // WELLife VIP Card / T-shirt
+  const buckets = {
+    service_fee: 0,
+    cbu_retention: 0,
+    legal_fees: 0,
+    clpi_insurance: 0,
+    regular_savings: 0,
+    penalty_due: 0,
+    annual_dues: 0,
+    cbu_completion: 0,
+    petty_cash: 0,
+    membership_fee: 0,
+    vip_card: 0,
+    admin_regulatory_fees: 0,
+  };
 
-  for (const tx of membershipTx) {
+  for (const tx of txList) {
     const note = String(tx.notes || '').toLowerCase();
-    const isVipCard = note.includes('vip') || note.includes('shirt') || note.includes('wellife');
-    if (isVipCard) {
-      vipCardIncome += Number(tx.amount || 0);
-    } else {
-      membershipFee += Number(tx.amount || 0);
+    const txCategory = String(tx.category || '').toLowerCase();
+    const bucketText = `${note} ${txCategory}`;
+    const amount = Number(tx.amount || 0);
+
+    if (tx.type === 'loan_deduction') {
+      if (bucketText.includes('service')) buckets.service_fee += amount;
+      else if (bucketText.includes('cbu completion')) buckets.cbu_completion += amount;
+      else if (bucketText.includes('cbu') || bucketText.includes('share capital') || bucketText.includes('retention')) buckets.cbu_retention += amount;
+      else if (bucketText.includes('legal') || bucketText.includes('notarial')) buckets.legal_fees += amount;
+      else if (bucketText.includes('insurance') || bucketText.includes('clpp') || bucketText.includes('clpi') || bucketText.includes('protection')) buckets.clpi_insurance += amount;
+      else if (bucketText.includes('regular savings') || bucketText.includes('initial savings') || bucketText.includes('saving')) buckets.regular_savings += amount;
+      else if (bucketText.includes('penalty')) buckets.penalty_due += amount;
+      else if (bucketText.includes('annual')) buckets.annual_dues += amount;
+      else if (bucketText.includes('petty')) buckets.petty_cash += amount;
+      else if (bucketText.includes('vip') || bucketText.includes('wellife')) buckets.vip_card += amount;
+      else if (bucketText.includes('regulatory') || bucketText.includes('admin')) buckets.admin_regulatory_fees += amount;
+      else if (bucketText.includes('membership')) buckets.membership_fee += amount;
+    }
+
+    if (tx.category === 'membership') {
+      if (note.includes('vip') || note.includes('shirt') || note.includes('wellife')) {
+        buckets.vip_card += amount;
+      } else if (note.includes('regulatory') || note.includes('admin')) {
+        buckets.admin_regulatory_fees += amount;
+      } else {
+        buckets.membership_fee += amount;
+      }
     }
   }
 
+  const totalIncome =
+    loanInterest +
+    buckets.service_fee +
+    buckets.cbu_retention +
+    buckets.legal_fees +
+    buckets.clpi_insurance +
+    buckets.regular_savings +
+    buckets.penalty_due +
+    buckets.annual_dues +
+    buckets.cbu_completion +
+    buckets.petty_cash +
+    buckets.membership_fee +
+    buckets.vip_card +
+    buckets.admin_regulatory_fees;
+
   return {
-    loan_interest:   Math.round(loanInterest  * 100) / 100,
-    loan_principal:  Math.round(loanPrincipal * 100) / 100,
-    service_fee:     Math.round(serviceFee    * 100) / 100,
-    clpp:            Math.round(clpp          * 100) / 100,
-    annual_dues:     Math.round(annualDues    * 100) / 100,
-    net_proceeds:    Math.round(netProceeds   * 100) / 100,
-    membership_fee:  Math.round(membershipFee * 100) / 100,
-    vip_card:        Math.round(vipCardIncome * 100) / 100,
-    total_income:    Math.round(
-      (loanInterest + serviceFee + clpp + annualDues + membershipFee + vipCardIncome) * 100
-    ) / 100,
-    loan_count:  loans.length,
-    tx_count:    membershipTx.length,
+    loan_interest: Math.round(loanInterest * 100) / 100,
+    service_fee: Math.round(buckets.service_fee * 100) / 100,
+    cbu_retention: Math.round(buckets.cbu_retention * 100) / 100,
+    legal_fees: Math.round(buckets.legal_fees * 100) / 100,
+    clpi_insurance: Math.round(buckets.clpi_insurance * 100) / 100,
+    regular_savings: Math.round(buckets.regular_savings * 100) / 100,
+    penalty_due: Math.round(buckets.penalty_due * 100) / 100,
+    annual_dues: Math.round(buckets.annual_dues * 100) / 100,
+    cbu_completion: Math.round(buckets.cbu_completion * 100) / 100,
+    petty_cash: Math.round(buckets.petty_cash * 100) / 100,
+    membership_fee: Math.round(buckets.membership_fee * 100) / 100,
+    vip_card: Math.round(buckets.vip_card * 100) / 100,
+    admin_regulatory_fees: Math.round(buckets.admin_regulatory_fees * 100) / 100,
+    total_income: Math.round(totalIncome * 100) / 100,
+    loan_count: loans.length,
+    tx_count: txList.length,
   };
 }
-
-
 
 export const CATEGORY_LABEL = {
   loan_payment: 'Loan Payment',

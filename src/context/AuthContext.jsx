@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import toast from 'react-hot-toast';
+import { trackActivity } from '../services/logService';
 
 const AuthContext = createContext(null);
 
@@ -113,6 +114,15 @@ export function AuthProvider({ children }) {
       setLoading(false);
 
       fetchAndValidateProfile(nextSession?.user ?? null);
+
+      if (_event === 'SIGNED_IN' && nextSession?.user?.id) {
+        trackActivity({
+          userId: nextSession.user.id,
+          module: 'auth',
+          action: 'login',
+          description: 'User signed in.',
+        });
+      }
     });
 
     return () => {
@@ -123,6 +133,14 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     setLoggingOut(true);
+    if (user?.id) {
+      trackActivity({
+        userId: user.id,
+        module: 'auth',
+        action: 'logout',
+        description: 'User signed out.',
+      });
+    }
     // Let the logout animation play briefly before the auth state actually
     // flips and the router kicks the user back to /login.
     await new Promise(resolve => setTimeout(resolve, 1100));

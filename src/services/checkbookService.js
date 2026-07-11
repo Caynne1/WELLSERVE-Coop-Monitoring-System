@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { releaseLoanFromCheck } from './loanWorkflowService';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
 // Only these fields are ever written to the DB.
@@ -101,7 +102,21 @@ export async function updateCheckbookEntry(id, payload) {
 export async function clearCheck(id) {
   const { data, error } = await supabase
     .from('checkbook')
-    .update({ status: 'cleared' })
+    .update({ status: 'waiting_release' })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function releaseCheck(id, userId) {
+  const check = await getCheckbookEntryById(id);
+  await releaseLoanFromCheck(check, userId);
+
+  const { data, error } = await supabase
+    .from('checkbook')
+    .update({ status: 'released' })
     .eq('id', id)
     .select()
     .single();

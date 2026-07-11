@@ -19,6 +19,7 @@ import {
   createCheckbookEntry,
   updateCheckbookEntry,
   clearCheck,
+  releaseCheck,
   voidCheck,
 } from '../../services/checkbookService';
 // [ADDED] Load approved vouchers for the optional voucher link dropdown
@@ -30,13 +31,17 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const STATUS_BADGE = {
   issued:  'warning',
+  waiting_release: 'info',
+  released: 'success',
   cleared: 'success',
   voided:  'danger',
 };
 
 const STATUS_LABEL = {
-  issued:  'Issued',
-  cleared: 'Cleared',
+  issued:  'For Check Approval',
+  waiting_release: 'Waiting for Release',
+  released: 'Released',
+  cleared: 'Released',
   voided:  'Voided',
 };
 
@@ -80,6 +85,8 @@ export default function CheckbookPage() {
   // Clear confirm modal
   const [clearTarget, setClearTarget] = useState(null);
   const [clearing, setClearing]       = useState(false);
+  const [releaseTarget, setReleaseTarget] = useState(null);
+  const [releasing, setReleasing]         = useState(false);
 
   // Void confirm modal
   const [voidTarget, setVoidTarget]   = useState(null);
@@ -137,7 +144,7 @@ export default function CheckbookPage() {
   // ── Summary stats ────────────────────────────────────────────────────────────
 
   const issuedList   = entries.filter(e => e.status === 'issued');
-  const clearedList  = entries.filter(e => e.status === 'cleared');
+  const clearedList  = entries.filter(e => e.status === 'released' || e.status === 'cleared');
   const totalIssued  = issuedList.reduce((s, e)  => s + (e.amount || 0), 0);
   const totalCleared = clearedList.reduce((s, e) => s + (e.amount || 0), 0);
 
@@ -234,14 +241,30 @@ export default function CheckbookPage() {
     setClearing(true);
     try {
       await clearCheck(clearTarget.id);
-      toast.success(`Check ${clearTarget.check_no} marked as cleared.`);
-      trackActivity({ userId: user?.id, module: 'checkbook', action: 'clear', description: `Cleared check #${clearTarget.check_no}` });
+      toast.success(`Check ${clearTarget.check_no} approved and waiting for release.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'approve', description: `Approved check #${clearTarget.check_no}` });
       setClearTarget(null);
       fetchEntries();
     } catch (err) {
       toast.error(err.message || 'Failed to clear check.');
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function handleRelease() {
+    if (!releaseTarget) return;
+    setReleasing(true);
+    try {
+      await releaseCheck(releaseTarget.id, user?.id ?? null);
+      toast.success(`Check ${releaseTarget.check_no} released.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'release', description: `Released check #${releaseTarget.check_no}` });
+      setReleaseTarget(null);
+      fetchEntries();
+    } catch (err) {
+      toast.error(err.message || 'Failed to release check.');
+    } finally {
+      setReleasing(false);
     }
   }
 
@@ -337,7 +360,7 @@ export default function CheckbookPage() {
         />
         <SummaryCard
           icon={<CheckCircle size={20} className="text-green-600" />}
-          label="Cleared"
+          label="Released"
           value={`${clearedList.length} check${clearedList.length !== 1 ? 's' : ''}`}
           sub={formatCurrency(totalCleared)}
           bg="bg-green-50"
@@ -371,7 +394,8 @@ export default function CheckbookPage() {
         >
           <option value="">All Status</option>
           <option value="issued">Issued</option>
-          <option value="cleared">Cleared</option>
+          <option value="waiting_release">Waiting for Release</option>
+          <option value="released">Released</option>
           <option value="voided">Voided</option>
         </select>
         <button
@@ -481,7 +505,17 @@ export default function CheckbookPage() {
                         {entry.status === 'issued' && (
                           <button
                             onClick={() => setClearTarget(entry)}
-                            title="Mark as Cleared"
+                            title="Approve Check"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-green-600
+                              hover:bg-green-50 transition-colors"
+                          >
+                            <CheckCircle size={15} />
+                          </button>
+                        )}
+                        {entry.status === 'waiting_release' && (
+                          <button
+                            onClick={() => setReleaseTarget(entry)}
+                            title="Release"
                             className="p-1.5 rounded-lg text-gray-400 hover:text-green-600
                               hover:bg-green-50 transition-colors"
                           >
@@ -732,7 +766,7 @@ export default function CheckbookPage() {
                   icon={<CheckCircle size={13} />}
                   onClick={() => { setViewTarget(null); setClearTarget(viewTarget); }}
                 >
-                  Mark Cleared
+                  Approve Check
                 </Button>
                 <Button
                   variant="danger"
@@ -752,13 +786,13 @@ export default function CheckbookPage() {
       <Modal
         open={!!clearTarget}
         onClose={() => setClearTarget(null)}
-        title="Mark Check as Cleared"
+        title="Approve Check"
         size="sm"
       >
         {clearTarget && (
           <>
             <p className="text-sm text-gray-600 mb-3">
-              Confirm that this check has cleared the bank?
+              Approve this check and mark it as waiting for release?
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-mono text-xs font-bold text-gray-600 mb-1">
@@ -786,7 +820,50 @@ export default function CheckbookPage() {
                 onClick={handleClear}
                 icon={!clearing && <CheckCircle size={15} />}
               >
-                Confirm Cleared
+                Confirm Approval
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!releaseTarget}
+        onClose={() => setReleaseTarget(null)}
+        title="Release Check"
+        size="sm"
+      >
+        {releaseTarget && (
+          <>
+            <p className="text-sm text-gray-600 mb-3">
+              Release this check? This will post the loan net proceeds OUT and loan deductions IN to Fund Monitoring.
+            </p>
+            <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
+              <p className="font-mono text-xs font-bold text-gray-600 mb-1">
+                {releaseTarget.check_no}
+              </p>
+              <p className="font-medium text-gray-900 text-sm">{releaseTarget.payee}</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {releaseTarget.purpose}
+                {' · '}
+                {formatCurrency(releaseTarget.amount)}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setReleaseTarget(null)}
+                disabled={releasing}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="success"
+                loading={releasing}
+                onClick={handleRelease}
+                icon={!releasing && <CheckCircle size={15} />}
+              >
+                Release
               </Button>
             </div>
           </>

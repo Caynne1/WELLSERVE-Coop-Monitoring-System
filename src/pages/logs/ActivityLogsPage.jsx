@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FileText, Search, Download, X, Calendar, Printer } from 'lucide-react';
+import { FileText, Search, Download, X, Calendar, Printer, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
@@ -20,8 +20,10 @@ const MODULE_COLORS = {
   invoice:    'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
   expense:    'bg-red-50 text-red-600 ring-1 ring-red-200',
   checkbook:  'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
+  auth:       'bg-slate-50 text-slate-700 ring-1 ring-slate-200',
   transaction:   'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
   time_deposit:  'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
+  account_monitoring: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
 };
 
 // ─── Action badge colours ─────────────────────────────────────────────────────
@@ -33,6 +35,10 @@ const ACTION_COLORS = {
   view:    'bg-gray-50 text-gray-600',
   approve: 'bg-emerald-50 text-emerald-700',
   reject:  'bg-rose-50 text-rose-700',
+  release: 'bg-purple-50 text-purple-700',
+  void:    'bg-amber-50 text-amber-700',
+  payment: 'bg-teal-50 text-teal-700',
+  export:  'bg-cyan-50 text-cyan-700',
   login:   'bg-indigo-50 text-indigo-700',
   logout:  'bg-slate-50 text-slate-600',
 };
@@ -46,14 +52,18 @@ function actionBadgeClass(action = '') {
 }
 
 // ─── CSV export helper ────────────────────────────────────────────────────────
+function displayUser(log) {
+  return log.user_name || log.profiles?.email || log.user_id || 'System';
+}
+
 function exportToCSV(logs) {
-  const headers = ['Date & Time', 'Action', 'Module', 'Description', 'User'];
+  const headers = ['Date & Time', 'User Name', 'Module', 'Action Performed', 'Description'];
   const rows = logs.map(log => [
     formatDateTime(log.created_at),
-    (log.action || '').replace(/_/g, ' '),
+    displayUser(log),
     log.module || '',
+    (log.action || '').replace(/_/g, ' '),
     (log.description || '').replace(/,/g, ';'),   // escape commas
-    log.user_name || log.profiles?.email || log.user_id || '',
   ]);
 
   const csv = [headers, ...rows]
@@ -148,6 +158,11 @@ export default function ActivityLogsPage() {
     setDateTo('');
   };
 
+  const refreshLogs = () => {
+    setLoading(true);
+    fetchLogs({ search: appliedSearch, dateFrom: dateFrom || null, dateTo: dateTo || null });
+  };
+
   const hasActiveFilters = appliedSearch || dateFrom || dateTo;
 
   // ── Export ──
@@ -183,16 +198,16 @@ export default function ActivityLogsPage() {
   function handlePrint() {
     const rows = logs.map(log => `<tr>
       <td style="white-space:nowrap">${log.created_at ? new Date(log.created_at).toLocaleString('en-PH') : '—'}</td>
-      <td style="text-transform:capitalize">${(log.action||'').replace(/_/g,' ')}</td>
+      <td>${displayUser(log)}</td>
       <td style="text-transform:capitalize">${log.module||'—'}</td>
-      <td style="max-width:200px">${log.description||'—'}</td>
-      <td>${log.user_name||log.profiles?.email||'—'}</td>
+      <td style="text-transform:capitalize">${(log.action||'').replace(/_/g,' ')}</td>
+      <td style="max-width:240px">${log.description||'—'}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Activity Logs</h1>
       <div class="report-meta">System audit trail &nbsp;|&nbsp; ${logs.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
       <table>
-        <thead><tr><th>Date &amp; Time</th><th>Action</th><th>Module</th><th>Description</th><th>User</th></tr></thead>
+        <thead><tr><th>Date &amp; Time</th><th>User Name</th><th>Module</th><th>Action Performed</th><th>Description</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
@@ -262,14 +277,23 @@ export default function ActivityLogsPage() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Print + Export buttons */}
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        {/* Action buttons */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refreshLogs}
+          icon={<RefreshCw size={13} className={loading ? 'animate-spin' : ''} />}
         >
-          <Printer size={14} />
+          Refresh
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handlePrint}
+          icon={<Printer size={13} />}
+        >
           Print
-        </button>
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -310,7 +334,7 @@ export default function ActivityLogsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Action', 'Module', 'Description', 'User', 'Date & Time'].map(h => (
+                  {['Date & Time', 'User Name', 'Module', 'Action Performed', 'Description'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {h}
                     </th>
@@ -328,28 +352,10 @@ export default function ActivityLogsPage() {
                 ) : logs.map(log => (
                   <tr key={log.id} className="hover:bg-gray-50/60 transition-colors">
 
-                    {/* Action */}
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium capitalize ${actionBadgeClass(log.action)}`}>
-                        {(log.action || '—').replace(/_/g, ' ')}
-                      </span>
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                      {formatDateTime(log.created_at)}
                     </td>
 
-                    {/* Module */}
-                    <td className="px-4 py-3">
-                      {log.module ? (
-                        <span className={`text-xs px-2 py-0.5 rounded-full capitalize font-medium ${MODULE_COLORS[log.module] || 'bg-gray-100 text-gray-600'}`}>
-                          {log.module}
-                        </span>
-                      ) : '—'}
-                    </td>
-
-                    {/* Description */}
-                    <td className="px-4 py-3 text-gray-500 max-w-xs truncate" title={log.description}>
-                      {log.description || '—'}
-                    </td>
-
-                    {/* User — show full name, fall back to email, then abbreviated UID */}
                     <td className="px-4 py-3">
                       {log.user_name ? (
                         <span className="text-gray-700 font-medium">{log.user_name}</span>
@@ -360,9 +366,22 @@ export default function ActivityLogsPage() {
                       )}
                     </td>
 
-                    {/* Date */}
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDateTime(log.created_at)}
+                    <td className="px-4 py-3">
+                      {log.module ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full capitalize font-medium ${MODULE_COLORS[log.module] || 'bg-gray-100 text-gray-600'}`}>
+                          {log.module}
+                        </span>
+                      ) : '—'}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium capitalize ${actionBadgeClass(log.action)}`}>
+                        {(log.action || '—').replace(/_/g, ' ')}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-500 max-w-md truncate" title={log.description}>
+                      {log.description || '—'}
                     </td>
 
                   </tr>

@@ -29,22 +29,40 @@ function applyPaymentToSchedule(schedule, paymentAmount) {
     if (row.paid) continue;
     const rowDue = round2(row.remaining_due ?? row.total_due ?? row.payment ?? 0);
     if (rowDue <= 0) continue;
+    const previousPaid = round2(row.paid_amount || 0);
+    const rowTotal = round2(row.total_due ?? row.payment ?? ((row.principal || 0) + (row.interest || row.interest_amount || 0)));
+    const rowInterest = round2(row.interest ?? row.interest_amount ?? 0);
+    const previousInterestPaid = round2(row.interest_paid_amount || 0);
+    const interestForPayment = (paidAmount) => {
+      if (rowInterest <= 0) return 0;
+      if (paidAmount >= rowDue) return round2(Math.max(0, rowInterest - previousInterestPaid));
+      if (rowTotal <= 0) return 0;
+      return round2(Math.min(rowInterest - previousInterestPaid, rowInterest * (paidAmount / rowTotal)));
+    };
 
     if (remaining >= rowDue) {
+      const interestPaidNow = interestForPayment(rowDue);
       row.paid = true;
-      row.paid_amount = rowDue;
+      row.paid_amount = round2(previousPaid + rowDue);
       row.paid_at = new Date().toISOString();
       row.remaining_due = 0;
       row.partial_paid = false;
+      row.interest_paid_amount = rowInterest;
+      row.last_interest_paid_amount = interestPaidNow;
+      row.last_interest_paid_at = row.paid_at;
       applied = round2(applied + rowDue);
       remaining = round2(remaining - rowDue);
     } else if (remaining > 0) {
+      const interestPaidNow = interestForPayment(remaining);
       row.paid = false;
       row.partial_paid = true;
-      row.paid_amount = round2((row.paid_amount || 0) + remaining);
+      row.paid_amount = round2(previousPaid + remaining);
       row.partial_paid_amount = row.paid_amount;
-      row.remaining_due = round2(rowDue - row.paid_amount);
+      row.remaining_due = round2(rowDue - remaining);
       row.last_partial_paid_at = new Date().toISOString();
+      row.interest_paid_amount = round2(previousInterestPaid + interestPaidNow);
+      row.last_interest_paid_amount = interestPaidNow;
+      row.last_interest_paid_at = row.last_partial_paid_at;
       applied = round2(applied + remaining);
       remaining = 0;
       break;
@@ -108,7 +126,7 @@ function buildScheduleSummary(schedule, loanParams = {}) {
 }
 
 const LOAN_COLUMNS = [
-  'member_id', 'loan_no', 'loan_type', 'amount', 'balance', 'interest_rate', 'term_months',
+  'member_id', 'loan_no', 'amount', 'balance', 'interest_rate', 'term_months',
   'monthly_amortization', 'release_date', 'due_date', 'status', 'purpose', 'notes',
   'repayment_frequency', 'loan_method', 'source', 'advance_payment',
 
@@ -143,6 +161,11 @@ function sanitizeLoanPayload(payload) {
       ([k, v]) => LOAN_COLUMNS.includes(k) && v !== '' && v !== undefined && v !== null
     )
   );
+}
+
+function getMissingColumnName(error) {
+  const message = error?.message || '';
+  return message.match(/Could not find the '([^']+)' column/)?.[1] || null;
 }
 
 function parseJSONSafe(value, fallback) {
@@ -241,7 +264,7 @@ export async function createLoan(payload) {
     balance: payload.balance != null ? Number(payload.balance) : amount,
 
     // Preserve provided status — only default if not supplied
-    status: payload.status || 'active',
+    status: payload.status || 'draft',
 
     // Preserve provided source — default to 'manual' if not supplied
     source: payload.source || 'manual',
@@ -252,28 +275,55 @@ export async function createLoan(payload) {
 
   const clean = sanitizeLoanPayload(withDefaults);
 
-  const { data, error } = await supabase
+  let insertPayload = clean;
+  let result = await supabase
     .from('loans')
-    .insert(clean)
+    .insert(insertPayload)
     .select()
     .single();
 
-  if (error) throw error;
-  return data;
+  while (result.error && getMissingColumnName(result.error)) {
+    const missingColumn = getMissingColumnName(result.error);
+    if (!Object.prototype.hasOwnProperty.call(insertPayload, missingColumn)) break;
+    insertPayload = { ...insertPayload };
+    delete insertPayload[missingColumn];
+    result = await supabase
+      .from('loans')
+      .insert(insertPayload)
+      .select()
+      .single();
+  }
+
+  if (result.error) throw result.error;
+  return result.data;
 }
 
 export async function updateLoan(id, payload) {
   const clean = sanitizeLoanPayload(payload);
 
-  const { data, error } = await supabase
+  let updatePayload = clean;
+  let result = await supabase
     .from('loans')
-    .update(clean)
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single();
 
-  if (error) throw error;
-  return data;
+  while (result.error && getMissingColumnName(result.error)) {
+    const missingColumn = getMissingColumnName(result.error);
+    if (!Object.prototype.hasOwnProperty.call(updatePayload, missingColumn)) break;
+    updatePayload = { ...updatePayload };
+    delete updatePayload[missingColumn];
+    result = await supabase
+      .from('loans')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+  }
+
+  if (result.error) throw result.error;
+  return result.data;
 }
 
 export async function deleteLoan(id) {
@@ -292,7 +342,7 @@ export async function getLoanStats() {
 
   if (error) throw error;
 
-  const active = (data || []).filter(l => l.status === 'active');
+  const active = (data || []).filter(l => ['approved', 'released', 'active'].includes(l.status));
 
   return {
     total: (data || []).length,
@@ -479,9 +529,10 @@ export async function getLoanPortfolioAnalytics() {
  * Requires approval_status and approval_notes columns (see migration SQL).
  */
 export async function updateLoanApprovalStatus(loanId, approvalStatus, notes = '') {
+  const nextStatus = approvalStatus === 'approved' ? 'approved' : approvalStatus;
   const { data, error } = await supabase
     .from('loans')
-    .update({ approval_status: approvalStatus, approval_notes: notes })
+    .update({ status: nextStatus, approval_status: approvalStatus, approval_notes: notes })
     .eq('id', loanId)
     .select()
     .single();
