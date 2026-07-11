@@ -1087,6 +1087,8 @@ export default function LoanDetailPage() {
         <LoanScheduleTable
           schedule={scheduleRows}
           frequency={loan.repayment_frequency || 'monthly'}
+          loanAmount={loan.amount || 0}
+          monthlyInterestRate={monthlyInterestRate}
           defaultOpen={scheduleOpen}
           showPaymentTracking={true}
           title="Amortization Schedule"

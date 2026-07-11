@@ -41,6 +41,8 @@ function StatusPill({ paid, paidAmount, totalDue }) {
 export default function LoanScheduleTable({
   schedule = [],
   frequency = 'monthly',
+  loanAmount = 0,
+  monthlyInterestRate = 0,
   compact = false,
   defaultOpen = true,
   showPaymentTracking = false,
@@ -51,9 +53,37 @@ export default function LoanScheduleTable({
   if (!schedule || schedule.length === 0) return null;
 
   const freqLabel = interestColLabel(frequency);
-  const totalPrincipalAmort = schedule.reduce((s, r) => s + (r.principal || 0), 0);
-  const totalInterest = schedule.reduce((s, r) => s + (r.interest || 0), 0);
-  const totalLoanPayment = schedule.reduce((s, r) => s + (r.payment || 0), 0);
+  const displaySchedule = schedule.map((row, idx) => {
+    const storedInterest = Number(row.interest ?? row.interest_amount ?? 0);
+    const shouldComputeWeeklyInterest =
+      frequency === 'weekly' &&
+      storedInterest <= 0 &&
+      Number(monthlyInterestRate || 0) > 0 &&
+      Number(loanAmount || 0) > 0;
+
+    if (!shouldComputeWeeklyInterest) {
+      return { ...row, displayInterest: storedInterest };
+    }
+
+    const previousRow = idx > 0 ? schedule[idx - 1] : null;
+    const beginningBalance = Number(
+      row.beginning_balance ??
+      previousRow?.balance ??
+      previousRow?.ending_balance ??
+      (idx === 0 ? loanAmount : 0)
+    );
+    const weeklyRate = Number(monthlyInterestRate || 0) / 100 / 4;
+    const displayInterest = Math.round((beginningBalance * weeklyRate + Number.EPSILON) * 100) / 100;
+
+    return {
+      ...row,
+      displayInterest,
+    };
+  });
+
+  const totalPrincipalAmort = displaySchedule.reduce((s, r) => s + (r.principal || 0), 0);
+  const totalInterest = displaySchedule.reduce((s, r) => s + (r.displayInterest || 0), 0);
+  const totalLoanPayment = displaySchedule.reduce((s, r) => s + ((r.payment || 0) || ((r.principal || 0) + (r.displayInterest || 0))), 0);
   const paidCount = schedule.filter(r => r.paid).length;
   const totalPaidAmount = schedule.reduce((s, r) => s + (r.paid_amount || 0), 0);
 
@@ -94,8 +124,8 @@ export default function LoanScheduleTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {schedule.map((row, idx) => {
-                const loanTotal = row.payment || (row.principal + row.interest);
+              {displaySchedule.map((row, idx) => {
+                const loanTotal = row.payment || (row.principal + row.displayInterest);
 
                 return (
                   <tr
@@ -105,7 +135,7 @@ export default function LoanScheduleTable({
                     <td className={`${cellPad} font-mono font-medium`}>{row.period}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.balance || 0)}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.principal || 0)}</td>
-                    <td className={`${cellPad} text-right`}>{formatCurrency(row.interest || 0)}</td>
+                    <td className={`${cellPad} text-right`}>{formatCurrency(row.displayInterest || 0)}</td>
                     <td className={`${cellPad} text-left whitespace-nowrap`}>{formatDate(row.due_date) || '-'}</td>
                     {showPaymentTracking && (
                       <td className={`${cellPad} text-right bg-blue-50/50 ${row.paid_amount > 0 ? 'font-medium text-blue-700' : ''}`}>

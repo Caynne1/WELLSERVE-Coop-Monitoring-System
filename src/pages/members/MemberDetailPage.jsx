@@ -938,6 +938,8 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
               <LoanScheduleTable
                 schedule={schedule}
                 frequency={loan.repayment_frequency || 'monthly'}
+                loanAmount={loan.amount || 0}
+                monthlyInterestRate={summary?.monthly_interest_rate ?? loan.interest_rate ?? 0}
                 compact={true}
                 defaultOpen={true}
                 showPaymentTracking={true}
