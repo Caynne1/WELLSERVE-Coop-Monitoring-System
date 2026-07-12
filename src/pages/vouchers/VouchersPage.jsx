@@ -103,7 +103,9 @@ function voucherKindLabel(kind) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function VouchersPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('vouchers', 'create');
+  const canEdit = hasPermission('vouchers', 'edit');
 
   // Data
   const [vouchers, setVouchers] = useState([]);
@@ -440,6 +442,10 @@ export default function VouchersPage() {
   }
 
   function openAdd() {
+    if (!canCreate) {
+      toast.error('You do not have permission to create vouchers');
+      return;
+    }
     setEditTarget(null);
     setForm({
       ...EMPTY_FORM,
@@ -452,6 +458,10 @@ export default function VouchersPage() {
   }
 
   function openEdit(voucher) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit vouchers');
+      return;
+    }
     setEditTarget(voucher);
     setForm({
       voucher_kind: voucher.voucher_kind || 'expense',
@@ -568,6 +578,12 @@ export default function VouchersPage() {
   // ── Save ────────────────────────────────────────────────────────────────────
 
   async function handleSave() {
+    if (editTarget && !canEdit) {
+      return toast.error('You do not have permission to edit vouchers');
+    }
+    if (!editTarget && !canCreate) {
+      return toast.error('You do not have permission to create vouchers');
+    }
     const errs = validateForm();
     if (Object.keys(errs).length) {
       setFormErr(errs);
@@ -656,6 +672,11 @@ export default function VouchersPage() {
 
   async function handleApprove() {
     if (!approveTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit vouchers');
+      setApproveTarget(null);
+      return;
+    }
     setApproving(true);
     try {
       await approveVoucher(approveTarget.id);
@@ -674,6 +695,11 @@ export default function VouchersPage() {
 
   async function handleVoid() {
     if (!voidTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit vouchers');
+      setVoidTarget(null);
+      return;
+    }
     setVoiding(true);
     try {
       await voidVoucher(voidTarget.id);
@@ -696,9 +722,11 @@ export default function VouchersPage() {
         title="Vouchers"
         subtitle="Manage disbursement vouchers"
         action={
-          <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
-            New Voucher
-          </Button>
+          canCreate ? (
+            <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
+              New Voucher
+            </Button>
+          ) : null
         }
       />
 
@@ -881,7 +909,7 @@ export default function VouchersPage() {
                           <Receipt size={15} />
                         </button>
 
-                        {voucher.status === 'draft' && (
+                        {canEdit && voucher.status === 'draft' && (
                           <button
                             onClick={() => openEdit(voucher)}
                             title="Edit Voucher"
@@ -891,7 +919,7 @@ export default function VouchersPage() {
                           </button>
                         )}
 
-                        {voucher.status === 'draft' && (
+                        {canEdit && voucher.status === 'draft' && (
                           <button
                             onClick={() => setApproveTarget(voucher)}
                             title="Approve Voucher"
@@ -901,7 +929,7 @@ export default function VouchersPage() {
                           </button>
                         )}
 
-                        {(voucher.status === 'draft' || voucher.status === 'approved') && (
+                        {canEdit && (voucher.status === 'draft' || voucher.status === 'approved') && (
                           <button
                             onClick={() => setVoidTarget(voucher)}
                             title="Void Voucher"

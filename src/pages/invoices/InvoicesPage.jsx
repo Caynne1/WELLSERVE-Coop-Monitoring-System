@@ -91,7 +91,9 @@ function getPaymentMode(invoice) {
 }
 
 export default function InvoicesPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('invoices', 'create');
+  const canEdit = hasPermission('invoices', 'edit');
 
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,6 +185,10 @@ export default function InvoicesPage() {
   const totalPaid = paidList.reduce((s, inv) => s + (inv.amount || 0), 0);
 
   function openAdd() {
+    if (!canCreate) {
+      toast.error('You do not have permission to create invoices');
+      return;
+    }
     setEditTarget(null);
     setForm({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
     setSelectedMember(null);
@@ -191,6 +197,10 @@ export default function InvoicesPage() {
   }
 
   function openEdit(invoice) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit invoices');
+      return;
+    }
     setEditTarget(invoice);
     setForm({
       date: invoice.date || '',
@@ -225,6 +235,12 @@ export default function InvoicesPage() {
   }
 
   async function handleSave() {
+    if (editTarget && !canEdit) {
+      return toast.error('You do not have permission to edit invoices');
+    }
+    if (!editTarget && !canCreate) {
+      return toast.error('You do not have permission to create invoices');
+    }
     const errs = validateForm();
     if (Object.keys(errs).length) {
       setFormErr(errs);
@@ -266,6 +282,11 @@ export default function InvoicesPage() {
 
   async function handleMarkPaid() {
     if (!paidTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit invoices');
+      setPaidTarget(null);
+      return;
+    }
     setMarking(true);
     try {
       await markInvoicePaid(paidTarget.id);
@@ -281,6 +302,11 @@ export default function InvoicesPage() {
 
   async function handleVoid() {
     if (!voidTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit invoices');
+      setVoidTarget(null);
+      return;
+    }
     setVoiding(true);
     try {
       await voidInvoice(voidTarget.id);
@@ -508,9 +534,11 @@ export default function InvoicesPage() {
             <Button variant="outline" icon={<Download size={15} />} onClick={handleExportCSV}>
               Export
             </Button>
+            {canCreate && (
             <Button variant="primary" icon={<Plus size={15} />} onClick={() => setMultiOpen(true)}>
               New Invoice
             </Button>
+            )}
           </div>
         }
       />
@@ -677,7 +705,7 @@ export default function InvoicesPage() {
                           <Eye size={15} />
                         </button>
 
-                        {invoice.status === 'unpaid' && (
+                        {canEdit && invoice.status === 'unpaid' && (
                           <button
                             onClick={() => openEdit(invoice)}
                             title="Edit Invoice"
@@ -687,7 +715,7 @@ export default function InvoicesPage() {
                           </button>
                         )}
 
-                        {invoice.status === 'unpaid' && (
+                        {canEdit && invoice.status === 'unpaid' && (
                           <button
                             onClick={() => setPaidTarget(invoice)}
                             title="Mark as Paid"
@@ -697,7 +725,7 @@ export default function InvoicesPage() {
                           </button>
                         )}
 
-                        {invoice.status === 'unpaid' && (
+                        {canEdit && invoice.status === 'unpaid' && (
                           <button
                             onClick={() => setVoidTarget(invoice)}
                             title="Void Invoice"

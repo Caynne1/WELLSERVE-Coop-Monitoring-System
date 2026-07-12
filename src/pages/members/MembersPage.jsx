@@ -68,6 +68,7 @@ const MEMBER_VIEWS = [
 function BulkToolbar({
   selectedCount, totalCount, onClearSelection, onSelectAll,
   onBulkExport, onBulkActivate, onBulkDeactivate, onBulkClose, onBulkDelete, statusTab,
+  canEdit, canDelete,
 }) {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
 
@@ -97,6 +98,7 @@ function BulkToolbar({
           <Download size={13} />
           Export CSV
         </button>
+        {canEdit && (
         <div className="relative">
           <button
             onClick={() => setShowStatusMenu(v => !v)}
@@ -141,6 +143,8 @@ function BulkToolbar({
             </>
           )}
         </div>
+        )}
+        {canDelete && (
         <button
           onClick={onBulkDelete}
           className="flex items-center gap-1.5 text-xs font-medium bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-xl transition-colors"
@@ -148,6 +152,7 @@ function BulkToolbar({
           <Trash2 size={13} />
           Delete
         </button>
+        )}
       </div>
       <button
         onClick={onClearSelection}
@@ -164,7 +169,10 @@ function BulkToolbar({
 
 export default function MembersPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('members', 'create');
+  const canEdit = hasPermission('members', 'edit');
+  const canDelete = hasPermission('members', 'delete');
 
   const [members, setMembers]           = useState([]);
   const [loading, setLoading]           = useState(true);
@@ -327,6 +335,11 @@ export default function MembersPage() {
 
   async function handleDelete(id) {
     if (deleting) return;
+    if (!canDelete) {
+      toast.error('You do not have permission to delete members');
+      setConfirmDelete(null);
+      return;
+    }
     const memberName = confirmDelete
       ? `${confirmDelete.first_name ?? ''} ${confirmDelete.last_name ?? ''}`.trim()
       : null;
@@ -349,6 +362,10 @@ export default function MembersPage() {
 
   async function handleReactivate(member) {
     if (reactivatingId) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit members');
+      return;
+    }
     setReactivatingId(member.id);
     try {
       await updateMember(member.id, { status: 'active' });
@@ -386,6 +403,11 @@ export default function MembersPage() {
 
   async function executeBulkStatusChange(newStatus) {
     if (bulkStatusChanging) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit members');
+      setConfirmBulkStatus(null);
+      return;
+    }
     const ids = selectedMembers.map(m => m.id);
     let successCount = 0; let failCount = 0;
     setBulkStatusChanging(true);
@@ -401,6 +423,11 @@ export default function MembersPage() {
 
   async function executeBulkDelete() {
     if (bulkDeleting) return;
+    if (!canDelete) {
+      toast.error('You do not have permission to delete members');
+      setConfirmBulkDelete(false);
+      return;
+    }
     const ids = selectedMembers.map(m => m.id);
     let successCount = 0; let failCount = 0;
     setBulkDeleting(true);
@@ -459,7 +486,7 @@ export default function MembersPage() {
           subtitle="Manage cooperative members and their financial accounts"
           action={
             <div className="flex items-center gap-2">
-              {!isKiddyView && (
+              {canCreate && !isKiddyView && (
                 <>
                   <Button 
                     variant="outline" 
@@ -479,6 +506,7 @@ export default function MembersPage() {
                   </Button>
                 </>
               )}
+              {canCreate && (
               <Button 
                 onClick={() => setAddMemberOpen(true)} 
                 icon={<UserPlus size={16} />}
@@ -486,6 +514,7 @@ export default function MembersPage() {
               >
                 Add Member
               </Button>
+              )}
             </div>
           }
         />
@@ -691,6 +720,8 @@ export default function MembersPage() {
             onBulkClose={() => setConfirmBulkStatus('closed')}
             onBulkDelete={() => setConfirmBulkDelete(true)}
             statusTab={statusTab}
+            canEdit={canEdit}
+            canDelete={canDelete}
           />
         )}
       </div>
@@ -791,7 +822,7 @@ export default function MembersPage() {
                                     : 'No members yet.'
                             }
                           </p>
-                          {!search && typeFilter === 'all' && yearFilter === 'all' && statusTab === 'active' && (
+                          {canCreate && !search && typeFilter === 'all' && yearFilter === 'all' && statusTab === 'active' && (
                             <Button
                               size="sm"
                               onClick={() => setAddMemberOpen(true)}
@@ -928,6 +959,7 @@ export default function MembersPage() {
                               >
                                 <Eye size={15} />
                               </button>
+                              {canEdit && (
                               <button
                                 onClick={() => navigate(`/members/${member.id}/edit`)}
                                 title="Edit member"
@@ -935,7 +967,8 @@ export default function MembersPage() {
                               >
                                 <Pencil size={15} />
                               </button>
-                              {(member.status === 'inactive' || member.status === 'closed') && (
+                              )}
+                              {canEdit && (member.status === 'inactive' || member.status === 'closed') && (
                                 <button
                                   onClick={() => handleReactivate(member)}
                                   disabled={reactivatingId === member.id}
@@ -948,6 +981,7 @@ export default function MembersPage() {
                                   }
                                 </button>
                               )}
+                              {canDelete && (
                               <button
                                 onClick={() => setConfirmDelete(member)}
                                 title={member.status === 'inactive' ? 'Delete permanently' : 'Delete member'}
@@ -955,6 +989,7 @@ export default function MembersPage() {
                               >
                                 <Trash2 size={15} />
                               </button>
+                              )}
                             </div>
                           </td>
                         </tr>

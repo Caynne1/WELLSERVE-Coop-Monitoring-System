@@ -59,7 +59,9 @@ const EMPTY_FORM = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CheckbookPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('checkbook', 'create');
+  const canEdit = hasPermission('checkbook', 'edit');
 
   // Data
   const [entries, setEntries]         = useState([]);
@@ -151,6 +153,10 @@ export default function CheckbookPage() {
   // ── Form helpers ─────────────────────────────────────────────────────────────
 
   function openAdd() {
+    if (!canCreate) {
+      toast.error('You do not have permission to record checks');
+      return;
+    }
     setEditTarget(null);
     setForm({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
     setFormErr({});
@@ -158,6 +164,10 @@ export default function CheckbookPage() {
   }
 
   function openEdit(entry) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit checkbook entries');
+      return;
+    }
     setEditTarget(entry);
     setForm({
       check_no:   entry.check_no   || '',
@@ -193,6 +203,12 @@ export default function CheckbookPage() {
   // ── Save ─────────────────────────────────────────────────────────────────────
 
   async function handleSave() {
+    if (editTarget && !canEdit) {
+      return toast.error('You do not have permission to edit checkbook entries');
+    }
+    if (!editTarget && !canCreate) {
+      return toast.error('You do not have permission to record checks');
+    }
     const errs = validateForm();
     if (Object.keys(errs).length) { setFormErr(errs); return; }
 
@@ -238,6 +254,11 @@ export default function CheckbookPage() {
 
   async function handleClear() {
     if (!clearTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit checkbook entries');
+      setClearTarget(null);
+      return;
+    }
     setClearing(true);
     try {
       await clearCheck(clearTarget.id);
@@ -254,6 +275,11 @@ export default function CheckbookPage() {
 
   async function handleRelease() {
     if (!releaseTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit checkbook entries');
+      setReleaseTarget(null);
+      return;
+    }
     setReleasing(true);
     try {
       await releaseCheck(releaseTarget.id, user?.id ?? null);
@@ -272,6 +298,11 @@ export default function CheckbookPage() {
 
   async function handleVoid() {
     if (!voidTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit checkbook entries');
+      setVoidTarget(null);
+      return;
+    }
     setVoiding(true);
     try {
       await voidCheck(voidTarget.id);
@@ -343,9 +374,11 @@ export default function CheckbookPage() {
         title="Checkbook"
         subtitle="Track issued checks and monitor clearings"
         action={
-          <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
-            Record Check
-          </Button>
+          canCreate ? (
+            <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
+              Record Check
+            </Button>
+          ) : null
         }
       />
 
@@ -492,7 +525,7 @@ export default function CheckbookPage() {
                         >
                           <Eye size={15} />
                         </button>
-                        {entry.status === 'issued' && (
+                        {canEdit && entry.status === 'issued' && (
                           <button
                             onClick={() => openEdit(entry)}
                             title="Edit Entry"
@@ -502,7 +535,7 @@ export default function CheckbookPage() {
                             <Pencil size={15} />
                           </button>
                         )}
-                        {entry.status === 'issued' && (
+                        {canEdit && entry.status === 'issued' && (
                           <button
                             onClick={() => setClearTarget(entry)}
                             title="Approve Check"
@@ -512,7 +545,7 @@ export default function CheckbookPage() {
                             <CheckCircle size={15} />
                           </button>
                         )}
-                        {entry.status === 'waiting_release' && (
+                        {canEdit && entry.status === 'waiting_release' && (
                           <button
                             onClick={() => setReleaseTarget(entry)}
                             title="Release"
@@ -522,7 +555,7 @@ export default function CheckbookPage() {
                             <CheckCircle size={15} />
                           </button>
                         )}
-                        {entry.status === 'issued' && (
+                        {canEdit && entry.status === 'issued' && (
                           <button
                             onClick={() => setVoidTarget(entry)}
                             title="Void Check"

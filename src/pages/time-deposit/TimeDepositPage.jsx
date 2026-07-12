@@ -324,7 +324,10 @@ function exportToCSV(data) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function TimeDepositPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('time_deposit', 'create');
+  const canEdit = hasPermission('time_deposit', 'edit');
+  const canDelete = hasPermission('time_deposit', 'delete');
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const [records, setRecords]       = useState([]);
@@ -513,12 +516,20 @@ export default function TimeDepositPage() {
 
   // ── Application Modal handlers ────────────────────────────────────────────
   function openCreate() {
+    if (!canCreate) {
+      toast.error('You do not have permission to create time deposit applications');
+      return;
+    }
     setEditTarget(null);
     setForm(EMPTY_FORM);
     setAppModalOpen(true);
   }
 
   function openEdit(record) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit time deposit records');
+      return;
+    }
     setEditTarget(record);
     setForm({
       date_applied:      record.date_applied      || '',
@@ -545,6 +556,12 @@ export default function TimeDepositPage() {
   }
 
   async function handleSave() {
+    if (editTarget && !canEdit) {
+      return toast.error('You do not have permission to edit time deposit records');
+    }
+    if (!editTarget && !canCreate) {
+      return toast.error('You do not have permission to create time deposit applications');
+    }
     if (!editTarget && !form.si_number?.trim()) {
       return toast.error('SI# is required for new applications.');
     }
@@ -635,6 +652,11 @@ export default function TimeDepositPage() {
 
   // ── Delete handlers ───────────────────────────────────────────────────────
   async function handleDelete() {
+    if (!canDelete) {
+      toast.error('You do not have permission to delete time deposit records');
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await deleteTimeDeposit(deleteTarget.id);
@@ -656,6 +678,11 @@ export default function TimeDepositPage() {
 
   // ── Cancel handlers ───────────────────────────────────────────────────────
   async function handleCancel() {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit time deposit records');
+      setCancelTarget(null);
+      return;
+    }
     setCancelling(true);
     try {
       await updateTimeDeposit(cancelTarget.id, {
@@ -695,6 +722,9 @@ export default function TimeDepositPage() {
   }
 
   async function handlePay() {
+    if (!canEdit) {
+      return toast.error('You do not have permission to edit time deposit records');
+    }
     const value = parseFloat(payAmount) || 0;
     const siNo  = paySiNo.trim();
     if (!siNo)      return toast.error('SI# is required.');
@@ -779,6 +809,10 @@ export default function TimeDepositPage() {
 
   // ── Withdrawal handlers ───────────────────────────────────────────────────
   async function openWithdraw(record) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit time deposit records');
+      return;
+    }
     setWithdrawTarget(record);
     setWithdrawVoucherId('');
     setWithdrawLoading(true);
@@ -796,6 +830,9 @@ export default function TimeDepositPage() {
   }
 
   async function handleWithdraw() {
+    if (!canEdit) {
+      return toast.error('You do not have permission to edit time deposit records');
+    }
     const voucher = withdrawVouchers.find(v => v.id === withdrawVoucherId);
     if (!voucher) return toast.error('Select an approved withdrawal voucher first.');
     const value = parseFloat(voucher.amount) || 0;
@@ -846,9 +883,11 @@ export default function TimeDepositPage() {
         subtitle="Manage time deposit applications, payments, and records"
         action={
           <div className="flex items-center gap-2 flex-wrap">
+            {canCreate && (
             <Button variant="primary" icon={<Plus size={14} />} onClick={openCreate}>
               New Application
             </Button>
+            )}
             <Button
               variant="outline"
               icon={<Printer size={14} />}
@@ -1071,24 +1110,29 @@ export default function TimeDepositPage() {
                           {/* Actions */}
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-1">
+                              {canEdit && (
                               <ActionBtn
                                 icon={<TrendingDown size={13} />}
                                 title="Withdraw"
                                 color="red"
                                 onClick={() => openWithdraw(record)}
                               />
+                              )}
                               <ActionBtn
                                 icon={<Receipt size={13} />}
                                 title="Payment History"
                                 color="amber"
                                 onClick={() => setHistoryTarget(record)}
                               />
+                              {canEdit && (
                               <ActionBtn
                                 icon={<Pencil size={13} />}
                                 title="Edit"
                                 color="blue"
                                 onClick={() => openEdit(record)}
                               />
+                              )}
+                              {canEdit && (
                               <ActionBtn
                                 icon={<Ban size={13} />}
                                 title="Cancel Deposit"
@@ -1096,12 +1140,15 @@ export default function TimeDepositPage() {
                                 onClick={() => setCancelTarget(record)}
                                 disabled={!isCancellable}
                               />
+                              )}
+                              {canDelete && (
                               <ActionBtn
                                 icon={<Trash2 size={13} />}
                                 title="Delete"
                                 color="red"
                                 onClick={() => setDeleteTarget(record)}
                               />
+                              )}
                             </div>
                           </td>
                         </tr>

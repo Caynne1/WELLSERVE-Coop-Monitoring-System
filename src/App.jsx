@@ -92,11 +92,14 @@ function AdminRoute({ children }) {
   return children;
 }
 
-function PermissionRoute({ children, module }) {
+function PermissionRoute({ children, module, action = 'view' }) {
   const { user, loading, hasPermission } = useAuth();
   if (loading) return <FullScreenLoader />;
   if (!user) return <Navigate to="/login" replace />;
+  // Must be able to view the module at all, AND have the specific action
+  // being requested (e.g. 'create' for /new routes, 'edit' for /edit routes).
   if (!hasPermission(module, 'view')) return <Navigate to="/dashboard" replace />;
+  if (action !== 'view' && !hasPermission(module, action)) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -185,15 +188,15 @@ export default function App() {
 
               {/* Members */}
               <Route path="members" element={<PermissionRoute module="members"><MembersPage /></PermissionRoute>} />
-              <Route path="members/new" element={<PermissionRoute module="members"><MemberFormPage /></PermissionRoute>} />
-              <Route path="members/:id/edit" element={<PermissionRoute module="members"><MemberFormPage /></PermissionRoute>} />
+              <Route path="members/new" element={<PermissionRoute module="members" action="create"><MemberFormPage /></PermissionRoute>} />
+              <Route path="members/:id/edit" element={<PermissionRoute module="members" action="edit"><MemberFormPage /></PermissionRoute>} />
               <Route path="members/:id" element={<PermissionRoute module="members"><MemberDetailPage /></PermissionRoute>} />
               <Route path="passbook" element={<PermissionRoute module="members"><PassbookPage /></PermissionRoute>} />
 
               {/* Financial categories */}
               <Route path="loans" element={<PermissionRoute module="loans"><LoansPage /></PermissionRoute>} />
-              <Route path="loans/new" element={<PermissionRoute module="loans"><LoanFormPage /></PermissionRoute>} />
-              <Route path="loans/:id/edit" element={<PermissionRoute module="loans"><LoanFormPage /></PermissionRoute>} />
+              <Route path="loans/new" element={<PermissionRoute module="loans" action="create"><LoanFormPage /></PermissionRoute>} />
+              <Route path="loans/:id/edit" element={<PermissionRoute module="loans" action="edit"><LoanFormPage /></PermissionRoute>} />
               <Route path="loans/:id" element={<PermissionRoute module="loans"><LoanDetailPage /></PermissionRoute>} />
               <Route path="cbu" element={<PermissionRoute module="cbu"><CBUPage /></PermissionRoute>} />
               <Route path="savings" element={<PermissionRoute module="savings"><SavingsPage /></PermissionRoute>} />
@@ -240,8 +243,8 @@ export default function App() {
 
               {/* Compatibility */}
               <Route path="accounts" element={<PermissionRoute module="account_monitoring"><AccountsPage /></PermissionRoute>} />
-              <Route path="accounts/new" element={<PermissionRoute module="account_monitoring"><AccountFormPage /></PermissionRoute>} />
-              <Route path="accounts/:id/edit" element={<PermissionRoute module="account_monitoring"><AccountFormPage /></PermissionRoute>} />
+              <Route path="accounts/new" element={<PermissionRoute module="account_monitoring" action="create"><AccountFormPage /></PermissionRoute>} />
+              <Route path="accounts/:id/edit" element={<PermissionRoute module="account_monitoring" action="edit"><AccountFormPage /></PermissionRoute>} />
               <Route path="accounts/:id" element={<PermissionRoute module="account_monitoring"><AccountDetailPage /></PermissionRoute>} />
 
               {/* Fallback */}

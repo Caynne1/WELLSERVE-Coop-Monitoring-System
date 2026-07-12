@@ -66,7 +66,8 @@ const mechanics = [
 // ── Enrollment Modal ───────────────────────────────────────────────────────────
 
 function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('savings_booster', 'create');
 
   const [query, setQuery]           = useState('');
   const [results, setResults]       = useState([]);
@@ -145,6 +146,10 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
   }, [startDate]);
 
   async function handleEnroll() {
+    if (!canCreate) {
+      toast.error('You do not have permission to enroll members');
+      return;
+    }
     if (!selected || !eligibility?.eligible) return;
     setSaving(true);
     try {
@@ -360,9 +365,11 @@ export default function SavingsBoosterPage() {
         title="Savings Booster"
         subtitle="P10/day Special Promo — 100 Slots Only"
         action={
-          <Button icon={<Plus size={15} />} onClick={() => setEnrollOpen(true)}>
-            Enroll Member
-          </Button>
+          canCreate ? (
+            <Button icon={<Plus size={15} />} onClick={() => setEnrollOpen(true)}>
+              Enroll Member
+            </Button>
+          ) : null
         }
       />
 

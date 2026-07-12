@@ -355,7 +355,8 @@ function kvRow(label, value, highlight = false) {
 export default function LoanDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, hasPermission } = useAuth();
+  const canEdit = hasPermission('loans', 'edit');
 
   const [loan, setLoan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -392,8 +393,14 @@ export default function LoanDetailPage() {
 
   async function handleApprovalChange(newStatus) {
     if (!loan) return;
-    if (newStatus === 'approved' && !canApproveLoan) {
-      toast.error('Only the Credit Committee can approve loans.');
+    const isApprovalDecision = newStatus === 'approved' || newStatus === 'rejected';
+    if (isApprovalDecision) {
+      if (!canApproveLoan) {
+        toast.error('Only the Credit Committee can approve or reject loans.');
+        return;
+      }
+    } else if (!canEdit) {
+      toast.error('You do not have permission to edit loans');
       return;
     }
     setApprovalSaving(true);
@@ -449,7 +456,7 @@ export default function LoanDetailPage() {
   const canApproveLoan =
     isAdmin ||
     profile?.role === 'credit_committee' ||
-    profile?.permissions?.loans?.approve === true;
+    hasPermission('loans', 'approve');
 
   if (loading) return <div className="flex justify-center py-24"><Spinner /></div>;
   if (!loan) return null;
@@ -955,12 +962,14 @@ export default function LoanDetailPage() {
               Excel
             </Button>
 
+            {canEdit && (
             <Button
               icon={<Edit2 size={14} />}
               onClick={() => navigate(`/loans/${id}/edit`)}
             >
               Edit
             </Button>
+            )}
           </div>
         }
       />
@@ -1193,7 +1202,11 @@ export default function LoanDetailPage() {
             ].map(({ value, label, icon: Icon, color, bg }) => (
               <button
                 key={value}
-                disabled={approvalSaving || loan.status === value || (value === 'approved' && !canApproveLoan)}
+                disabled={
+                  approvalSaving ||
+                  loan.status === value ||
+                  (['approved', 'rejected'].includes(value) ? !canApproveLoan : !canEdit)
+                }
                 onClick={() => handleApprovalChange(value)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border
                   ${loan.status === value || loan.approval_status === value

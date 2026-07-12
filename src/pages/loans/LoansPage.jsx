@@ -264,7 +264,18 @@ function getNextDueInfo(loan) {
 
 export default function LoansPage() {
   const navigate = useNavigate();
-  const { user, profile, isAdmin } = useAuth();
+  const { user, profile, isAdmin, hasPermission } = useAuth();
+  const canCreate = hasPermission('loans', 'create');
+  const canEdit = hasPermission('loans', 'edit');
+  const canDelete = hasPermission('loans', 'delete');
+  // Approving/rejecting a loan is a Credit Committee decision, distinct from
+  // general "edit" access — admins, users with the credit_committee role, or
+  // anyone explicitly granted the loans "approve" permission can do it, even
+  // without the Loans "edit" checkbox turned on.
+  const canApproveLoan =
+    isAdmin ||
+    profile?.role === 'credit_committee' ||
+    hasPermission('loans', 'approve');
 
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -316,6 +327,11 @@ export default function LoansPage() {
 
   async function handleDelete() {
     if (!toDelete) return;
+    if (!canDelete) {
+      toast.error('You do not have permission to delete loans');
+      setToDelete(null);
+      return;
+    }
 
     setDeleting(true);
     try {
@@ -333,6 +349,18 @@ export default function LoansPage() {
 
   async function handleStatusChange(loan, newStatus) {
     if (!loan?.id || !newStatus || newStatus === loan.status) return;
+    // Moving into/out of "approved" (or "rejected") is a Credit Committee
+    // decision and doesn't require the general Loans edit permission;
+    // every other transition still needs loans:edit.
+    const isApprovalDecision = newStatus === 'approved' || newStatus === 'rejected';
+    if (isApprovalDecision ? !canApproveLoan : !canEdit) {
+      toast.error(
+        isApprovalDecision
+          ? 'Only the Credit Committee can approve or reject loans.'
+          : 'You do not have permission to edit loans'
+      );
+      return;
+    }
 
     try {
       setStatusSavingId(loan.id);
@@ -351,16 +379,13 @@ export default function LoansPage() {
     const current = normalizeLoanStatus(loan.status);
     const nextStatus = current === 'draft' ? 'credit_committee_approval' : 'approved';
 
-    if (nextStatus === 'approved') {
-      const canApproveLoan =
-        isAdmin ||
-        profile?.role === 'credit_committee' ||
-        profile?.permissions?.loans?.approve === true;
-
-      if (!canApproveLoan) {
-        toast.error('Only the Credit Committee can approve loans.');
-        return;
-      }
+    if (nextStatus === 'credit_committee_approval' && !canEdit) {
+      toast.error('You do not have permission to edit loans');
+      return;
+    }
+    if (nextStatus === 'approved' && !canApproveLoan) {
+      toast.error('Only the Credit Committee can approve loans.');
+      return;
     }
 
     await handleStatusChange(loan, nextStatus);
@@ -600,12 +625,16 @@ export default function LoansPage() {
         subtitle="Manage and monitor member loans"
         action={
           <div className="flex items-center gap-2">
-            <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImportOpen(true)}>
-              Import Excel
-            </Button>
-            <Button icon={<Plus size={15} />} onClick={() => setLoanTypeModalOpen(true)}>
-              New Loan
-            </Button>
+            {canCreate && (
+              <>
+                <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImportOpen(true)}>
+                  Import Excel
+                </Button>
+                <Button icon={<Plus size={15} />} onClick={() => setLoanTypeModalOpen(true)}>
+                  New Loan
+                </Button>
+              </>
+            )}
           </div>
         }
       />
@@ -876,7 +905,8 @@ export default function LoansPage() {
 
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-2">
-                            {['draft', 'credit_committee_approval'].includes(normalizedStatus) && (
+                            {((normalizedStatus === 'draft' && canEdit) ||
+                              (normalizedStatus === 'credit_committee_approval' && canApproveLoan)) && (
                               <button
                                 onClick={() => handleWorkflowAction(loan)}
                                 disabled={statusSavingId === loan.id}
@@ -893,6 +923,7 @@ export default function LoansPage() {
                               <Eye size={15} />
                             </button>
 
+                            {canDelete && (
                             <button
                               onClick={() => setToDelete(loan)}
                               title="Delete loan"
@@ -900,6 +931,7 @@ export default function LoansPage() {
                             >
                               <Trash2 size={15} />
                             </button>
+                            )}
                           </div>
                         </td>
                       </tr>

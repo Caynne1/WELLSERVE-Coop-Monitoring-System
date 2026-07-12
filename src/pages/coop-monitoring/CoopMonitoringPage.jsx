@@ -851,7 +851,8 @@ function PenaltyIncomeTable({ penalties, loading }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CoopMonitoringPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('account_monitoring', 'create');
 
   const [loading, setLoading]               = useState(true);
   const [fund, setFund]                     = useState({ balance: 0, cash_in: 0, cash_out: 0 });
@@ -948,6 +949,9 @@ export default function CoopMonitoringPage() {
   useEffect(() => { fetchIncome(incomePeriod, incomeRange); }, [incomePeriod, incomeRange, fetchIncome]);
 
   async function handleAddFund() {
+    if (!canCreate) {
+      return toast.error('You do not have permission to add fund movements');
+    }
     const value = parseFloat(fundAmount) || 0;
     const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
@@ -1072,9 +1076,11 @@ export default function CoopMonitoringPage() {
         subtitle="Cooperative fund — cash inflow and outflow overview"
         action={
           <div className="flex items-center gap-2">
+            {canCreate && (
             <Button variant="primary" icon={<Plus size={14} />} onClick={() => setFundModalOpen(true)}>
               Add Fund
             </Button>
+            )}
             <Button
               variant="outline"
               icon={<RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />}

@@ -104,7 +104,8 @@ function frequencyLabel(value) {
 export default function MemberDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canEditMember = hasPermission('members', 'edit');
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'overview';
 
@@ -490,6 +491,7 @@ export default function MemberDetailPage() {
                   <Download size={14} />
                   <span className="hidden sm:inline">Export</span>
                 </button>
+                {canEditMember && (
                 <button
                   onClick={() => navigate(`/members/${id}/edit`)}
                   className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-xl shadow-sm transition-all
@@ -498,6 +500,7 @@ export default function MemberDetailPage() {
                   <Edit size={14} />
                   Edit Member
                 </button>
+                )}
               </div>
             </div>
 
@@ -815,6 +818,8 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
 // ─── LOAN TAB ─────────────────────────────────────────────────────────────────
 
 function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, userId, navigate, onPayLoan, paymentHistoryRows, onRefresh }) {
+  const { hasPermission } = useAuth();
+  const canCreateLoan = hasPermission('loans', 'create');
   const [importOpen, setImportOpen] = useState(false);
 
   return (
@@ -824,6 +829,7 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
           <h3 className="text-sm font-semibold text-gray-700">Loan Records</h3>
           <p className="text-xs text-gray-400 mt-1">Loan payment count: {paymentCount}</p>
         </div>
+        {canCreateLoan && (
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={14} />}>
             Import Excel
@@ -832,6 +838,7 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
             Add Loan
           </Button>
         </div>
+        )}
       </div>
 
       {loans.length === 0 ? (
@@ -995,6 +1002,8 @@ function LoanPaymentHistoryTable({ rows }) {
 // ─── CBU TAB ─────────────────────────────────────────────────────────────────
 
 function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('cbu', 'edit');
   if (!account) return <EmptyState icon={PiggyBank} message="No CBU account initialized for this member." />;
 
   return (
@@ -1010,6 +1019,7 @@ function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) 
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
+        {canEdit && (
         <div className="flex items-center gap-2">
           <Button onClick={onDeposit} variant="primary" icon={<TrendingUp size={14} />} size="sm">
             Deposit
@@ -1018,6 +1028,7 @@ function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) 
             Withdraw
           </Button>
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1040,6 +1051,8 @@ function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) 
 // ─── SAVINGS TAB ─────────────────────────────────────────────────────────────
 
 function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('savings', 'edit');
   if (!account) return <EmptyState icon={Wallet} message="No Savings account initialized for this member." />;
 
   return (
@@ -1055,6 +1068,7 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
+        {canEdit && (
         <div className="flex items-center gap-2">
           <Button onClick={onDeposit} variant="primary" icon={<TrendingUp size={14} />} size="sm">
             Deposit
@@ -1063,6 +1077,7 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw
             Withdraw
           </Button>
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1211,6 +1226,9 @@ function TransactionsTab({ transactions }) {
 // ─── PENALTY TAB ─────────────────────────────────────────────────────────────
 
 function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefresh }) {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('members', 'edit');
+  const canDelete = hasPermission('members', 'delete');
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [amount, setAmount] = useState('');
@@ -1624,6 +1642,7 @@ async function createInvoiceStrict(args, label) {
 }
 
 function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberId, memberName, userId, onSuccess }) {
+  const { hasPermission } = useAuth();
   const [loanAmt, setLoanAmt] = useState('');
   const [cbuAmt, setCbuAmt] = useState('');
   const [savingsAmt, setSavingsAmt] = useState('');
@@ -1675,6 +1694,16 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
     const loanPay = parseFloat(loanAmt) || 0;
     const cbuPay = parseFloat(cbuAmt) || 0;
     const savingsPay = parseFloat(savingsAmt) || 0;
+
+    if (loanPay > 0 && !hasPermission('loans', 'edit')) {
+      return toast.error('You do not have permission to post loan payments.');
+    }
+    if (cbuPay > 0 && !hasPermission('cbu', 'edit')) {
+      return toast.error('You do not have permission to post CBU transactions.');
+    }
+    if (savingsPay > 0 && !hasPermission('savings', 'edit')) {
+      return toast.error('You do not have permission to post savings transactions.');
+    }
 
     if (loanPay + cbuPay + savingsPay === 0) {
       return toast.error('Enter at least one amount greater than zero.');
@@ -1975,6 +2004,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
 // ─── DEPOSIT MODAL ───────────────────────────────────────────────────────────
 
 function DepositModal({ open, onClose, accountType, label, account, memberId, memberName, userId, onSuccess }) {
+  const { hasPermission } = useAuth();
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [siNo, setSiNo] = useState('');
@@ -1997,6 +2027,9 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
   }, [open]);
 
   async function handleSubmit() {
+    if (!hasPermission(accountType, 'edit')) {
+      return toast.error(`You do not have permission to post ${label} transactions`);
+    }
     const value = parseFloat(amount) || 0;
     if (value <= 0) return toast.error('Enter a valid amount greater than zero.');
     if (!account) return toast.error(`No ${label} account found for this member.`);
@@ -2173,6 +2206,7 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
 // ─── WITHDRAWAL VOUCHER MODAL ──────────────────────────────────────────────
 
 function WithdrawalVoucherModal({ open, onClose, accountType, label, account, memberId, userId, onSuccess }) {
+  const { hasPermission } = useAuth();
   const [withdrawVouchers, setWithdrawVouchers] = useState([]);
   const [selectedVoucherId, setSelectedVoucherId] = useState('');
   const [loadingVouchers, setLoadingVouchers] = useState(false);
@@ -2235,6 +2269,9 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
   }
 
   async function handleSubmit() {
+    if (!hasPermission(accountType, 'edit')) {
+      return toast.error(`You do not have permission to post ${label || accountType} transactions`);
+    }
     const voucher = withdrawVouchers.find(v => v.id === selectedVoucherId);
     const value = parseFloat(amount) || 0;
 
@@ -2422,6 +2459,8 @@ const MEMBERSHIP_FEES = {
 };
 
 function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, cbuAccount, savingsAccount, onRefresh, memberRecordType }) {
+  const { hasPermission } = useAuth();
+  const canEditMember = hasPermission('members', 'edit');
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupType, setSetupType] = useState('associate');
   const [setupRecordType, setSetupRecordType] = useState(
@@ -2527,6 +2566,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
   async function handleSetup() {
     if (!userId) return toast.error('User not authenticated');
+    if (!canEditMember) return toast.error('You do not have permission to edit members');
     setSetupSaving(true);
     try {
       await createMembership({
@@ -2558,6 +2598,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
   async function handlePayment() {
     if (!userId) return toast.error('User not authenticated');
+    if (!canEditMember) return toast.error('You do not have permission to edit members');
     if (!payDate) return toast.error('Payment date is required.');
     if (!payMode) return toast.error('Mode of payment is required.');
     if (isFullyPaid) return toast.error('Membership fee is already fully paid.');
@@ -2745,6 +2786,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
   async function handleUpgrade() {
     if (!userId) return toast.error('User not authenticated');
+    if (!canEditMember) return toast.error('You do not have permission to edit members');
     setUpgrading(true);
     try {
       await upgradeMembership(membership.id, memberId, 'regular', upgradeNotes || null, userId);
@@ -2770,6 +2812,10 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   const fieldClass = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500';
 
   function openPayModal() {
+    if (!canEditMember) {
+      toast.error('You do not have permission to edit members');
+      return;
+    }
     setPayEntry('');
     setPayCbu('');
     setPaySavings('');
@@ -2790,9 +2836,11 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
           <p className="text-xs text-gray-400 mb-5">
             Set up a membership ledger to track fees and payment history.
           </p>
+          {canEditMember && (
           <Button variant="primary" icon={<Plus size={14} />} onClick={() => setSetupOpen(true)}>
             Set Up Membership
           </Button>
+          )}
         </div>
 
         <Modal open={setupOpen} onClose={() => setSetupOpen(false)} title="Set Up Membership" size="md">
@@ -2902,7 +2950,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {membership.membership_type === 'associate' && (
+          {canEditMember && membership.membership_type === 'associate' && (
             <Button variant="blue" icon={<Shield size={14} />} size="sm" onClick={() => { setUpgradeNotes(''); setUpgradeOpen(true); }}>
               Upgrade to Regular
             </Button>
@@ -3207,6 +3255,9 @@ const EMPTY_TD_FORM = {
 };
 
 function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, userId, onRefresh }) {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('time_deposit', 'create');
+  const canEdit = hasPermission('time_deposit', 'edit');
   const [addOpen, setAddOpen]         = useState(false);
   const [tdForm, setTdForm]           = useState(EMPTY_TD_FORM);
   const [addSaving, setAddSaving]     = useState(false);
@@ -3223,11 +3274,19 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
   const tdFieldClass = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500';
 
   function openAdd() {
+    if (!canCreate) {
+      toast.error('You do not have permission to create time deposit applications');
+      return;
+    }
     setTdForm({ ...EMPTY_TD_FORM, date_applied: new Date().toISOString().split('T')[0] });
     setAddOpen(true);
   }
 
   function openPay(td) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit time deposit records');
+      return;
+    }
     setPayTarget(td);
     setPayAmount('');
     setPayDate(new Date().toISOString().split('T')[0]);
@@ -3236,6 +3295,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
   }
 
   async function handleAdd() {
+    if (!canCreate) return toast.error('You do not have permission to create time deposit applications');
     if (!tdForm.si_number.trim()) return toast.error('SI# is required.');
     if (!tdForm.payment_mode) return toast.error('Mode of payment is required.');
     if (!tdForm.terms || parseFloat(tdForm.terms) <= 0) return toast.error('Terms (months) is required.');
@@ -3304,6 +3364,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
   }
 
   async function handlePay() {
+    if (!canEdit) return toast.error('You do not have permission to edit time deposit records');
     const value = parseFloat(payAmount) || 0;
     if (!paySiNo.trim()) return toast.error('SI# is required.');
     if (value <= 0) return toast.error('Enter a valid amount.');
@@ -3380,9 +3441,11 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-700">Time Deposit Accounts</h3>
+        {canCreate && (
         <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={openAdd}>
           Add Time Deposit
         </Button>
+        )}
       </div>
 
       {(!timeDeposits || timeDeposits.length === 0) ? (
@@ -3416,9 +3479,11 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                   <Badge variant={isActive ? 'success' : 'default'} dot>
                     {td.status || 'Active'}
                   </Badge>
+                  {canEdit && (
                   <Button variant="danger" size="sm" icon={<TrendingDown size={12} />} onClick={() => setWithdrawOpen(true)}>
                     Withdraw
                   </Button>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-gray-50">

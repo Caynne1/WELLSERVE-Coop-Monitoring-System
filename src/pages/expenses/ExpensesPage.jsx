@@ -86,7 +86,9 @@ const EMPTY_FORM = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('expenses', 'create');
+  const canEdit = hasPermission('expenses', 'edit');
 
   // Data
   const [expenses, setExpenses]     = useState([]);
@@ -215,6 +217,10 @@ export default function ExpensesPage() {
   // ── Form helpers ─────────────────────────────────────────────────────────────
 
   function openAdd() {
+    if (!canCreate) {
+      toast.error('You do not have permission to create expenses');
+      return;
+    }
     setEditTarget(null);
     setForm({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
     setFormErr({});
@@ -222,6 +228,10 @@ export default function ExpensesPage() {
   }
 
   function openLoanExpense(loan) {
+    if (!canCreate) {
+      toast.error('You do not have permission to create expenses');
+      return;
+    }
     setEditTarget(null);
     setFormErr({});
     const payload = buildLoanExpensePayload(loan, user?.id ?? null);
@@ -238,6 +248,10 @@ export default function ExpensesPage() {
   }
 
   function openEdit(expense) {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit expenses');
+      return;
+    }
     setEditTarget(expense);
     setForm({
       date:          expense.date          || '',
@@ -274,6 +288,12 @@ export default function ExpensesPage() {
   // ── Save (create or update) ──────────────────────────────────────────────────
 
   async function handleSave() {
+    if (editTarget && !canEdit) {
+      return toast.error('You do not have permission to edit expenses');
+    }
+    if (!editTarget && !canCreate) {
+      return toast.error('You do not have permission to create expenses');
+    }
     const errs = validateForm();
     if (Object.keys(errs).length) { setFormErr(errs); return; }
 
@@ -314,6 +334,11 @@ export default function ExpensesPage() {
 
   async function handleApprove() {
     if (!approveTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit expenses');
+      setApproveTarget(null);
+      return;
+    }
     setApproving(true);
     try {
       const approved = await approveExpense(approveTarget.id, user?.id ?? null);
@@ -343,6 +368,11 @@ export default function ExpensesPage() {
 
   async function handleVoid() {
     if (!voidTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit expenses');
+      setVoidTarget(null);
+      return;
+    }
     setVoiding(true);
     try {
       await voidExpense(voidTarget.id);
@@ -417,6 +447,8 @@ export default function ExpensesPage() {
         subtitle="Track and manage cooperative operational expenses"
         action={
           <div className="flex items-center gap-2">
+            {canCreate && (
+              <>
             <select
               value=""
               onChange={e => {
@@ -435,6 +467,8 @@ export default function ExpensesPage() {
             <Button variant="primary" icon={<Plus size={15} />} onClick={openAdd}>
               Add Expense
             </Button>
+              </>
+            )}
           </div>
         }
       />
@@ -623,7 +657,7 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
-                        {expense.status === 'pending' && (
+                        {canEdit && expense.status === 'pending' && (
                           <>
                             <button
                               onClick={() => openEdit(expense)}
@@ -641,7 +675,7 @@ export default function ExpensesPage() {
                             </button>
                           </>
                         )}
-                        {expense.status !== 'voided' && (
+                        {canEdit && expense.status !== 'voided' && (
                           <button
                             onClick={() => setVoidTarget(expense)}
                             title="Void Expense"

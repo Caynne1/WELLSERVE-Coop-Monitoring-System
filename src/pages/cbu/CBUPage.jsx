@@ -39,7 +39,8 @@ const PAYMENT_MODE_OPTIONS = [
 
 export default function CBUPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canEdit = hasPermission('cbu', 'edit');
 
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -145,6 +146,10 @@ export default function CBUPage() {
   }
 
   async function handleDeposit() {
+    if (!canEdit) {
+      toast.error('You do not have permission to post CBU transactions');
+      return;
+    }
     const value = parseFloat(amount) || 0;
     const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
@@ -229,6 +234,10 @@ export default function CBUPage() {
   }
 
   async function handleWithdraw() {
+    if (!canEdit) {
+      toast.error('You do not have permission to post CBU transactions');
+      return;
+    }
     const account = withdrawTarget?.account;
     const voucher = withdrawVouchers.find(v => v.id === selectedVoucherId);
     const value = parseFloat(amount) || 0;
@@ -501,6 +510,7 @@ export default function CBUPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
+                        {canEdit && (
                         <button
                           onClick={() => openWithdrawModal(account)}
                           title="Post CBU Withdrawal"
@@ -508,6 +518,7 @@ export default function CBUPage() {
                         >
                           <TrendingDown size={15} />
                         </button>
+                        )}
                         <button
                           onClick={() => navigate(`/members/${account.member_id}?tab=cbu`)}
                           title="View Member CBU"

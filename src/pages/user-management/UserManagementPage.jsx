@@ -34,10 +34,22 @@ function formatDate(str) {
 }
 
 const ROLE_OPTIONS = [
-  { value: 'staff',   label: 'Staff' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'admin',   label: 'Admin' },
+  { value: 'staff',            label: 'Staff' },
+  { value: 'manager',          label: 'Manager' },
+  { value: 'credit_committee', label: 'Credit Committee' },
+  { value: 'admin',            label: 'Admin' },
 ];
+
+// Applied automatically when an admin picks "Credit Committee" as the role,
+// so the new user can see what they need out of the box. Still editable
+// afterward via the Permissions tab — this is just a sensible starting point.
+// Loan approval/rejection itself is governed by role === 'credit_committee'
+// (see canApproveLoan in LoansPage/LoanDetailPage), not by these checkboxes.
+const CREDIT_COMMITTEE_DEFAULT_PERMISSIONS = {
+  ...DEFAULT_PERMISSIONS,
+  loans:   { view: true, create: false, edit: false, delete: false },
+  members: { view: true, create: false, edit: false, delete: false },
+};
 
 const STATUS_META = {
   active:   { label: 'Active',   variant: 'success', icon: CheckCircle2 },
@@ -158,6 +170,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
     full_name: '', email: '', password: '', role: 'staff',
   });
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
+  const [permissionsTouched, setPermissionsTouched] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -192,9 +205,20 @@ function CreateUserModal({ open, onClose, onCreated }) {
   function resetAndClose() {
     setForm({ full_name: '', email: '', password: '', role: 'staff' });
     setPermissions(DEFAULT_PERMISSIONS);
+    setPermissionsTouched(false);
     setErrors({});
     setTab('info');
     onClose();
+  }
+
+  function handleRoleChange(role) {
+    setForm(p => ({ ...p, role }));
+    // Give Credit Committee a sensible starting point (they at least need to
+    // see loans/members to do the job); leave it alone if the admin already
+    // hand-edited the permission matrix.
+    if (!permissionsTouched) {
+      setPermissions(role === 'credit_committee' ? CREDIT_COMMITTEE_DEFAULT_PERMISSIONS : DEFAULT_PERMISSIONS);
+    }
   }
 
   return (
@@ -255,9 +279,18 @@ function CreateUserModal({ open, onClose, onCreated }) {
           <Select
             label="Role" required
             value={form.role}
-            onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
+            onChange={e => handleRoleChange(e.target.value)}
             options={ROLE_OPTIONS}
           />
+          {form.role === 'credit_committee' && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 flex gap-2.5">
+              <Shield size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-700">
+                Credit Committee members can review and approve or reject loan applications
+                that are awaiting approval, in addition to whatever else is granted below.
+              </p>
+            </div>
+          )}
           <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 flex gap-2.5">
             <Lock size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700">
@@ -273,7 +306,10 @@ function CreateUserModal({ open, onClose, onCreated }) {
           <p className="text-xs text-gray-500 mb-4">
             Set what this user can access. Admins have full access regardless.
           </p>
-          <PermissionMatrix permissions={permissions} onChange={setPermissions} />
+          <PermissionMatrix
+            permissions={permissions}
+            onChange={p => { setPermissions(p); setPermissionsTouched(true); }}
+          />
         </div>
       )}
 
@@ -379,6 +415,24 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
               <Lock size={12} /> You cannot change your own role.
             </p>
           )}
+          {form.role === 'credit_committee' && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 flex gap-2.5">
+              <Shield size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-700">
+                <p>
+                  Credit Committee members can review and approve or reject loan applications
+                  that are awaiting approval, regardless of the Loans permissions below.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setPermissions(CREDIT_COMMITTEE_DEFAULT_PERMISSIONS)}
+                  className="mt-1.5 font-semibold underline hover:no-underline"
+                >
+                  Apply recommended Loans/Members view access
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -471,8 +525,8 @@ function UserRow({ user, onEdit, onToggleStatus, onViewPermissions, isSelf }) {
         </div>
       </td>
       <td className="px-5 py-3">
-        <Badge variant={user.role === 'admin' ? 'navy' : user.role === 'manager' ? 'purple' : 'default'} dot>
-          {user.role || 'staff'}
+        <Badge variant={user.role === 'admin' ? 'navy' : user.role === 'manager' ? 'purple' : user.role === 'credit_committee' ? 'info' : 'default'} dot>
+          {user.role === 'credit_committee' ? 'Credit Committee' : (user.role || 'staff')}
         </Badge>
       </td>
       <td className="px-5 py-3">

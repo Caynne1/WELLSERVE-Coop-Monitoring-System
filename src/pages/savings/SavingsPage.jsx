@@ -39,7 +39,8 @@ const PAYMENT_MODE_OPTIONS = [
 
 export default function SavingsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canEdit = hasPermission('savings', 'edit');
 
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -145,6 +146,10 @@ export default function SavingsPage() {
   }
 
   async function handleDeposit() {
+    if (!canEdit) {
+      toast.error('You do not have permission to post savings transactions');
+      return;
+    }
     const value = parseFloat(amount) || 0;
     const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
@@ -243,6 +248,10 @@ export default function SavingsPage() {
   }
 
   async function handleWithdraw() {
+    if (!canEdit) {
+      toast.error('You do not have permission to post savings transactions');
+      return;
+    }
     const account = withdrawTarget?.account;
     const voucher = withdrawVouchers.find(v => v.id === selectedVoucherId);
     const value = parseFloat(amount) || 0;
@@ -515,6 +524,7 @@ export default function SavingsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
+                        {canEdit && (
                         <button
                           onClick={() => openWithdrawModal(account)}
                           title="Post Savings Withdrawal"
@@ -522,6 +532,7 @@ export default function SavingsPage() {
                         >
                           <TrendingDown size={15} />
                         </button>
+                        )}
                         <button
                           onClick={() => navigate(`/members/${account.member_id}?tab=savings`)}
                           title="View Member Savings"
