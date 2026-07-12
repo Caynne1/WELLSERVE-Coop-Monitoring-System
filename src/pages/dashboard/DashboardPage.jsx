@@ -21,7 +21,7 @@ import {
 import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeDashboard } from '../../hooks/useRealtimeDashboard';
-import { formatCurrency, formatRelativeTime, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatRelativeTime, formatDate, formatDateTime } from '../../utils/formatters';
 import { format } from 'date-fns';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -589,7 +589,7 @@ function ChartCard({ title, subtitle, children, action, footerNote, delay = 0 })
 // Recent Transactions
 // ─────────────────────────────────────────────────────────────────────────────
 
-const INFLOW_TYPES = ['deposit', 'loan_release', 'payment', 'interest'];
+const INFLOW_TYPES = ['deposit', 'loan_release', 'membership_payment'];
 
 function StatusBadge({ isInflow }) {
   return (
@@ -626,53 +626,72 @@ function RecentTransactionsCard({ stats, navigate }) {
           {isOverall ? 'No transactions recorded' : 'No transactions in this period'}
         </div>
       ) : (
-        <div className="overflow-x-auto -mx-1">
-          <table className="w-full text-sm border-separate" style={{ borderSpacing: '0 2px' }}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
             <thead>
-              <tr className="text-left">
-                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Member</th>
-                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Type</th>
-                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hidden sm:table-cell">Date</th>
-                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hidden md:table-cell">Status</th>
-                <th className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 text-right">Amount</th>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                {['Type', 'Category', 'Member', 'Amount', 'Mode', 'Assisted By', 'Notes', 'Created'].map(h => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-50">
               {stats.recentTransactions.slice(0, 6).map((tx) => {
                 const isInflow = INFLOW_TYPES.includes(tx.type);
                 return (
                   <tr
                     key={tx.id}
-                    className="group cursor-pointer"
+                    className="hover:bg-gray-50/50 transition-colors cursor-pointer"
                     onClick={() => navigate('/transactions')}
                   >
-                    <td className="px-1 py-2 rounded-l-lg group-hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0 transition-transform duration-150 group-hover:scale-110 ${
-                            isInflow ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
-                          }`}
-                        >
-                          {isInflow ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
-                        </div>
-                        <p className="text-sm font-medium text-gray-900 leading-tight truncate max-w-[120px] sm:max-w-none">
-                          {tx.member_name || 'Cooperative'}
-                        </p>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="capitalize text-gray-700">
+                          {tx.type?.replace(/_/g, ' ') || '—'}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-1 py-2 group-hover:bg-gray-50 transition-colors">
-                      <p className="text-xs text-gray-500 capitalize">{tx.type?.replace(/_/g, ' ')}</p>
-                    </td>
-                    <td className="px-1 py-2 group-hover:bg-gray-50 transition-colors hidden sm:table-cell">
-                      <p className="text-xs text-gray-400">{formatRelativeTime(tx.created_at)}</p>
-                    </td>
-                    <td className="px-1 py-2 group-hover:bg-gray-50 transition-colors hidden md:table-cell">
-                      <StatusBadge isInflow={isInflow} />
-                    </td>
-                    <td className="px-1 py-2 rounded-r-lg group-hover:bg-gray-50 transition-colors text-right">
-                      <span className={`text-sm font-semibold tabular-nums ${isInflow ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {isInflow ? '+' : '-'}{formatCurrency(tx.amount)}
+
+                    <td className="px-4 py-3">
+                      <span className="capitalize text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                        {tx.category || '—'}
                       </span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">
+                        {tx.members?.first_name} {tx.members?.last_name}
+                      </p>
+                      {tx.members?.member_no && (
+                        <p className="text-xs text-gray-400 font-mono">{tx.members.member_no}</p>
+                      )}
+                    </td>
+
+                    <td className={`px-4 py-3 font-semibold ${isInflow ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(tx.amount)}
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                      {tx.payment_mode || '—'}
+                    </td>
+
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                      {tx.created_by_name || '—'}
+                    </td>
+
+                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[280px]">
+                      <div className="truncate" title={tx.notes || tx.payment_mode_note || ''}>
+                        {tx.notes || tx.payment_mode_note || '—'}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                      {formatDateTime(tx.created_at)}
                     </td>
                   </tr>
                 );
@@ -1347,6 +1366,8 @@ export default function DashboardPage() {
                 <span className="text-blue-600 font-medium">{stats?.regularMembers ?? 0} Regular</span>
                 <span className="text-gray-300">·</span>
                 <span className="text-blue-500 font-medium">{stats?.associateMembers ?? 0} Associate</span>
+                <span className="text-gray-300">|</span>
+                <span className="text-gray-500 font-medium">{stats?.closedMembers ?? 0} Closed</span>
               </span>
             ) : (
               <span className="flex gap-2 flex-wrap">

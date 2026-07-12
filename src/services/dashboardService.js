@@ -1,6 +1,7 @@
 // dashboardService.js - Updated with 'overall' support
 
 import { supabase } from './supabase';
+import { getIncomeBreakdown } from './coopFundService';
 import {
   subMonths, format, startOfMonth, endOfMonth,
   startOfDay, endOfDay, startOfWeek, endOfWeek,
@@ -75,6 +76,14 @@ function inRange(arr, range) {
     const ms = recordDateMs(r);
     return ms >= startMs && ms <= endMs;
   });
+}
+
+function getIncomeBreakdownRange(range) {
+  if (!range || !range.start || !range.end) return {};
+  return {
+    from: format(range.start, 'yyyy-MM-dd'),
+    to: format(range.end, 'yyyy-MM-dd'),
+  };
 }
 
 // ── Member registration date — single source of truth ─────────────────────
@@ -176,29 +185,106 @@ function formatDateDisplay(dateStr) {
   }
 }
 
+function parseDashboardJSONSafe(value, fallback = {}) {
+  try {
+    if (value == null) return fallback;
+    return typeof value === 'string' ? JSON.parse(value) : value;
+  } catch {
+    return fallback;
+  }
+}
+
+function isReleasedOrActiveLoan(loan) {
+  return ['released', 'active', 'ongoing'].includes(String(loan?.status || '').toLowerCase());
+}
+
+function countOverdueSchedulePayments(loans, now = new Date(), range = null) {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  return loans.filter(isReleasedOrActiveLoan).reduce((count, loan) => {
+    const schedule = parseDashboardJSONSafe(loan.preview_schedule_json, []);
+    if (Array.isArray(schedule) && schedule.length > 0) {
+      return count + schedule.filter(row => {
+        if (row.paid) return false;
+        if (!row.due_date) return false;
+        const due = new Date(`${row.due_date}T00:00:00`);
+        if (Number.isNaN(due.getTime()) || due >= today) return false;
+        if (range && (due < range.start || due > range.end)) return false;
+        return true;
+      }).length;
+    }
+
+    if (!loan.due_date || Number(loan.balance || 0) <= 0) return count;
+    const due = new Date(`${String(loan.due_date).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(due.getTime()) || due >= today) return count;
+    if (range && (due < range.start || due > range.end)) return count;
+    return count + 1;
+  }, 0);
+}
+
+function isIncomeTransaction(t) {
+  const type = String(t?.type || '').toLowerCase();
+  const category = String(t?.category || '').toLowerCase();
+  const incomeTypes = new Set([
+    'loan_payment',
+    'loan_interest',
+    'loan_deduction',
+    'deposit',
+    'membership_payment',
+    'penalty_payment',
+    'other_payment',
+    'cbu',
+    'savings',
+    'membership',
+    'time_deposit',
+    'savings_booster',
+  ]);
+  const outTypes = new Set(['withdrawal', 'cbu_withdrawal', 'savings_withdrawal', 'loan_release']);
+  return !outTypes.has(type) && (incomeTypes.has(type) || incomeTypes.has(category));
+}
+
+async function attachTransactionPageFields(transactions = []) {
+  const memberIds = [...new Set(transactions.map(t => t.member_id).filter(Boolean))];
+  const createdByIds = [...new Set(transactions.map(t => t.created_by).filter(Boolean))];
+
+  const [membersRes, profilesRes] = await Promise.all([
+    memberIds.length
+      ? supabase.from('members').select('id, first_name, last_name, member_no').in('id', memberIds)
+      : Promise.resolve({ data: [] }),
+    createdByIds.length
+      ? supabase.from('profiles').select('id, full_name').in('id', createdByIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const memberMap = Object.fromEntries((membersRes.data || []).map(m => [m.id, m]));
+  const profileMap = Object.fromEntries((profilesRes.data || []).map(p => [p.id, p.full_name]));
+
+  return transactions.map(t => ({
+    ...t,
+    members: t.member_id ? (memberMap[t.member_id] || null) : null,
+    member_name: t.member_id
+      ? [memberMap[t.member_id]?.first_name, memberMap[t.member_id]?.last_name].filter(Boolean).join(' ') || 'Member'
+      : 'Cooperative',
+    created_by_name: t.created_by ? (profileMap[t.created_by] || t.created_by) : 'System',
+  }));
+}
+
 export async function getDashboardStats(period = 'month') {
   const now = new Date();
 
   // ── Handle 'overall' period - return all-time totals ─────────────────────
   if (period === 'overall') {
     // Fetch all data without date filtering
-    const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, allTxRes, kiddySavingsRes, savingsBoosterRes] = await Promise.all([
+    const [membersRes, loansRes, accountsRes, tdRes, allTxRes, kiddySavingsRes, savingsBoosterRes] = await Promise.all([
       supabase.from('members').select('id, status, membership_type, date_joined, created_at, first_name, last_name, email'),
-      supabase.from('loans').select('id, status, amount, balance, due_date, preview_deductions_json, release_date, created_at'),
+      supabase.from('loans').select('id, status, amount, balance, due_date, preview_deductions_json, preview_schedule_json, release_date, created_at'),
       supabase.from('accounts').select('id, account_type, balance'),
-      supabase
-        .from('invoices')
-        .select('id, date, amount, purpose, payment_type, created_at')
-        .eq('status', 'paid')
-        .in('payment_type', ['capital', 'loan_interest', 'service_fee', 'clpp', 'annual_dues']),
-      supabase
-        .from('vouchers')
-        .select('id, date, amount, created_at')
-        .eq('status', 'approved'),
       supabase.from('time_deposits').select('amount, status'),
       supabase
         .from('transactions')
-        .select('id, type, category, amount, created_at, transaction_date, member_id')
+        .select('id, type, category, amount, created_at, transaction_date, member_id, payment_mode, payment_mode_note, reference, notes, created_by')
+        .order('transaction_date', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase
         .from('accounts')
@@ -213,8 +299,6 @@ export async function getDashboardStats(period = 'month') {
     const memberData = membersRes.data || [];
     const loanData = loansRes.data || [];
     const accountData = accountsRes.data || [];
-    const invoiceData = invoicesRes.data || [];
-    const voucherData = vouchersRes.data || [];
     const tdData = tdRes.data || [];
     const allTxData = allTxRes.data || [];
     const kiddySavingsData = kiddySavingsRes.data || [];
@@ -223,49 +307,23 @@ export async function getDashboardStats(period = 'month') {
     const kiddyMembers = memberData.filter(m => String(m.membership_type || '').trim().toLowerCase() === 'kiddy');
     const nonKiddyMembers = memberData.filter(m => String(m.membership_type || '').trim().toLowerCase() !== 'kiddy');
 
-    const CASH_IN_TYPES = new Set(['loan_payment','deposit','membership_payment','penalty_payment','other_payment','cbu','savings','membership','time_deposit']);
-    const CASH_OUT_TYPES = new Set(['withdrawal','cbu_withdrawal','savings_withdrawal']);
+    const CASH_OUT_TYPES = new Set(['withdrawal','cbu_withdrawal','savings_withdrawal','loan_release']);
 
-    const cashInTx = allTxData.filter(t => !CASH_OUT_TYPES.has((t.type||'').toLowerCase()) && (CASH_IN_TYPES.has((t.type||'').toLowerCase()) || CASH_IN_TYPES.has((t.category||'').toLowerCase())));
+    const cashInTx = allTxData.filter(isIncomeTransaction);
     const cashOutTx = allTxData.filter(t => CASH_OUT_TYPES.has((t.type||'').toLowerCase()));
 
-    let netProceedsTotal = 0;
-    for (const loan of loanData) {
-      try {
-        const d = typeof loan.preview_deductions_json === 'string'
-          ? JSON.parse(loan.preview_deductions_json) : (loan.preview_deductions_json || {});
-        netProceedsTotal += Number(d.net_proceeds || 0);
-      } catch { /* skip */ }
-    }
+    const incomeBreakdown = await getIncomeBreakdown();
+    const totalIncome = Number(incomeBreakdown?.total_income || 0);
+    const totalCashIn = totalIncome;
+    const totalCashOut = cashOutTx.reduce((s, t) => s + (t.amount || 0), 0);
 
-    const totalCashIn = cashInTx.reduce((s, t) => s + (t.amount || 0), 0) + invoiceData.reduce((s, i) => s + (i.amount || 0), 0);
-    const totalCashOut = cashOutTx.reduce((s, t) => s + (t.amount || 0), 0) + voucherData.reduce((s, v) => s + (v.amount || 0), 0) + netProceedsTotal;
-
-    const recentTxData = allTxData.slice(0, 8);
-    const recentMemberIds = [...new Set(recentTxData.map(t => t.member_id).filter(Boolean))];
-    let recentMemberMap = {};
-    if (recentMemberIds.length > 0) {
-      const { data: recentMembersData } = await supabase
-        .from('members')
-        .select('id, first_name, last_name')
-        .in('id', recentMemberIds);
-      recentMemberMap = Object.fromEntries(
-        (recentMembersData || []).map(m => [m.id, `${m.first_name || ''} ${m.last_name || ''}`.trim()])
-      );
-    }
-    const recentTransactionsWithNames = recentTxData.map(t => ({
-      ...t,
-      member_name: t.member_id ? (recentMemberMap[t.member_id] || 'Member') : 'Cooperative',
-    }));
+    const recentTxData = allTxData.slice(0, 6);
+    const recentTransactionsWithNames = await attachTransactionPageFields(recentTxData);
 
     const cbuAccounts = accountData.filter(a => a.account_type === 'cbu');
     const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
-    const activeLoans = loanData.filter(l => ['active', 'ongoing'].includes(l.status));
-    const overdueLoans = loanData.filter(l => {
-      if (!['active', 'ongoing'].includes(l.status)) return false;
-      if (!l.due_date) return false;
-      return new Date(l.due_date) < now;
-    });
+    const activeLoans = loanData.filter(isReleasedOrActiveLoan);
+    const overduePayments = countOverdueSchedulePayments(loanData, now);
 
     const loanStatusMap = {};
     loanData.forEach(l => {
@@ -291,8 +349,8 @@ export async function getDashboardStats(period = 'month') {
         const ms = recordDateMs(r);
         return ms >= startMs && ms <= endMs;
       });
-      const cashIn = inWindow(cashInTx).reduce((s, t) => s + (t.amount || 0), 0) + inWindow(invoiceData).reduce((s, i) => s + (i.amount || 0), 0);
-      const cashOut = inWindow(cashOutTx).reduce((s, t) => s + (t.amount || 0), 0) + inWindow(voucherData).reduce((s, v) => s + (v.amount || 0), 0);
+      const cashIn = inWindow(cashInTx).reduce((s, t) => s + (t.amount || 0), 0);
+      const cashOut = inWindow(cashOutTx).reduce((s, t) => s + (t.amount || 0), 0);
       return { label, cashIn, cashOut };
     });
 
@@ -321,6 +379,7 @@ export async function getDashboardStats(period = 'month') {
     return {
       // ── Member totals (all-time) ──────────────────────────────────────────
       totalMembers: nonKiddyMembers.length,
+      closedMembers: nonKiddyMembers.filter(m => String(m.status || '').trim().toLowerCase() === 'closed').length,
       activeMembers: nonKiddyMembers.filter(m => String(m.status || '').trim().toLowerCase() === 'active').length,
       regularMembers: nonKiddyMembers.filter(m => String(m.membership_type || '').trim().toLowerCase() === 'regular').length,
       associateMembers: nonKiddyMembers.filter(m => String(m.membership_type || '').trim().toLowerCase() === 'associate').length,
@@ -330,12 +389,12 @@ export async function getDashboardStats(period = 'month') {
       // ── Loan metrics ────────────────────────────────────────────────────────
       activeLoans: activeLoans.length,
       totalLoanOutstanding: activeLoans.reduce((s, l) => s + (l.balance ?? l.amount ?? 0), 0),
-      overduePayments: overdueLoans.length,
+      overduePayments,
 
       // ── Cash flow ────────────────────────────────────────────────────────────
       totalCashIn,
       totalCashOut,
-      totalIncome: totalCashIn,
+      totalIncome,
 
       // ── Product balances ────────────────────────────────────────────────────
       totalCBU: cbuAccounts.reduce((s, a) => s + (a.balance || 0), 0),
@@ -370,8 +429,8 @@ export async function getDashboardStats(period = 'month') {
       periodNewKiddyMembers: kiddyMembers.length,
       periodNewLoans: loanData.length,
       periodLoanAmount: loanData.reduce((s, l) => s + (l.amount || 0), 0),
-      periodOverdue: overdueLoans.length,
-      periodIncome: totalCashIn,
+      periodOverdue: overduePayments,
+      periodIncome: totalIncome,
       periodExpense: totalCashOut,
       
       // ── Period product flow (set to 0 for overall) ────────────────────────
@@ -396,23 +455,15 @@ export async function getDashboardStats(period = 'month') {
   const periodBuckets = buildPeriodBuckets(period, range);
 
   // ── Fetch all data ────────────────────────────────────────────────────────
-  const [membersRes, loansRes, accountsRes, invoicesRes, vouchersRes, tdRes, allTxRes, kiddySavingsRes, savingsBoosterRes] = await Promise.all([
+  const [membersRes, loansRes, accountsRes, tdRes, allTxRes, kiddySavingsRes, savingsBoosterRes] = await Promise.all([
     supabase.from('members').select('id, status, membership_type, date_joined, created_at, first_name, last_name, email'),
-    supabase.from('loans').select('id, status, amount, balance, due_date, preview_deductions_json, release_date, created_at'),
+    supabase.from('loans').select('id, status, amount, balance, due_date, preview_deductions_json, preview_schedule_json, release_date, created_at'),
     supabase.from('accounts').select('id, account_type, balance'),
-    supabase
-      .from('invoices')
-      .select('id, date, amount, purpose, payment_type, created_at')
-      .eq('status', 'paid')
-      .in('payment_type', ['capital', 'loan_interest', 'service_fee', 'clpp', 'annual_dues']),
-    supabase
-      .from('vouchers')
-      .select('id, date, amount, created_at')
-      .eq('status', 'approved'),
     supabase.from('time_deposits').select('amount, status'),
     supabase
       .from('transactions')
-      .select('id, type, category, amount, created_at, transaction_date, member_id')
+      .select('id, type, category, amount, created_at, transaction_date, member_id, payment_mode, payment_mode_note, reference, notes, created_by')
+      .order('transaction_date', { ascending: false })
       .order('created_at', { ascending: false }),
     supabase
       .from('accounts')
@@ -427,8 +478,6 @@ export async function getDashboardStats(period = 'month') {
   const memberData        = membersRes.data        || [];
   const loanData          = loansRes.data          || [];
   const accountData       = accountsRes.data       || [];
-  const invoiceData       = invoicesRes.data       || [];
-  const voucherData       = vouchersRes.data       || [];
   const tdData            = tdRes.data             || [];
   const allTxData         = allTxRes.data          || [];
   const kiddySavingsData  = kiddySavingsRes.data   || [];
@@ -439,58 +488,30 @@ export async function getDashboardStats(period = 'month') {
   const nonKiddyMembers = memberData.filter(m => String(m.membership_type || '').trim().toLowerCase() !== 'kiddy');
 
   // ── Transaction-based cash flow ──────────────────────────────────────────
-  const CASH_IN_TYPES  = new Set(['loan_payment','deposit','membership_payment','penalty_payment','other_payment','cbu','savings','membership','time_deposit']);
-  const CASH_OUT_TYPES = new Set(['withdrawal','cbu_withdrawal','savings_withdrawal']);
+  const CASH_OUT_TYPES = new Set(['withdrawal','cbu_withdrawal','savings_withdrawal','loan_release']);
 
-  const cashInTx  = allTxData.filter(t => !CASH_OUT_TYPES.has((t.type||'').toLowerCase()) && (CASH_IN_TYPES.has((t.type||'').toLowerCase()) || CASH_IN_TYPES.has((t.category||'').toLowerCase())));
+  const cashInTx  = allTxData.filter(isIncomeTransaction);
   const cashOutTx = allTxData.filter(t => CASH_OUT_TYPES.has((t.type||'').toLowerCase()));
 
   // ── Net proceeds released to members ──────────────────────────────────────
-  let netProceedsTotal = 0;
-  for (const loan of loanData) {
-    try {
-      const d = typeof loan.preview_deductions_json === 'string'
-        ? JSON.parse(loan.preview_deductions_json) : (loan.preview_deductions_json || {});
-      netProceedsTotal += Number(d.net_proceeds || 0);
-    } catch { /* skip */ }
-  }
-
-  const totalCashIn  = cashInTx.reduce((s, t) => s + (t.amount || 0), 0)
-                     + invoiceData.reduce((s, i) => s + (i.amount || 0), 0);
-
-  const totalCashOut = cashOutTx.reduce((s, t) => s + (t.amount || 0), 0)
-                     + voucherData.reduce((s, v) => s + (v.amount || 0), 0)
-                     + netProceedsTotal;
+  const [incomeBreakdown, prevIncomeBreakdown] = await Promise.all([
+    getIncomeBreakdown(getIncomeBreakdownRange(range)),
+    getIncomeBreakdown(getIncomeBreakdownRange(prevRange)),
+  ]);
+  const periodIncomeTotal = Number(incomeBreakdown?.total_income || 0);
+  const prevPeriodIncomeTotal = Number(prevIncomeBreakdown?.total_income || 0);
+  const totalIncome = periodIncomeTotal;
+  const totalCashIn = totalIncome;
+  const totalCashOut = cashOutTx.reduce((s, t) => s + (t.amount || 0), 0);
 
   // ── Recent transactions — scoped to selected period ──────────────────────
-  const recentTxData = inRange(allTxData, range)
-    .sort((a, b) => recordDateMs(b) - recordDateMs(a))
-    .slice(0, 8);
-
-  const recentMemberIds = [...new Set(recentTxData.map(t => t.member_id).filter(Boolean))];
-  let recentMemberMap = {};
-  if (recentMemberIds.length > 0) {
-    const { data: recentMembersData } = await supabase
-      .from('members')
-      .select('id, first_name, last_name')
-      .in('id', recentMemberIds);
-    recentMemberMap = Object.fromEntries(
-      (recentMembersData || []).map(m => [m.id, `${m.first_name || ''} ${m.last_name || ''}`.trim()])
-    );
-  }
-  const recentTransactionsWithNames = recentTxData.map(t => ({
-    ...t,
-    member_name: t.member_id ? (recentMemberMap[t.member_id] || 'Member') : 'Cooperative',
-  }));
+  const recentTxData = allTxData.slice(0, 6);
+  const recentTransactionsWithNames = await attachTransactionPageFields(recentTxData);
 
   const cbuAccounts     = accountData.filter(a => a.account_type === 'cbu');
   const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
-  const activeLoans     = loanData.filter(l => ['active', 'ongoing'].includes(l.status));
-  const overdueLoans    = loanData.filter(l => {
-    if (!['active', 'ongoing'].includes(l.status)) return false;
-    if (!l.due_date) return false;
-    return new Date(l.due_date) < now;
-  });
+  const activeLoans     = loanData.filter(isReleasedOrActiveLoan);
+  const overduePayments = countOverdueSchedulePayments(loanData, now);
 
   // ── Loan Status Distribution (current snapshot) ─────────────────────────
   const loanStatusMap = {};
@@ -511,10 +532,8 @@ export async function getDashboardStats(period = 'month') {
         return ms >= startMs && ms <= endMs;
       });
 
-    const cashIn  = inWindow(cashInTx).reduce((s, t) => s + (t.amount || 0), 0)
-                  + inWindow(invoiceData).reduce((s, i) => s + (i.amount || 0), 0);
-    const cashOut = inWindow(cashOutTx).reduce((s, t) => s + (t.amount || 0), 0)
-                  + inWindow(voucherData).reduce((s, v) => s + (v.amount || 0), 0);
+    const cashIn  = inWindow(cashInTx).reduce((s, t) => s + (t.amount || 0), 0);
+    const cashOut = inWindow(cashOutTx).reduce((s, t) => s + (t.amount || 0), 0);
 
     return { label, cashIn, cashOut };
   });
@@ -550,15 +569,11 @@ export async function getDashboardStats(period = 'month') {
 
   // ── Period-scoped metrics ────────────────────────────────────────────────
   // These use date_joined for member counts, matching the Members page
-  const periodIncome = inRange(cashInTx, range).reduce((s, t) => s + (t.amount || 0), 0)
-                      + inRange(invoiceData, range).reduce((s, i) => s + (i.amount || 0), 0);
-  const prevPeriodIncome = inRange(cashInTx, prevRange).reduce((s, t) => s + (t.amount || 0), 0)
-                      + inRange(invoiceData, prevRange).reduce((s, i) => s + (i.amount || 0), 0);
+  const periodIncome = periodIncomeTotal;
+  const prevPeriodIncome = prevPeriodIncomeTotal;
 
-  const periodExpense = inRange(cashOutTx, range).reduce((s, t) => s + (t.amount || 0), 0)
-                      + inRange(voucherData, range).reduce((s, v) => s + (v.amount || 0), 0);
-  const prevPeriodExpense = inRange(cashOutTx, prevRange).reduce((s, t) => s + (t.amount || 0), 0)
-                      + inRange(voucherData, prevRange).reduce((s, v) => s + (v.amount || 0), 0);
+  const periodExpense = inRange(cashOutTx, range).reduce((s, t) => s + (t.amount || 0), 0);
+  const prevPeriodExpense = inRange(cashOutTx, prevRange).reduce((s, t) => s + (t.amount || 0), 0);
 
   // MEMBER COUNTS - Using date_joined for accurate filtering
   // This is the source of truth that matches the Members page
@@ -572,8 +587,8 @@ export async function getDashboardStats(period = 'month') {
   const prevPeriodNewLoans = inRange(loanData, prevRange).length;
   const periodLoanAmount   = inRange(loanData, range).reduce((s, l) => s + (l.amount || 0), 0);
 
-  const periodOverdue     = inRange(overdueLoans, range).length;
-  const prevPeriodOverdue = inRange(overdueLoans, prevRange).length;
+  const periodOverdue     = countOverdueSchedulePayments(loanData, now, range);
+  const prevPeriodOverdue = countOverdueSchedulePayments(loanData, now, prevRange);
 
   const periodTransactions = inRange(allTxData, range).length;
 
@@ -594,6 +609,7 @@ export async function getDashboardStats(period = 'month') {
   return {
     // ── Member totals (all-time, for reference) ────────────────────────────
     totalMembers:         nonKiddyMembers.length,
+    closedMembers:        nonKiddyMembers.filter(m => String(m.status || '').trim().toLowerCase() === 'closed').length,
     activeMembers:        nonKiddyMembers.filter(m => String(m.status || '').trim().toLowerCase() === 'active').length,
     regularMembers:       nonKiddyMembers.filter(m => String(m.membership_type || '').trim().toLowerCase() === 'regular').length,
     associateMembers:     nonKiddyMembers.filter(m => String(m.membership_type || '').trim().toLowerCase() === 'associate').length,
@@ -609,7 +625,7 @@ export async function getDashboardStats(period = 'month') {
     // ── Loan metrics ────────────────────────────────────────────────────────
     activeLoans:          activeLoans.length,
     totalLoanOutstanding: activeLoans.reduce((s, l) => s + (l.balance ?? l.amount ?? 0), 0),
-    overduePayments:      overdueLoans.length,
+    overduePayments,
     periodNewLoans,
     periodLoanAmount,
     periodOverdue,
@@ -617,7 +633,7 @@ export async function getDashboardStats(period = 'month') {
     // ── Cash flow ────────────────────────────────────────────────────────────
     totalCashIn,
     totalCashOut,
-    totalIncome:          totalCashIn,
+    totalIncome,
     periodIncome,
     periodExpense,
 

@@ -87,6 +87,16 @@ function parseJSONSafe(val, fallback = {}) {
   }
 }
 
+function isCurrentLoan(loan) {
+  const status = String(loan?.status || '').toLowerCase();
+  return ['released', 'active', 'ongoing'].includes(status) && Number(loan?.balance || 0) > 0;
+}
+
+function getLoanPayableAmount(loan) {
+  const summary = parseJSONSafe(loan?.preview_summary_json, {});
+  return Number(loan?.total_loan_payable || summary?.total_loan_payable || summary?.total_payments_collected || loan?.amount || 0);
+}
+
 function frequencyLabel(value) {
   if (!value) return 'period';
   const map = {
@@ -251,7 +261,11 @@ export default function MemberDetailPage() {
 
   const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
   const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
-  const activeLoans = loans.filter(l => l.status === 'active');
+  const activeLoans = loans.filter(isCurrentLoan);
+  const totalCurrentLoanAmount = activeLoans.reduce((sum, loan) => sum + getLoanPayableAmount(loan), 0);
+  const totalCurrentLoanBalance = activeLoans.reduce((sum, loan) => sum + Number(loan.balance || 0), 0);
+  const totalTimeDepositAmount = memberTimeDeposits.reduce((sum, td) => sum + Number(td.amount || 0), 0);
+  const totalSavingsBoosterAmount = memberBoosterSlots.reduce((sum, slot) => sum + Number(slot.total_deposited || slot.balance || 0), 0);
   const displayMembershipType = membership?.membership_type || member?.membership_type || null;
 
   const loanTransactions = useMemo(
@@ -259,11 +273,11 @@ export default function MemberDetailPage() {
     [transactions]
   );
   const cbuTransactions = useMemo(
-    () => transactions.filter(t => t.category === 'cbu'),
+    () => transactions.filter(t => ['cbu', 'cbu_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['cbu', 'cbu_withdrawal'].includes(String(t.type || '').toLowerCase())),
     [transactions]
   );
   const savingsTransactions = useMemo(
-    () => transactions.filter(t => t.category === 'savings'),
+    () => transactions.filter(t => ['savings', 'savings_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['savings', 'savings_withdrawal'].includes(String(t.type || '').toLowerCase())),
     [transactions]
   );
   const timeDepositTransactions = useMemo(
@@ -354,7 +368,7 @@ export default function MemberDetailPage() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
     const cbuAcc = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
     const savAcc = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
-    const activeLoans = loans.filter(l => l.status === 'active');
+    const activeLoans = loans.filter(isCurrentLoan);
     const loanRows = activeLoans.map(l => `<tr>
       <td>${l.loan_no||'—'}</td>
       <td style="text-transform:capitalize">${(l.loan_type||'').replace(/_/g,' ')}</td>
@@ -507,6 +521,19 @@ export default function MemberDetailPage() {
             {/* Quick stats */}
             <div className={`grid grid-cols-2 ${member.membership_type === 'kiddy' ? 'sm:grid-cols-2' : 'sm:grid-cols-4'} gap-3 mt-5 pt-4 border-t border-gray-100`}>
               {member.membership_type !== 'kiddy' && (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/60 border border-amber-100/50">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <PesoSign size={15} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-amber-500 uppercase tracking-wider">Loan Amount</p>
+                    <p className="text-sm font-bold text-amber-700 tabular-nums">
+                      {formatCurrency(totalCurrentLoanAmount)}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {member.membership_type !== 'kiddy' && (
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-orange-50/60 border border-orange-100/50">
                   <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
                     <CreditCard size={15} className="text-orange-600" />
@@ -514,7 +541,7 @@ export default function MemberDetailPage() {
                   <div>
                     <p className="text-[10px] font-medium text-orange-500 uppercase tracking-wider">Loan Balance</p>
                     <p className="text-sm font-bold text-orange-700 tabular-nums">
-                      {formatCurrency(activeLoans.reduce((sum, loan) => sum + (loan.balance || 0), 0))}
+                      {formatCurrency(totalCurrentLoanBalance)}
                     </p>
                   </div>
                 </div>
@@ -548,6 +575,28 @@ export default function MemberDetailPage() {
                   <p className="text-sm font-bold text-purple-700 tabular-nums">{transactions.length}</p>
                 </div>
               </div>
+              {memberTimeDeposits.length > 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100/50">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                    <Clock size={15} className="text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-indigo-500 uppercase tracking-wider">Time Deposit</p>
+                    <p className="text-sm font-bold text-indigo-700 tabular-nums">{formatCurrency(totalTimeDepositAmount)}</p>
+                  </div>
+                </div>
+              )}
+              {memberBoosterSlots.length > 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-teal-50/60 border border-teal-100/50">
+                  <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                    <Sprout size={15} className="text-teal-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-teal-500 uppercase tracking-wider">Savings Booster</p>
+                    <p className="text-sm font-bold text-teal-700 tabular-nums">{formatCurrency(totalSavingsBoosterAmount)}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

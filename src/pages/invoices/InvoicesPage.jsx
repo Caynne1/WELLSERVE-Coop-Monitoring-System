@@ -1132,6 +1132,24 @@ const CATEGORY_LABEL = {
   savings_booster: 'Savings Booster',
 };
 
+function parseInvoiceJSONSafe(value, fallback = {}) {
+  try {
+    if (value == null) return fallback;
+    return typeof value === 'string' ? JSON.parse(value) : value;
+  } catch {
+    return fallback;
+  }
+}
+
+function getLoanInterestDue(loan) {
+  const schedule = parseInvoiceJSONSafe(loan?.preview_schedule_json, []);
+  if (!Array.isArray(schedule)) return 0;
+  const nextDue = schedule.find(row => !row.paid && Number(row.remaining_due ?? row.total_due ?? row.payment ?? 0) > 0)
+    || schedule.find(row => !row.paid)
+    || null;
+  return Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) || 0;
+}
+
 function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const [step, setStep] = useState(1); // 1 = pick member, 2 = choose payments
   const [member, setMember] = useState(null);
@@ -1365,15 +1383,25 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {CATEGORY_ORDER.map(cat => {
+                  const selectedLoanForRow = summary.loan.records?.find(l => l.id === selectedLoanId) || summary.loan.records?.[0] || null;
+                  const loanInterestDue = getLoanInterestDue(selectedLoanForRow);
                   const info = summary[cat] || (
-                    (cat === 'loan_interest' || cat === 'loan_penalty')
-                      ? { ...summary.loan, valueType: 'balance' }
+                    cat === 'loan_interest'
+                      ? { ...summary.loan, valueType: 'interest_due', value: loanInterestDue, payable: summary.loan.payable }
+                      : cat === 'loan_penalty'
+                        ? { hasRecord: true, payable: summary.loan.payable, valueType: 'optional', value: 0 }
                       : { hasRecord: false, payable: false, valueType: 'balance', value: 0 }
                   );
-                  const valueLabel = info.valueType === 'balance' ? 'Balance' : 'Total Deposited';
+                  const valueLabel =
+                    info.valueType === 'balance' ? 'Balance' :
+                    info.valueType === 'interest_due' ? 'Interest Due' :
+                    info.valueType === 'optional' ? 'Optional' :
+                    'Total Deposited';
                   const statusText = !info.hasRecord
                     ? 'No Record'
-                    : `${valueLabel}: ${formatCurrency(info.value)}`;
+                    : info.valueType === 'optional'
+                      ? valueLabel
+                      : `${valueLabel}: ${formatCurrency(info.value)}`;
 
                   return (
                     <tr key={cat}>

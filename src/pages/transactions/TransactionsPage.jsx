@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Search, Printer, Download } from 'lucide-react';
+import { Search, Printer, Download } from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -176,11 +176,6 @@ export default function TransactionsPage() {
                       <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            {isInflow ? (
-                              <ArrowDownLeft size={16} className="text-green-500 flex-shrink-0" />
-                            ) : (
-                              <ArrowUpRight size={16} className="text-red-500 flex-shrink-0" />
-                            )}
                             <span className="capitalize text-gray-700">
                               {tx.type?.replace(/_/g, ' ') || '—'}
                             </span>
