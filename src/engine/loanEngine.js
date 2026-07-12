@@ -167,6 +167,19 @@ export function advanceDueDate(dateInput, frequency = 'monthly', periods = 1) {
   return cfg.advance(d, periods);
 }
 
+function addDaysToDateInput(dateInput, days = 0) {
+  let base;
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    const [y, m, d] = dateInput.trim().split('-').map(Number);
+    base = new Date(y, m - 1, d);
+  } else {
+    base = new Date(dateInput);
+  }
+  if (Number.isNaN(base.getTime())) base = new Date();
+  base.setDate(base.getDate() + safeNum(days));
+  return base;
+}
+
 /**
  * ISO date string (YYYY-MM-DD) from a Date or string.
  */
@@ -230,6 +243,7 @@ export function periodLabel(frequency) {
  * @param {number}  [params.cbuPerPeriod=0]    Fixed CBU per period
  * @param {number}  [params.savingsPerPeriod=0] Fixed savings per period
  * @param {number}  [params.numPayments]       Override number of payments (for imports)
+ * @param {number}  [params.firstPaymentDaysAfterStart] Days after start date for first due date
  *
  * @returns {{ schedule: Array, totals: Object, meta: Object }}
  */
@@ -243,6 +257,7 @@ export function computeSchedule({
   cbuPerPeriod = 0,
   savingsPerPeriod = 0,
   numPayments: numPaymentsOverride = null,
+  firstPaymentDaysAfterStart = null,
 }) {
   const principal = round2(safeNum(amount));
   const cbu = round2(safeNum(cbuPerPeriod));
@@ -295,6 +310,10 @@ export function computeSchedule({
   let sumCbu = 0;
   let sumSavings = 0;
   const schedule = [];
+  const hasFirstDueOffset = firstPaymentDaysAfterStart != null && safeNum(firstPaymentDaysAfterStart) > 0;
+  const firstDueDate = hasFirstDueOffset
+    ? addDaysToDateInput(startDate, firstPaymentDaysAfterStart)
+    : null;
 
   for (let i = 1; i <= numPayments; i++) {
     const beginBalance = round2(runningBalance);
@@ -316,7 +335,11 @@ export function computeSchedule({
     const loanTotal = round2(principalAmort + interest);
     const totalDue = round2(loanTotal + cbu + savings);
     const endBalance = Math.max(0, round2(beginBalance - principalAmort));
-    const dueDate = toDateStr(advanceDueDate(startDate, frequency, i));
+    const dueDate = toDateStr(
+      hasFirstDueOffset
+        ? advanceDueDate(firstDueDate, frequency, i - 1)
+        : advanceDueDate(startDate, frequency, i)
+    );
 
     schedule.push({
       period: i,

@@ -22,7 +22,7 @@ import {
   releaseCheck,
   voidCheck,
 } from '../../services/checkbookService';
-// [ADDED] Load approved vouchers for the optional voucher link dropdown
+// Load approved vouchers for the required voucher link dropdown.
 import { getVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -149,8 +149,57 @@ export default function CheckbookPage() {
   const clearedList  = entries.filter(e => e.status === 'released' || e.status === 'cleared');
   const totalIssued  = issuedList.reduce((s, e)  => s + (e.amount || 0), 0);
   const totalCleared = clearedList.reduce((s, e) => s + (e.amount || 0), 0);
+  const linkedVoucherIds = new Set(
+    entries
+      .filter(e => e.status !== 'voided' && (!editTarget || e.id !== editTarget.id))
+      .map(e => e.voucher_id)
+      .filter(Boolean)
+  );
+  const availableVouchers = voucherList.filter(v => !linkedVoucherIds.has(v.id));
 
   // ── Form helpers ─────────────────────────────────────────────────────────────
+
+  function getVoucherCheckFields(voucher) {
+    if (!voucher) return {};
+    const noteParts = [
+      voucher.voucher_no ? `Voucher No: ${voucher.voucher_no}` : null,
+      voucher.reference ? `Reference: ${voucher.reference}` : null,
+      voucher.notes || null,
+    ].filter(Boolean);
+
+    return {
+      date: voucher.date || new Date().toISOString().split('T')[0],
+      payee: voucher.payee || '',
+      amount: voucher.amount != null ? String(voucher.amount) : '',
+      purpose: voucher.purpose || voucher.expenses?.description || '',
+      bank: '',
+      notes: noteParts.join('\n'),
+    };
+  }
+
+  function applyVoucherToForm(voucherId) {
+    const voucher = voucherList.find(v => v.id === voucherId);
+    setForm(f => ({
+      ...f,
+      voucher_id: voucherId,
+      ...(voucher ? getVoucherCheckFields(voucher) : {
+        date: new Date().toISOString().split('T')[0],
+        payee: '',
+        amount: '',
+        purpose: '',
+        bank: '',
+        notes: '',
+      }),
+    }));
+    setFormErr(e => ({
+      ...e,
+      voucher_id: undefined,
+      date: undefined,
+      payee: undefined,
+      amount: undefined,
+      purpose: undefined,
+    }));
+  }
 
   function openAdd() {
     if (!canCreate) {
@@ -190,6 +239,10 @@ export default function CheckbookPage() {
 
   function validateForm() {
     const errs = {};
+    if (!form.voucher_id)       errs.voucher_id = 'Linked voucher is required.';
+    if (form.voucher_id && linkedVoucherIds.has(form.voucher_id)) {
+      errs.voucher_id = 'This voucher already has a recorded check.';
+    }
     if (!form.check_no.trim()) errs.check_no = 'Check number is required.';
     if (!form.date)            errs.date     = 'Date is required.';
     if (!form.payee.trim())    errs.payee    = 'Payee is required.';
@@ -223,7 +276,7 @@ export default function CheckbookPage() {
         bank:       form.bank.trim()  || null,
         notes:      form.notes.trim() || null,
         created_by: user?.id          ?? null,
-        voucher_id: form.voucher_id   || null,   // [ADDED] null when not linked
+        voucher_id: form.voucher_id,
       };
 
       if (editTarget) {
@@ -620,6 +673,7 @@ export default function CheckbookPage() {
               value={form.date}
               onChange={e => setField('date', e.target.value)}
               error={formErr.date}
+              disabled={!editTarget}
             />
           </div>
 
@@ -631,6 +685,7 @@ export default function CheckbookPage() {
             value={form.payee}
             onChange={e => setField('payee', e.target.value)}
             error={formErr.payee}
+            disabled={!editTarget}
           />
 
           <div className="grid grid-cols-2 gap-4">
@@ -644,13 +699,15 @@ export default function CheckbookPage() {
               value={form.amount}
               onChange={e => setField('amount', e.target.value)}
               error={formErr.amount}
+              disabled={!editTarget}
             />
             <Input
               label="Bank"
               type="text"
-              placeholder="e.g. BDO, Landbank (optional)"
+              placeholder="Filled from linked voucher when available"
               value={form.bank}
               onChange={e => setField('bank', e.target.value)}
+              disabled={!editTarget}
             />
           </div>
 
@@ -662,29 +719,32 @@ export default function CheckbookPage() {
             value={form.purpose}
             onChange={e => setField('purpose', e.target.value)}
             error={formErr.purpose}
+            disabled={!editTarget}
           />
 
           {/* [ADDED] Optional voucher link ──────────────────────────────────── */}
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">
-              Linked Voucher
-              <span className="ml-1.5 text-xs font-normal text-gray-400">(optional)</span>
+              Linked Voucher <span className="text-red-500">*</span>
             </label>
             <select
               value={form.voucher_id}
-              onChange={e => setField('voucher_id', e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+              onChange={e => applyVoucherToForm(e.target.value)}
+              className={`px-3 py-2 text-sm border rounded-lg
+                focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition ${
+                  formErr.voucher_id ? 'border-red-300' : 'border-gray-200'
+                }`}
             >
               <option value="">— None —</option>
-              {voucherList.map(v => (
+              {availableVouchers.map(v => (
                 <option key={v.id} value={v.id}>
                   {v.voucher_no} · {v.payee} · {formatCurrency(v.amount)}
                 </option>
               ))}
             </select>
+            {formErr.voucher_id && <p className="text-xs text-red-500">{formErr.voucher_id}</p>}
             <p className="text-xs text-gray-400">
-              Link this check to an approved voucher for documentation.
+              Selecting a voucher fills the check details. Only Check No. is manually entered for new checks.
             </p>
           </div>
 
@@ -697,6 +757,7 @@ export default function CheckbookPage() {
               onChange={e => setField('notes', e.target.value)}
               className="px-3 py-2 text-sm border border-gray-200 rounded-lg
                 focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition resize-none"
+              disabled={!editTarget}
             />
           </div>
 

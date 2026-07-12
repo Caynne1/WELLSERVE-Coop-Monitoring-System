@@ -57,6 +57,95 @@ function profileName(profile) {
   return profile?.full_name || profile?.email || null;
 }
 
+function transactionReportCategory(tx) {
+  const type = String(tx?.type || '').toLowerCase();
+  if (type === 'loan_payment') return 'loan_payment';
+  if (type === 'loan_interest') return 'loan_interest';
+  if (type === 'penalty_payment') return 'penalty_payment';
+  return tx?.category || tx?.type || 'transaction';
+}
+
+function loanDeductionKindFromText(value = '') {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('service')) return 'service_fee';
+  if (text.includes('cbu completion')) return 'cbu_completion';
+  if (text.includes('cbu') || text.includes('share capital') || text.includes('retention')) return 'cbu_retention';
+  if (text.includes('regulatory') || text.includes('admin')) return 'admin_regulatory_fees';
+  if (text.includes('initial savings')) return 'regular_savings';
+  if (text.includes('vip') || text.includes('wellife')) return 'vip_card';
+  if (text.includes('regular savings') || text.includes('saving')) return 'regular_savings';
+  if (text.includes('insurance') || text.includes('clpp') || text.includes('clpi') || text.includes('protection')) return 'clpi_insurance';
+  if (text.includes('notarial') || text.includes('legal')) return 'legal_fees';
+  if (text.includes('annual')) return 'annual_dues';
+  if (text.includes('penalty')) return 'penalty_due';
+  if (text.includes('petty')) return 'petty_cash';
+  if (text.includes('membership')) return 'membership_fee';
+  return text.trim() || 'loan_deduction';
+}
+
+function isLoanDeductionTx(row) {
+  return String(row?.type || '').toLowerCase() === 'loan_deduction';
+}
+
+function loanDeductionDedupeKey(row) {
+  const dateValue = row?.transaction_date || row?.created_at || '';
+  const dateKey = String(dateValue).slice(0, 10);
+  const kind = loanDeductionKindFromText(`${row?.notes || row?.description || ''} ${row?.category || ''}`);
+
+  return [
+    kind,
+    Number(row?.amount || 0).toFixed(2),
+    row?.reference || row?.ref_no || '',
+    row?.loan_id || '',
+    row?.member_id || row?.member_name || '',
+    dateKey,
+  ].join('|').toLowerCase();
+}
+
+function dedupeLoanDeductionTransactions(rows) {
+  const seen = new Set();
+  return rows.filter(row => {
+    if (!isLoanDeductionTx(row)) return true;
+    const key = loanDeductionDedupeKey(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function ledgerDedupeKey(row) {
+  const dateValue = row?.created_at ? new Date(row.created_at) : null;
+  const dateKey =
+    dateValue && !Number.isNaN(dateValue.getTime())
+      ? dateValue.toISOString().slice(0, 10)
+      : '';
+  const descriptionKey =
+    row?.category && ['service_fee', 'insurance', 'legal_fees', 'cbu', 'savings', 'annual_dues', 'penalty', 'petty_cash', 'membership'].includes(row.category)
+      ? loanDeductionKindFromText(`${row?.description || ''} ${row?.category || ''}`)
+      : row?.description || '';
+
+  return [
+    row?.type || '',
+    row?.category || '',
+    Number(row?.amount || 0).toFixed(2),
+    row?.ref_no || '',
+    row?.member_name || '',
+    row?.loan_id || '',
+    descriptionKey,
+    dateKey,
+  ].join('|').toLowerCase();
+}
+
+function dedupeLedgerRows(rows) {
+  const seen = new Set();
+  return rows.filter(row => {
+    const key = ledgerDedupeKey(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // ── Unified Coop Fund Summary ────────────────────────────────────────────────
 
 /**
@@ -65,6 +154,7 @@ function profileName(profile) {
  */
 const CASH_IN_TX_TYPES = new Set([
   'loan_payment',       // loan repayments
+  'loan_interest',      // interest collected from loan repayments
   'deposit',            // CBU / savings / time-deposit deposits
   'membership_payment', // membership fees
   'penalty_payment',    // penalty income
@@ -143,12 +233,12 @@ export async function computeCoopSummaryFromInvoices() {
   const profileMap = Object.fromEntries((profilesRes.data || []).map(p => [p.id, profileName(p)]));
 
   // ── Cash In from transactions ─────────────────────────────────────────────
-  const cashInTx = txList.filter(t => {
+  const cashInTx = dedupeLoanDeductionTransactions(txList.filter(t => {
     const type = (t.type || '').toLowerCase();
     const cat  = (t.category || '').toLowerCase();
     if (CASH_OUT_TX_TYPES.has(type)) return false;
     return CASH_IN_TX_TYPES.has(type) || CASH_IN_TX_TYPES.has(cat);
-  });
+  }));
 
   // ── Cash Out from transactions (withdrawals) ──────────────────────────────
   const cashOutTx = txList.filter(t => {
@@ -183,7 +273,9 @@ export async function computeCoopSummaryFromInvoices() {
   const txRows = cashInTx.map(t => ({
     id:          t.id,
     type:        'cash_in',
-    category:    t.category || t.type,
+    category:    transactionReportCategory(t),
+    raw_type:    t.type || null,
+    raw_category: t.category || null,
     amount:      t.amount,
     description: t.notes || t.type,
     ref_no:      t.reference || null,
@@ -196,7 +288,9 @@ export async function computeCoopSummaryFromInvoices() {
   const cashOutTxRows = cashOutTx.map(t => ({
     id:          t.id,
     type:        'cash_out',
-    category:    t.category || t.type,
+    category:    transactionReportCategory(t),
+    raw_type:    t.type || null,
+    raw_category: t.category || null,
     amount:      t.amount,
     description: t.notes || 'Withdrawal',
     ref_no:      t.reference || null,
@@ -228,7 +322,7 @@ export async function computeCoopSummaryFromInvoices() {
     created_at:  vch.created_at,
   }));
 
-  const allRows = [...txRows, ...cashOutTxRows, ...invRows, ...vchRows]
+  const allRows = dedupeLedgerRows([...txRows, ...cashOutTxRows, ...invRows, ...vchRows])
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return {
@@ -356,13 +450,14 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
 
   let txQuery = supabase
     .from('transactions')
-    .select('id, amount, notes, category, type, transaction_date');
+    .select('id, amount, notes, category, type, transaction_date, created_at, reference, member_id, loan_id');
 
   if (from) txQuery = txQuery.gte('transaction_date', from);
   if (toEndOfDay) txQuery = txQuery.lte('transaction_date', toEndOfDay);
 
   const { data: txList = [], error: txErr } = await txQuery;
   if (txErr) throw txErr;
+  const incomeTxList = dedupeLoanDeductionTransactions(txList);
 
   const buckets = {
     service_fee: 0,
@@ -379,7 +474,7 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     admin_regulatory_fees: 0,
   };
 
-  for (const tx of txList) {
+  for (const tx of incomeTxList) {
     const note = String(tx.notes || '').toLowerCase();
     const txCategory = String(tx.category || '').toLowerCase();
     const bucketText = `${note} ${txCategory}`;
@@ -400,7 +495,7 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
       else if (bucketText.includes('membership')) buckets.membership_fee += amount;
     }
 
-    if (tx.category === 'membership') {
+    if (tx.type !== 'loan_deduction' && tx.category === 'membership') {
       if (note.includes('vip') || note.includes('shirt') || note.includes('wellife')) {
         buckets.vip_card += amount;
       } else if (note.includes('regulatory') || note.includes('admin')) {
@@ -442,12 +537,14 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     admin_regulatory_fees: Math.round(buckets.admin_regulatory_fees * 100) / 100,
     total_income: Math.round(totalIncome * 100) / 100,
     loan_count: loans.length,
-    tx_count: txList.length,
+    tx_count: incomeTxList.length,
   };
 }
 
 export const CATEGORY_LABEL = {
   loan_payment: 'Loan Payment',
+  loan_interest: 'Loan Interest',
+  penalty_payment: 'Penalty Payment',
   cbu: 'CBU Deposit',
   cbu_withdrawal: 'CBU Withdrawal',
   savings: 'Savings Deposit',
@@ -466,6 +563,8 @@ export const CATEGORY_LABEL = {
 
 export const CATEGORY_COLOR = {
   loan_payment: 'text-orange-700 bg-orange-50',
+  loan_interest: 'text-green-700 bg-green-50',
+  penalty_payment: 'text-red-700 bg-red-50',
   cbu: 'text-green-700 bg-green-50',
   cbu_withdrawal: 'text-red-700 bg-red-50',
   savings: 'text-blue-700 bg-blue-50',

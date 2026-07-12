@@ -1155,6 +1155,29 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
       const paymentModeNote =
         [paymentReference.trim(), paymentNotes.trim()].filter(Boolean).join(' | ') || null;
 
+      const invoiceBreakdown = [];
+      if (loanPay > 0) invoiceBreakdown.push(`Loan: ${formatCurrency(loanPay)}`);
+      if (cbuPay > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(cbuPay)}`);
+      if (savingsPay > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(savingsPay)}`);
+      if (membershipPay > 0) invoiceBreakdown.push(`Membership: ${formatCurrency(membershipPay)}`);
+      if (penaltyPay > 0) invoiceBreakdown.push(`Penalty: ${formatCurrency(penaltyPay)}`);
+      if (otherPay > 0) invoiceBreakdown.push(`Others (${othersPurpose.trim()}): ${formatCurrency(otherPay)}`);
+
+      await createInvoiceForPayment({
+        invoice_no: siNo.trim(),
+        payment_type: 'loan_payment',
+        member_id: loan.member_id,
+        member_name: memberName,
+        amount: totalPayment,
+        purpose: invoiceBreakdown.length > 1 ? 'Combined Payment' : (invoiceBreakdown[0] || 'Payment'),
+        ref_id: loan.id,
+        created_by: userId,
+        date: paymentDate,
+        payment_mode: paymentMode,
+        payment_mode_note: paymentModeNote,
+        notes: invoiceBreakdown.join(' | '),
+      });
+
       if (loanPay > 0) {
         await createTransaction({
           member_id: loan.member_id,
@@ -1276,29 +1299,6 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           payment_mode_note: paymentModeNote,
         });
       }
-
-      const invoiceBreakdown = [];
-      if (loanPay > 0) invoiceBreakdown.push(`Loan: ${formatCurrency(loanPay)}`);
-      if (cbuPay > 0) invoiceBreakdown.push(`CBU: ${formatCurrency(cbuPay)}`);
-      if (savingsPay > 0) invoiceBreakdown.push(`Savings: ${formatCurrency(savingsPay)}`);
-      if (membershipPay > 0) invoiceBreakdown.push(`Membership: ${formatCurrency(membershipPay)}`);
-      if (penaltyPay > 0) invoiceBreakdown.push(`Penalty: ${formatCurrency(penaltyPay)}`);
-      if (otherPay > 0) invoiceBreakdown.push(`Others (${othersPurpose.trim()}): ${formatCurrency(otherPay)}`);
-
-      await createInvoiceForPayment({
-        invoice_no: siNo.trim(),
-        payment_type: 'loan_payment',
-        member_id: loan.member_id,
-        member_name: memberName,
-        amount: totalPayment,
-        purpose: invoiceBreakdown.length > 1 ? 'Combined Payment' : (invoiceBreakdown[0] || 'Payment'),
-        ref_id: loan.id,
-        created_by: userId,
-        date: paymentDate,
-        payment_mode: paymentMode,
-        payment_mode_note: paymentModeNote,
-        notes: invoiceBreakdown.join(' | '),
-      });
 
       toast.success('Payment posted successfully.');
       trackActivity({ userId: user?.id, module: 'loan', action: 'payment', description: `Posted loan payment of ${formatCurrency(totalPayment)} for ${memberName}` });

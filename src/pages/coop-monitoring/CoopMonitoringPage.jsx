@@ -1005,6 +1005,12 @@ export default function CoopMonitoringPage() {
     });
   }, [transactions, typeFilter, catFilter, dateRange]);
 
+  const loanPaymentTotal = useMemo(() => {
+    return transactions
+      .filter(tx => tx.type === 'cash_in' && (tx.category === 'loan_payment' || tx.raw_type === 'loan_payment'))
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  }, [transactions]);
+
   const filteredPenalties = useMemo(() => {
     return penalties.filter(p => {
       if (dateRange.from && p.penalty_date < dateRange.from) return false;
@@ -1098,7 +1104,7 @@ export default function CoopMonitoringPage() {
       ) : (
         <>
           {/* ── Stat Cards ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 mb-6">
             <StatCard
               icon={<PesoSign size={22} className="text-emerald-600" />}
               label="Current Fund Balance"
@@ -1107,6 +1113,15 @@ export default function CoopMonitoringPage() {
               bg="bg-emerald-50"
               textColor={fund.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}
               accentColor={fund.balance >= 0 ? 'bg-emerald-400' : 'bg-red-400'}
+            />
+            <StatCard
+              icon={<ArrowUpRight size={22} className="text-orange-600" />}
+              label="Loan Payment"
+              value={formatCurrency(loanPaymentTotal)}
+              sub="Loan Principal Collected"
+              bg="bg-orange-50"
+              textColor="text-orange-700"
+              accentColor="bg-orange-400"
             />
             <StatCard
               icon={<TrendingUp size={22} className="text-green-600" />}

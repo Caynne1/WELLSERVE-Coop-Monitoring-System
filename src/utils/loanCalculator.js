@@ -136,6 +136,7 @@ export function generateLoanPreview({
   previousLoanBalance = 0,
   annualDues = 0,
   extraDeductionItems = [],
+  firstPaymentDaysAfterStart = null,
 } = {}) {
   const scheduleResult = computeSchedule({
     amount,
@@ -146,6 +147,7 @@ export function generateLoanPreview({
     startDate,
     cbuPerPeriod,
     savingsPerPeriod,
+    firstPaymentDaysAfterStart,
   });
 
   const principal = safeNum(amount);

@@ -36,29 +36,30 @@ export function getLoanDeductionItems(loan) {
       label: item.label || item.name || 'Loan Deduction',
       amount: round2(item.amount || 0),
       category: deductionCategory(item.label || item.name),
+      kind: deductionKind(item.label || item.name),
     }))
     .filter(item => item.amount > 0);
 
   const extraItems = [
-    ['Service Fee', loan?.service_fee, 'service_fee'],
-    ['Insurance', loan?.loan_insurance, 'insurance'],
-    ['Legal / Notarial Fee', loan?.notarial_fee, 'legal_fees'],
-    ['CBU', loan?.share_capital, 'cbu'],
-    ['Savings', loan?.regular_savings, 'savings'],
-    ['Annual Dues', loan?.annual_dues, 'annual_dues'],
-    ['Penalty Due', loan?.penalty_due, 'penalty'],
-    ['Petty Cash', loan?.petty_cash, 'petty_cash'],
-    ['CBU Completion', loan?.cbu_completion, 'cbu'],
-    ['Membership Regulatory Fee', loan?.membership_regulatory_fee, 'membership'],
-    ['Membership Initial Savings', loan?.membership_initial_savings, 'savings'],
-    ['WELLife VIP Card', loan?.membership_vip_card, 'membership'],
+    ['Service Fee', loan?.service_fee, 'service_fee', 'service_fee'],
+    ['Insurance', loan?.loan_insurance, 'insurance', 'insurance'],
+    ['Legal / Notarial Fee', loan?.notarial_fee, 'legal_fees', 'legal_fees'],
+    ['CBU', loan?.share_capital, 'cbu', 'cbu_retention'],
+    ['Savings', loan?.regular_savings, 'savings', 'regular_savings'],
+    ['Annual Dues', loan?.annual_dues, 'annual_dues', 'annual_dues'],
+    ['Penalty Due', loan?.penalty_due, 'penalty', 'penalty'],
+    ['Petty Cash', loan?.petty_cash, 'petty_cash', 'petty_cash'],
+    ['CBU Completion', loan?.cbu_completion, 'cbu', 'cbu_completion'],
+    ['Membership Regulatory Fee', loan?.membership_regulatory_fee, 'membership', 'membership_regulatory_fee'],
+    ['Membership Initial Savings', loan?.membership_initial_savings, 'savings', 'membership_initial_savings'],
+    ['WELLife VIP Card', loan?.membership_vip_card, 'membership', 'membership_vip_card'],
   ]
-    .map(([label, amount, category]) => ({ label, amount: round2(amount || 0), category }))
+    .map(([label, amount, category, kind]) => ({ label, amount: round2(amount || 0), category, kind }))
     .filter(item => item.amount > 0);
 
   const byKey = new Map();
   [...normalized, ...extraItems].forEach(item => {
-    const key = `${item.category}|${item.label.toLowerCase()}`;
+    const key = item.kind || `${item.category}|${item.label.toLowerCase()}`;
     if (!byKey.has(key)) byKey.set(key, item);
   });
 
@@ -77,6 +78,24 @@ function deductionCategory(label = '') {
   if (text.includes('membership') || text.includes('regulatory') || text.includes('vip')) return 'membership';
   if (text.includes('petty')) return 'petty_cash';
   return 'loan_deduction';
+}
+
+function deductionKind(label = '') {
+  const text = String(label).toLowerCase();
+  if (text.includes('service')) return 'service_fee';
+  if (text.includes('cbu completion')) return 'cbu_completion';
+  if (text.includes('cbu') || text.includes('share capital') || text.includes('retention')) return 'cbu_retention';
+  if (text.includes('regulatory') || text.includes('admin')) return 'membership_regulatory_fee';
+  if (text.includes('initial savings')) return 'membership_initial_savings';
+  if (text.includes('vip') || text.includes('wellife')) return 'membership_vip_card';
+  if (text.includes('regular savings') || text.includes('saving')) return 'regular_savings';
+  if (text.includes('insurance') || text.includes('clpp') || text.includes('clpi') || text.includes('protection')) return 'insurance';
+  if (text.includes('notarial') || text.includes('legal')) return 'legal_fees';
+  if (text.includes('annual')) return 'annual_dues';
+  if (text.includes('penalty')) return 'penalty';
+  if (text.includes('petty')) return 'petty_cash';
+  if (text.includes('membership')) return 'membership_fee';
+  return text.trim() || 'loan_deduction';
 }
 
 export async function getLoansForExpenseCreation() {

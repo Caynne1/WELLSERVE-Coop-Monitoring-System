@@ -127,7 +127,12 @@ async function insertInvoiceRow(clean) {
     .select()
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    if (error.code === '23505' && String(error.message || '').includes('invoice_no')) {
+      throw new Error(`Invoice Number "${clean.invoice_no}" is already in use. Please enter a different SI#.`);
+    }
+    throw error;
+  }
   if (!data) {
     throw new Error('The invoice was not saved — no row was returned after insert.');
   }
@@ -395,6 +400,10 @@ export async function createMultiCategoryInvoice({
   const effectivePaymentDate = payment_date || date;
   const memberName = [member.first_name, member.last_name].filter(Boolean).join(' ') || 'Member';
   const created = [];
+  const invoiceLines = [];
+  let invoiceRefId = null;
+  let invoiceAccountId = null;
+  let invoicePaymentType = null;
 
   // Every side effect performed below (transaction rows, account balance
   // changes, membership fee updates, the kiddy_savings_type sync, etc.) is
@@ -415,7 +424,124 @@ export async function createMultiCategoryInvoice({
     }
   }
 
+  function buildInvoiceLinePreview(entry) {
+    const amount = Number(entry.amount) || 0;
+    if (amount <= 0) return [];
+
+    if (entry.category === 'membership') {
+      if (!entry.membership) throw new Error('Membership record not found for this member.');
+      return [{
+        label: entry.purpose || 'Membership Fee Payment',
+        amount,
+        payment_type: 'membership',
+        ref_id: entry.membership.id,
+      }];
+    }
+
+    if (entry.category === 'loan') {
+      if (!entry.loan) throw new Error('Loan record not found for this member.');
+      const principalAmount = Number(entry.principal_amount ?? entry.loan_amount ?? amount) || 0;
+      const interestAmount = Number(entry.interest_amount) || 0;
+      const penaltyAmount = Number(entry.penalty_amount) || 0;
+      if (principalAmount > (entry.loan.balance || 0)) {
+        throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
+      }
+      return [
+        principalAmount > 0 ? {
+          label: `Loan Payment${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+          amount: principalAmount,
+          payment_type: 'loan_payment',
+          ref_id: entry.loan.id,
+        } : null,
+        interestAmount > 0 ? {
+          label: `Interest${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+          amount: interestAmount,
+          payment_type: 'loan_payment',
+          ref_id: entry.loan.id,
+        } : null,
+        penaltyAmount > 0 ? {
+          label: `Penalty${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+          amount: penaltyAmount,
+          payment_type: 'loan_payment',
+          ref_id: entry.loan.id,
+        } : null,
+      ].filter(Boolean);
+    }
+
+    if (entry.category === 'cbu' || entry.category === 'savings') {
+      if (!entry.account) throw new Error(`No ${entry.category.toUpperCase()} account found for this member.`);
+      const isKiddySavings = entry.category === 'savings' && member.membership_type === 'kiddy';
+      const kiddySavingsType = isKiddySavings ? (entry.kiddySavingsType || member.kiddy_savings_type || 'regular_savings') : null;
+      const kiddySavingsLabel = kiddySavingsType === 'educational_savings'
+        ? 'Educational Savings Account'
+        : 'Regular Savings Account';
+      const label = entry.purpose || (isKiddySavings
+        ? `${kiddySavingsLabel} Deposit${entry.account.account_no ? ` - ${entry.account.account_no}` : ''}`
+        : `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` - ${entry.account.account_no}` : ''}`);
+      return [{ label, amount, payment_type: entry.category, ref_id: entry.account.id, account_id: entry.account.id }];
+    }
+
+    if (entry.category === 'time_deposit') {
+      if (!entry.timeDeposit) throw new Error('Time Deposit record not found for this member.');
+      return [{
+        label: entry.purpose || `Time Deposit Payment${entry.timeDeposit.name ? ` - ${entry.timeDeposit.name}` : ''}`,
+        amount,
+        payment_type: 'time_deposit',
+        ref_id: entry.timeDeposit.id,
+      }];
+    }
+
+    if (entry.category === 'savings_booster') {
+      if (!entry.booster) throw new Error('Savings Booster enrollment not found for this member.');
+      return [{
+        label: entry.purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` - Slot #${entry.booster.slot_number}` : ''}`,
+        amount,
+        payment_type: 'savings_booster',
+        ref_id: entry.booster.id,
+      }];
+    }
+
+    return [];
+  }
+
   try {
+    const previewLines = entries.flatMap(buildInvoiceLinePreview);
+    if (previewLines.length === 0) {
+      throw new Error('Select at least one payment category with an amount greater than zero.');
+    }
+
+    const previewRefId = previewLines.find(line => line.ref_id)?.ref_id || null;
+    const previewAccountId = previewLines.find(line => line.account_id)?.account_id || null;
+    const previewPaymentType = previewLines[0]?.payment_type || 'loan_payment';
+    const previewTotal = previewLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+    const previewPurpose = previewLines.length === 1 ? previewLines[0].label : 'Combined Payment';
+    const previewBreakdown = previewLines
+      .map(line => `${line.label}: PHP ${Number(line.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+      .join(' | ');
+
+    const invoicePayload = buildPaymentInvoicePayload({
+      invoice_no: siNo,
+      payment_type: previewPaymentType,
+      member_id: member.id,
+      member_name: memberName,
+      amount: previewTotal,
+      purpose: previewPurpose,
+      ref_id: previewRefId,
+      account_id: previewAccountId,
+      notes: [previewBreakdown, notes].filter(Boolean).join(' | '),
+      created_by,
+      date,
+      payment_mode,
+      payment_mode_note,
+    });
+    invoicePayload.payment_date = effectivePaymentDate;
+
+    const savedInvoice = await insertInvoiceRow(invoicePayload);
+    created.push(savedInvoice);
+    rollbacks.push(async () => {
+      await supabase.from('invoices').delete().eq('id', savedInvoice.id);
+    });
+
     for (const entry of entries) {
       const amount = Number(entry.amount) || 0;
       if (amount <= 0) continue;
@@ -438,30 +564,94 @@ export async function createMultiCategoryInvoice({
         });
         ref_id = entry.membership.id;
         purpose = purpose || 'Membership Fee Payment';
+        invoiceLines.push({ label: purpose, amount, payment_type: 'membership', ref_id, account_id });
       }
 
       if (entry.category === 'loan') {
         if (!entry.loan) throw new Error('Loan record not found for this member.');
-        if (amount > (entry.loan.balance || 0)) {
+        const principalAmount = Number(entry.principal_amount ?? entry.loan_amount ?? amount) || 0;
+        const interestAmount = Number(entry.interest_amount) || 0;
+        const penaltyAmount = Number(entry.penalty_amount) || 0;
+        const scheduleAmount = principalAmount + interestAmount;
+
+        if (principalAmount > (entry.loan.balance || 0)) {
           throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
         }
-        const loanTx = await createTransaction({
-          member_id: member.id,
-          loan_id: entry.loan.id,
-          category: 'loan',
-          type: 'loan_payment',
-          amount,
-          reference: siNo,
-          notes,
-          created_by,
-          transaction_date: effectivePaymentDate,
-          payment_mode,
-          payment_mode_note,
-        });
-        rollbacks.push(async () => {
-          await supabase.from('transactions').delete().eq('id', loanTx.id);
-        });
-        await applyLoanPaymentToSchedule(entry.loan.id, amount);
+        if (principalAmount > 0) {
+          const loanTx = await createTransaction({
+            member_id: member.id,
+            loan_id: entry.loan.id,
+            category: 'loan',
+            type: 'loan_payment',
+            amount: principalAmount,
+            reference: entry.loan.loan_no || siNo,
+            notes,
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', loanTx.id);
+          });
+          invoiceLines.push({
+            label: `Loan Payment${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+            amount: principalAmount,
+            payment_type: 'loan_payment',
+            ref_id: entry.loan.id,
+          });
+        }
+        if (interestAmount > 0) {
+          const interestTx = await createTransaction({
+            member_id: member.id,
+            loan_id: entry.loan.id,
+            category: 'loan',
+            type: 'loan_interest',
+            amount: interestAmount,
+            reference: entry.loan.loan_no || siNo,
+            notes,
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', interestTx.id);
+          });
+          invoiceLines.push({
+            label: `Interest${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+            amount: interestAmount,
+            payment_type: 'loan_payment',
+            ref_id: entry.loan.id,
+          });
+        }
+        if (penaltyAmount > 0) {
+          const penaltyTx = await createTransaction({
+            member_id: member.id,
+            loan_id: entry.loan.id,
+            category: 'penalty',
+            type: 'penalty_payment',
+            amount: penaltyAmount,
+            reference: entry.loan.loan_no || siNo,
+            notes,
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', penaltyTx.id);
+          });
+          invoiceLines.push({
+            label: `Penalty${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+            amount: penaltyAmount,
+            payment_type: 'loan_payment',
+            ref_id: entry.loan.id,
+          });
+        }
+        if (scheduleAmount > 0) {
+          await applyLoanPaymentToSchedule(entry.loan.id, scheduleAmount);
+        }
         ref_id = entry.loan.id;
         purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;
       }
@@ -529,6 +719,7 @@ export async function createMultiCategoryInvoice({
         purpose = purpose || (isKiddySavings
           ? `${kiddySavingsLabel} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`
           : `${entry.category === 'cbu' ? 'CBU' : 'Savings'} Deposit${entry.account.account_no ? ` — ${entry.account.account_no}` : ''}`);
+        invoiceLines.push({ label: purpose, amount, payment_type: entry.category, ref_id, account_id });
       }
 
       if (entry.category === 'time_deposit') {
@@ -563,6 +754,7 @@ export async function createMultiCategoryInvoice({
         });
         ref_id = entry.timeDeposit.id;
         purpose = purpose || `Time Deposit Payment${entry.timeDeposit.name ? ` — ${entry.timeDeposit.name}` : ''}`;
+        invoiceLines.push({ label: purpose, amount, payment_type: 'time_deposit', ref_id, account_id });
       }
 
       if (entry.category === 'savings_booster') {
@@ -609,39 +801,18 @@ export async function createMultiCategoryInvoice({
         });
         ref_id = updatedBooster?.id || entry.booster.id;
         purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
+        invoiceLines.push({ label: purpose, amount, payment_type: 'savings_booster', ref_id, account_id });
       }
+
+      if (!invoiceRefId && ref_id) invoiceRefId = ref_id;
+      if (!invoiceAccountId && account_id) invoiceAccountId = account_id;
+      if (!invoicePaymentType) invoicePaymentType = entry.category === 'loan' ? 'loan_payment' : entry.category;
 
       // NOTE: intentionally bypasses createInvoiceForPayment's own duplicate
       // check here — the SI# was already validated once above and is reused
       // on purpose across every category in this same invoice. Re-checking per
       // line item would find the row we just inserted for the first category
       // and incorrectly reject the second one as a "duplicate".
-      const clean = buildPaymentInvoicePayload({
-        invoice_no: siNo,
-        payment_type: entry.category === 'loan' ? 'loan_payment' : entry.category,
-        member_id: member.id,
-        member_name: memberName,
-        amount,
-        purpose,
-        ref_id,
-        account_id,
-        notes,
-        created_by,
-        date,
-        payment_mode,
-        payment_mode_note,
-      });
-      clean.payment_date = effectivePaymentDate;
-
-      const invoiceRow = await insertInvoiceRow(clean);
-      rollbacks.push(async () => {
-        await supabase.from('invoices').delete().eq('id', invoiceRow.id);
-      });
-      created.push(invoiceRow);
-    }
-
-    if (created.length === 0) {
-      throw new Error('Select at least one payment category with an amount greater than zero.');
     }
 
     return created;

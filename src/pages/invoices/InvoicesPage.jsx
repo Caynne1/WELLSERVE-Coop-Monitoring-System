@@ -1120,10 +1120,12 @@ function SummaryCard({ icon, label, value, bg }) {
 
 // ── Add Invoice: centralized, multi-category member payment ──────────────────
 
-const CATEGORY_ORDER = ['membership', 'loan', 'cbu', 'savings', 'time_deposit', 'savings_booster'];
+const CATEGORY_ORDER = ['membership', 'loan', 'loan_interest', 'loan_penalty', 'cbu', 'savings', 'time_deposit', 'savings_booster'];
 const CATEGORY_LABEL = {
   membership: 'Membership',
   loan: 'Loan',
+  loan_interest: 'Interest',
+  loan_penalty: 'Penalty',
   cbu: 'CBU',
   savings: 'Savings',
   time_deposit: 'Time Deposit',
@@ -1246,8 +1248,18 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     if (parseFloat(amounts.membership) > 0) {
       entries.push({ category: 'membership', amount: parseFloat(amounts.membership), membership: summary.membership.record });
     }
-    if (parseFloat(amounts.loan) > 0) {
-      entries.push({ category: 'loan', amount: parseFloat(amounts.loan), loan: selectedLoan });
+    const loanAmount = parseFloat(amounts.loan) || 0;
+    const interestAmount = parseFloat(amounts.loan_interest) || 0;
+    const penaltyAmount = parseFloat(amounts.loan_penalty) || 0;
+    if (loanAmount + interestAmount + penaltyAmount > 0) {
+      entries.push({
+        category: 'loan',
+        amount: loanAmount + interestAmount + penaltyAmount,
+        principal_amount: loanAmount,
+        interest_amount: interestAmount,
+        penalty_amount: penaltyAmount,
+        loan: selectedLoan,
+      });
     }
     if (parseFloat(amounts.cbu) > 0) {
       entries.push({ category: 'cbu', amount: parseFloat(amounts.cbu), account: summary.cbu.record });
@@ -1353,7 +1365,11 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {CATEGORY_ORDER.map(cat => {
-                  const info = summary[cat];
+                  const info = summary[cat] || (
+                    (cat === 'loan_interest' || cat === 'loan_penalty')
+                      ? { ...summary.loan, valueType: 'balance' }
+                      : { hasRecord: false, payable: false, valueType: 'balance', value: 0 }
+                  );
                   const valueLabel = info.valueType === 'balance' ? 'Balance' : 'Total Deposited';
                   const statusText = !info.hasRecord
                     ? 'No Record'

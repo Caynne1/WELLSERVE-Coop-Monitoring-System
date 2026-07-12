@@ -416,6 +416,7 @@ export default function LoanFormPage() {
   const watchedFrequency = useWatch({ control, name: 'repayment_frequency' });
   const watchedMethod = useWatch({ control, name: 'loan_method' });
   const watchedReleaseDate = useWatch({ control, name: 'release_date' });
+  const watchedStatus = useWatch({ control, name: 'status' });
 
   const watchedProposal = useWatch({ control, name: 'loan_proposal' });
   const watchedServiceFeePercent = useWatch({ control, name: 'service_fee_percent' });
@@ -508,6 +509,7 @@ export default function LoanFormPage() {
       startDate: watchedReleaseDate || new Date(),
       cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
       savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
+      firstPaymentDaysAfterStart: String(watchedStatus || 'draft').toLowerCase() === 'draft' ? 7 : null,
       serviceFeePercent: chargeIncluded.service_fee ? (parseFloat(watchedServiceFeePercent || 3.5) || 0) : 0,
       shareCapital: chargeIncluded.cbu_retention ? (parseFloat(watchedShareCapital || 0) || 0) : 0,
       regularSavings: chargeIncluded.regular_savings ? (parseFloat(watchedRegularSavings || 0) || 0) : 0,
@@ -523,6 +525,7 @@ export default function LoanFormPage() {
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
+    watchedStatus,
     watchedCbuPerPeriod,
     watchedSavingsPerPeriod,
     watchedServiceFeePercent,
