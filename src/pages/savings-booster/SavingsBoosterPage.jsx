@@ -327,6 +327,9 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
 const statusVariant = { active: 'success', matured: 'info', forfeited: 'warning', withdrawn: 'default' };
 
 export default function SavingsBoosterPage() {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('savings_booster', 'create');
+
   const [showMechanics, setShowMechanics] = useState(true);
   const [showTable, setShowTable]         = useState(false);
   const [enrollments, setEnrollments]     = useState([]);
