@@ -23,6 +23,7 @@ import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import { formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ─── Avatar helpers ───────────────────────────────────────────────────────────
 
@@ -475,20 +476,90 @@ export default function MembersPage() {
     }
   }
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const columns = isKiddyView
+      ? ['Member', 'Member No.', 'Savings Type', 'Guardian', 'Contact', 'Date of Birth', 'Status']
+      : ['Member', 'Member No.', 'Contact', 'Referrer', 'Joined', 'Status'];
+
+    const rowsHtml = filtered.map(member => {
+      const memberCell = `${member.first_name || ''} ${member.last_name || ''}`.trim() || '—';
+      const memberNoCell = formatMemberNo(member.member_no) || '—';
+      const statusCell = statusLabel[member.status] || 'Active';
+
+      if (isKiddyView) {
+        const savingsTypeCell = member.kiddy_savings_type === 'educational_savings'
+          ? 'Educational Savings'
+          : 'Regular Savings';
+        const guardianCell = member.guardian_name
+          ? `${member.guardian_name} (${member.guardian_relationship || 'Guardian'})`
+          : '—';
+        const dobCell = member.date_of_birth ? formatDate(member.date_of_birth) : '—';
+        return `
+          <tr>
+            <td>${memberCell}</td>
+            <td style="text-align:center">${memberNoCell}</td>
+            <td>${savingsTypeCell}</td>
+            <td>${guardianCell}</td>
+            <td>${member.phone || '—'}</td>
+            <td style="text-align:center">${dobCell}</td>
+            <td style="text-align:center">${statusCell}</td>
+          </tr>
+        `;
+      }
+
+      const joinedCell = member.date_joined
+        ? formatDate(member.date_joined)
+        : (member.created_at ? formatDate(member.created_at) : '—');
+      return `
+        <tr>
+          <td>${memberCell}</td>
+          <td style="text-align:center">${memberNoCell}</td>
+          <td>${member.phone || '—'}</td>
+          <td>${member.recruiter_name || 'Self'}</td>
+          <td style="text-align:center">${joinedCell}</td>
+          <td style="text-align:center">${statusCell}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const html = `
+      <h1 class="report-title">${isKiddyView ? 'Kiddy & Youth Members Report' : 'Members Report'}</h1>
+      <div class="report-meta">
+        Status: ${statusLabel[statusTab]} &nbsp;|&nbsp;
+        ${isKiddyView ? 'Savings Type' : 'Type'}: ${
+          typeFilter === 'all'
+            ? 'All'
+            : isKiddyView
+              ? (typeFilter === 'educational_savings' ? 'Educational Savings Account' : 'Regular Savings Account')
+              : typeFilter
+        } &nbsp;|&nbsp;
+        Year Joined: ${yearFilter === 'all' ? 'All Years' : yearFilter} &nbsp;|&nbsp;
+        Generated: ${new Date().toLocaleString()}
+      </div>
+      <table>
+        <thead>
+          <tr>${columns.map(h => `<th${['Member No.', 'Joined', 'Status', 'Date of Birth'].includes(h) ? ' style="text-align:center"' : ''}>${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody>
+          ${rowsHtml || `<tr><td colspan="${columns.length}" style="text-align:center; padding:16px;">No members found.</td></tr>`}
+        </tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
+
+    printHtmlDocument(wrapWithLetterhead(html, {
+      title: isKiddyView ? 'Kiddy & Youth Members Report' : 'Members Report',
+    }), {
+      width: 1200,
+      height: 900,
+      onBlocked: () => toast.error('Unable to open print preview.'),
+    });
+  }
 
   return (
-    <div className="p-4 md:p-6 print:p-0 bg-gray-50/30 min-h-screen">
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .print-members-area, .print-members-area * { visibility: visible; }
-          .print-members-area { position: absolute; left: 0; top: 0; width: 100%; background: white; padding: 24px; }
-        }
-      `}</style>
-
+    <div className="p-4 md:p-6 bg-gray-50/30 min-h-screen">
       {/* ── Header ── */}
-      <div className="print:hidden">
+      <div>
         <PageHeader
           title="Members"
           subtitle="Manage cooperative members and their financial accounts"
@@ -728,32 +799,6 @@ export default function MembersPage() {
 
       {/* ── Table ── */}
       <div className="print-members-area">
-
-        {/* Print header */}
-        <div className="hidden print:flex items-center justify-between mb-6 border-b border-gray-200 pb-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-green-700 text-white flex items-center justify-center font-bold text-xl border-4 border-green-100">W</div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-wide text-gray-900">WELLSERVE</h1>
-              <p className="text-xs tracking-[0.25em] text-green-700 font-semibold">CREDIT COOPERATIVE</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-sm font-semibold text-gray-800">{isKiddyView ? 'Kiddy & Youth Members Report' : 'Members Report'}</p>
-            <p className="text-xs text-gray-500">Status: {statusLabel[statusTab]}</p>
-            <p className="text-xs text-gray-500">
-              {isKiddyView ? 'Savings Type' : 'Type'}: {
-                typeFilter === 'all'
-                  ? 'All'
-                  : isKiddyView
-                    ? (typeFilter === 'educational_savings' ? 'Educational Savings Account' : 'Regular Savings Account')
-                    : typeFilter
-              }
-            </p>
-            <p className="text-xs text-gray-500">Year Joined: {yearFilter === 'all' ? 'All Years' : yearFilter}</p>
-            <p className="text-xs text-gray-500">Generated: {new Date().toLocaleString()}</p>
-          </div>
-        </div>
 
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>

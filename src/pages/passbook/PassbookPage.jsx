@@ -27,7 +27,7 @@ import {
   updatePassbookStatus,
 } from '../../services/passbookService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { printHtmlDocument } from '../../utils/print';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const REGISTRY_STATUS_OPTIONS = [
   { value: '', label: 'All Status' },
@@ -283,59 +283,31 @@ export default function PassbookPage() {
       </tr>
     `).join('');
 
-    printHtmlDocument(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8"/>
-          <title>Passbook Registry</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; color: #111827; padding: 24px; }
-            .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 18px; }
-            h1 { margin: 0; font-size: 20px; letter-spacing: 0.08em; }
-            .subtitle { margin: 4px 0 0; color: #059669; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; }
-            .meta { text-align: right; font-size: 11px; color: #6b7280; line-height: 1.5; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th, td { border: 1px solid #e5e7eb; padding: 7px; vertical-align: top; }
-            th { background: #f3f4f6; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
-            @page { size: A4 landscape; margin: 12mm; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <h1>WELLSERVE</h1>
-              <p class="subtitle">Passbook Registry</p>
-            </div>
-            <div class="meta">
-              Generated: ${new Date().toLocaleString()}<br/>
-              ${registryRows.length} record${registryRows.length === 1 ? '' : 's'}
-            </div>
-          </div>
+    const html = `
+      <h1 class="report-title">Passbook Registry</h1>
+      <div class="report-meta">Generated: ${new Date().toLocaleString()} &nbsp;|&nbsp; ${registryRows.length} record${registryRows.length === 1 ? '' : 's'}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Referred By</th>
+            <th>Status</th>
+            <th>Print Passbook</th>
+            <th>CBU Account</th>
+            <th>Savings Account</th>
+            <th style="text-align:center;">No.</th>
+            <th>Surname</th>
+            <th>First Name</th>
+            <th>Middle Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || '<tr><td colspan="9" style="text-align:center; padding:16px;">No passbook registry rows found.</td></tr>'}
+        </tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
 
-          <table>
-            <thead>
-              <tr>
-                <th>Referred By</th>
-                <th>Status</th>
-                <th>Print Passbook</th>
-                <th>CBU Account</th>
-                <th>Savings Account</th>
-                <th style="text-align:center;">No.</th>
-                <th>Surname</th>
-                <th>First Name</th>
-                <th>Middle Name</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows || '<tr><td colspan="9" style="text-align:center; padding:16px;">No passbook registry rows found.</td></tr>'}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `, {
+    printHtmlDocument(wrapWithLetterhead(html, { title: 'Passbook Registry' }), {
       width: 1200,
       height: 900,
       onBlocked: () => toast.error('Unable to open print preview.'),
@@ -382,54 +354,36 @@ export default function PassbookPage() {
       `;
     }).join('');
 
-    printHtmlDocument(`
-      <html>
-        <head>
-          <meta charset="UTF-8"/>
-          <title>${title}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 28px; color: #222; }
-            h1 { font-size: 22px; margin: 0 0 6px; }
-            h2 { font-size: 14px; margin: 18px 0 8px; }
-            .meta { margin: 0 0 14px; font-size: 12px; color: #555; }
-            .box { border: 1px solid #ddd; padding: 12px; margin-bottom: 16px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-            th { background: #f6f6f6; text-align: left; }
-            @page { size: A4 portrait; margin: 12mm; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <h1>${title}</h1>
-          <p class="meta">Printed: ${new Date().toLocaleString()}</p>
+    const html = `
+      <h1 class="report-title">${title}</h1>
+      <div class="report-meta">Printed: ${new Date().toLocaleString()}</div>
+      <div class="section-heading">Member Information</div>
+      <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
+        <div class="stat-box"><div class="stat-label">Name</div><div class="stat-value" style="font-size:12pt">${plainFullName(selectedMember)}</div></div>
+        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${selectedMember.member_no || '—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Referred By</div><div class="stat-value" style="font-size:11pt">${selectedMember.recruiter_name || 'Self'}</div></div>
+        <div class="stat-box"><div class="stat-label">Account No.</div><div class="stat-value" style="font-size:11pt">${accountNo}</div></div>
+        <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${formatDate(selectedMember.date_joined || selectedMember.created_at)}</div></div>
+      </div>
+      <div class="section-heading">Passbook Transactions</div>
+      <table>
+        <thead>
+          <tr>
+            <th>No.</th>
+            <th>Date</th>
+            <th>Particulars</th>
+            <th>Amount</th>
+            <th>Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || '<tr><td colspan="5">No transactions found.</td></tr>'}
+        </tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+    `;
 
-          <div class="box">
-            <p><strong>Name:</strong> ${plainFullName(selectedMember)}</p>
-            <p><strong>Member No.:</strong> ${selectedMember.member_no || '—'}</p>
-            <p><strong>Referred By:</strong> ${selectedMember.recruiter_name || 'Self'}</p>
-            <p><strong>Account No.:</strong> ${accountNo}</p>
-            <p><strong>Date Joined:</strong> ${formatDate(selectedMember.date_joined || selectedMember.created_at)}</p>
-          </div>
-
-          <h2>Passbook Transactions</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>No.</th>
-                <th>Date</th>
-                <th>Particulars</th>
-                <th>Amount</th>
-                <th>Reference</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows || '<tr><td colspan="5">No transactions found.</td></tr>'}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `, {
+    printHtmlDocument(wrapWithLetterhead(html, { title }), {
       width: 900,
       height: 1000,
       onBlocked: () => toast.error('Unable to open print preview.'),

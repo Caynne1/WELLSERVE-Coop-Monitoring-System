@@ -34,7 +34,7 @@ import {
   frequencyPeriodLabel,
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { printHtmlDocument } from '../../utils/print';
+import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import * as XLSX from 'xlsx';
 
 const statusVariant = {
@@ -127,44 +127,6 @@ function estimateInterestFromTerms(loan, rows, monthlyRate) {
  */
 function printStyles() {
   return `
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Arial', sans-serif;
-      font-size: 11px;
-      color: #1f2937;
-      padding: 28px 32px;
-      background: #fff;
-    }
-    /* ── Letterhead ── */
-    .letterhead {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 2px solid #059669;
-      padding-bottom: 12px;
-      margin-bottom: 18px;
-    }
-    .letterhead-left .coop-name {
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      color: #111827;
-    }
-    .letterhead-left .coop-sub {
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: #059669;
-      margin-top: 2px;
-    }
-    .letterhead-right {
-      text-align: right;
-      font-size: 10px;
-      color: #6b7280;
-      line-height: 1.6;
-    }
-    .letterhead-right strong { color: #111827; font-size: 12px; }
     /* ── Document title ── */
     .doc-title {
       font-size: 14px;
@@ -312,31 +274,9 @@ function printStyles() {
       display: flex;
       justify-content: space-between;
     }
-    @media print {
-      body { padding: 16px 20px; }
-      @page { margin: 12mm; size: A4 portrait; }
-    }
   `;
 }
 
-/**
- * Shared letterhead HTML.
- */
-function letterheadHTML(loanNo, printedAt) {
-  return `
-    <div class="letterhead">
-      <div class="letterhead-left">
-        <div class="coop-name">WELLSERVE</div>
-        <div class="coop-sub">Credit Cooperative</div>
-      </div>
-      <div class="letterhead-right">
-        <strong>Loan No.: ${loanNo || '—'}</strong><br/>
-        Printed: ${printedAt}<br/>
-        This document is system-generated.
-      </div>
-    </div>
-  `;
-}
 
 /**
  * Renders a key-value row.
@@ -555,17 +495,7 @@ export default function LoanDetailPage() {
 
   // ── PRINT: Full Loan Detail + Amortization Schedule ───────────────────────
   function handlePrint() {
-    printHtmlDocument(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8"/>
-        <title>Loan ${loan.loan_no || ''} — Detail & Amortization</title>
-        <style>${printStyles()}</style>
-      </head>
-      <body>
-        ${letterheadHTML(loan.loan_no, printedAt)}
-
+    const html = `
         <div class="doc-title">Loan Detail &amp; Amortization Schedule</div>
 
         <div class="info-grid">
@@ -661,9 +591,12 @@ export default function LoanDetailPage() {
           <span>WELLSERVE Credit Cooperative — Confidential</span>
           <span>Printed: ${printedAt}</span>
         </div>
-      </body>
-      </html>
-    `, {
+    `;
+
+    printHtmlDocument(wrapWithLetterhead(html, {
+      title: `Loan ${loan.loan_no || ''} — Detail & Amortization`,
+      extraCss: printStyles(),
+    }), {
       width: 1100,
       height: 900,
       delay: 400,
@@ -677,60 +610,52 @@ export default function LoanDetailPage() {
     const nextDue = scheduleRows.find(r => (r.status || 'unpaid') !== 'paid');
     const paidCount = scheduleRows.filter(r => r.status === 'paid').length;
 
-    printHtmlDocument(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8"/>
-        <title>Billing Statement — ${memberName}</title>
-        <style>
-          ${printStyles()}
-          .hero-box {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 18px;
-          }
-          .hero-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 10px 14px;
-            text-align: center;
-          }
-          .hero-card.green { border-color: #a7f3d0; background: #ecfdf5; }
-          .hero-card.red   { border-color: #fca5a5; background: #fef2f2; }
-          .hero-card .hc-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 4px; }
-          .hero-card .hc-value { font-size: 18px; font-weight: 800; color: #111827; }
-          .hero-card.green .hc-value { color: #065f46; }
-          .hero-card.red   .hc-value { color: #991b1b; }
-          .next-due-box {
-            background: #fffbeb;
-            border: 1px solid #fde68a;
-            border-radius: 6px;
-            padding: 10px 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 18px;
-          }
-          .next-due-box .nd-label { font-size: 10px; color: #92400e; font-weight: 600; }
-          .next-due-box .nd-amount { font-size: 16px; font-weight: 800; color: #92400e; }
-          .next-due-box .nd-date   { font-size: 10px; color: #6b7280; margin-top: 2px; }
-          .note-box {
-            margin-top: 18px;
-            padding: 10px 14px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            font-size: 10px;
-            color: #6b7280;
-            line-height: 1.6;
-          }
-        </style>
-      </head>
-      <body>
-        ${letterheadHTML(loan.loan_no, printedAt)}
+    const billingExtraCss = `
+      ${printStyles()}
+      .hero-box {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .hero-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 10px 14px;
+        text-align: center;
+      }
+      .hero-card.green { border-color: #a7f3d0; background: #ecfdf5; }
+      .hero-card.red   { border-color: #fca5a5; background: #fef2f2; }
+      .hero-card .hc-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; margin-bottom: 4px; }
+      .hero-card .hc-value { font-size: 18px; font-weight: 800; color: #111827; }
+      .hero-card.green .hc-value { color: #065f46; }
+      .hero-card.red   .hc-value { color: #991b1b; }
+      .next-due-box {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 6px;
+        padding: 10px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+      .next-due-box .nd-label { font-size: 10px; color: #92400e; font-weight: 600; }
+      .next-due-box .nd-amount { font-size: 16px; font-weight: 800; color: #92400e; }
+      .next-due-box .nd-date   { font-size: 10px; color: #6b7280; margin-top: 2px; }
+      .note-box {
+        margin-top: 18px;
+        padding: 10px 14px;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 10px;
+        color: #6b7280;
+        line-height: 1.6;
+      }
+    `;
 
+    const html = `
         <div class="doc-title">Member Billing Statement</div>
 
         <div class="info-grid" style="margin-bottom:16px">
@@ -842,9 +767,12 @@ export default function LoanDetailPage() {
           <span>WELLSERVE Credit Cooperative — Member Copy</span>
           <span>Generated: ${printedAt}</span>
         </div>
-      </body>
-      </html>
-    `, {
+    `;
+
+    printHtmlDocument(wrapWithLetterhead(html, {
+      title: `Billing Statement — ${memberName}`,
+      extraCss: billingExtraCss,
+    }), {
       width: 900,
       height: 900,
       delay: 400,
