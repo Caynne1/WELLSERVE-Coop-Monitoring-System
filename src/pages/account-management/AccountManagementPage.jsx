@@ -15,6 +15,8 @@ import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import {
   getManagedAccounts,
@@ -102,6 +104,12 @@ export default function AccountManagementPage() {
     );
   });
 
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="p-6">
       <PageHeader
@@ -180,7 +188,7 @@ export default function AccountManagementPage() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((account) => {
+                  pageItems.map((account) => {
                     const isSelf = account.id === adminProfile?.id;
                     const isActive = account.status !== 'inactive';
 
@@ -282,6 +290,16 @@ export default function AccountManagementPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="accounts"
+          />
         </div>
       )}
 

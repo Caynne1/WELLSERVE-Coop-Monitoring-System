@@ -9,6 +9,8 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import Spinner from '../../components/ui/Spinner';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -255,7 +257,7 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
           <>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
                   <Calendar size={12} /> Start Date
                 </label>
                 <input
@@ -266,7 +268,7 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
                   <Calendar size={12} /> Maturity Date (13th month)
                 </label>
                 <input
@@ -335,6 +337,8 @@ export default function SavingsBoosterPage() {
   const [enrollments, setEnrollments]     = useState([]);
   const [loading, setLoading]             = useState(true);
   const [enrollOpen, setEnrollOpen]       = useState(false);
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(enrollments, { pageSize: 25 });
 
   const { rows, totalInterest, totalSaved, totalWithdrawable } = useMemo(computeSavingsBooster, []);
 
@@ -521,7 +525,7 @@ export default function SavingsBoosterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {enrollments.map(e => {
+                {pageItems.map(e => {
                   const m = e.members;
                   const maturityDate = e.start_date
                     ? (() => { const d = new Date(e.start_date); d.setMonth(d.getMonth() + MATURITY_MONTHS); return d.toISOString().split('T')[0]; })()
@@ -542,6 +546,16 @@ export default function SavingsBoosterPage() {
                 })}
               </tbody>
             </table>
+
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={enrollments.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              itemLabel="enrollments"
+            />
           </div>
         )}
       </div>

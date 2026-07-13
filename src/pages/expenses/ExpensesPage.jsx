@@ -12,6 +12,8 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import {
@@ -205,6 +207,12 @@ export default function ExpensesPage() {
 
     return arr;
   }, [filtered, sortConfig]);
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(sorted, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, catFilter, statFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Summary stats ────────────────────────────────────────────────────────────
 
@@ -609,7 +617,7 @@ export default function ExpensesPage() {
                         : 'No expenses recorded yet.'}
                     </td>
                   </tr>
-                ) : sorted.map(expense => (
+                ) : pageItems.map(expense => (
                   <tr
                     key={expense.id}
                     className={`hover:bg-[#D6FADC]/20 transition-colors ${
@@ -709,6 +717,16 @@ export default function ExpensesPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={sorted.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="expenses"
+          />
         </div>
       )}
 

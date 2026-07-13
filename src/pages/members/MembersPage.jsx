@@ -13,6 +13,8 @@ import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import AddMemberModal from '../../components/members/AddMemberModal';
 import ImportMembersModal from '../../components/members/ImportMembersModal';
@@ -305,6 +307,12 @@ export default function MembersPage() {
       return matchesSearch && matchesType && matchesStatus && matchesYear;
     });
   }, [members, search, typeFilter, statusTab, yearFilter, isKiddyView]);
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, statusTab, yearFilter, isKiddyView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(m => selectedIds.has(m.id));
   const someFilteredSelected = filtered.some(m => selectedIds.has(m.id));
@@ -881,7 +889,7 @@ export default function MembersPage() {
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((member, i) => {
+                    pageItems.map((member, i) => {
                       const isSelected = selectedIds.has(member.id);
                       const colors = isKiddyView ? kiddyAvatarColors : avatarColors;
                       const colorIndex = i % colors.length;
@@ -1059,6 +1067,16 @@ export default function MembersPage() {
                 )}
               </div>
             )}
+
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={filtered.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              itemLabel={isKiddyView ? 'kiddy members' : 'members'}
+            />
           </div>
         )}
       </div>

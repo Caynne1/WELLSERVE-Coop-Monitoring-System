@@ -12,6 +12,8 @@ import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import {
@@ -144,6 +146,12 @@ export default function CheckbookPage() {
   });
 
   // ── Summary stats ────────────────────────────────────────────────────────────
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const issuedList   = entries.filter(e => e.status === 'issued');
   const clearedList  = entries.filter(e => e.status === 'released' || e.status === 'cleared');
@@ -529,7 +537,7 @@ export default function CheckbookPage() {
                         : 'No checks recorded yet.'}
                     </td>
                   </tr>
-                ) : filtered.map(entry => (
+                ) : pageItems.map(entry => (
                   <tr
                     key={entry.id}
                     className={`hover:bg-[#D6FADC]/20 transition-colors ${
@@ -644,6 +652,16 @@ export default function CheckbookPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="entries"
+          />
         </div>
       )}
 

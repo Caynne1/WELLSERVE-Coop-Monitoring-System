@@ -20,6 +20,8 @@ import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import {
   getPassbookData,
   buildPassbookLedger,
@@ -180,6 +182,12 @@ export default function PassbookPage() {
         return matchesSearch && matchesStatus && matchesPrint;
       });
   }, [members, accountMap, registrySearch, registryStatusFilter, printStatusFilter]);
+
+  const { page, setPage, pageSize, setPageSize, pageItems: pageRegistryRows, totalPages } = usePagination(registryRows, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [registrySearch, registryStatusFilter, printStatusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredPassbookMembers = useMemo(() => {
     const q = passbookSearch.trim().toLowerCase();
@@ -523,7 +531,7 @@ export default function PassbookPage() {
                       </td>
                     </tr>
                   ) : (
-                    registryRows.map(row => {
+                    pageRegistryRows.map(row => {
                       const meta = STATUS_META[row.passbook_status] || STATUS_META.unclaimed;
                       const isUpdating = statusUpdating === row.id;
                       const isOpen = openStatusMenu === row.id;
@@ -602,6 +610,16 @@ export default function PassbookPage() {
                 </tbody>
               </table>
             </div>
+
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={registryRows.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              itemLabel="records"
+            />
           </div>
         )}
 

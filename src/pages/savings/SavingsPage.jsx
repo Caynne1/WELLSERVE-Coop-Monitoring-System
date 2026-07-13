@@ -19,6 +19,8 @@ import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import { getAllSavingsAccounts } from '../../services/accountService';
@@ -345,6 +347,12 @@ export default function SavingsPage() {
       return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
     });
 
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, dateFrom, dateTo, sortOrder]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const totalDeposits = accounts.reduce((s, a) => s + (a.total_deposits || 0), 0);
   const activeCount = accounts.filter(a => a.status === 'active').length;
 
@@ -486,7 +494,7 @@ export default function SavingsPage() {
                       {search ? 'No Savings accounts match your search.' : 'No Savings accounts found.'}
                     </td>
                   </tr>
-                ) : filtered.map(account => (
+                ) : pageItems.map(account => (
                   <tr key={account.id} className="hover:bg-[#D6FADC]/20 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -555,6 +563,16 @@ export default function SavingsPage() {
               <p className="text-xs text-gray-500">Showing {filtered.length} of {accounts.length} Savings accounts</p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="savings accounts"
+          />
         </div>
       )}
 

@@ -13,6 +13,8 @@ import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 import {
@@ -210,6 +212,12 @@ export default function VouchersPage() {
   });
 
   // ── Summary stats ───────────────────────────────────────────────────────────
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statFilter, kindFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = vouchers.filter(v => v.status !== 'voided');
   const approvedList = vouchers.filter(v => v.status === 'approved');
@@ -834,7 +842,7 @@ export default function VouchersPage() {
                         : 'No vouchers created yet.'}
                     </td>
                   </tr>
-                ) : filtered.map(voucher => (
+                ) : pageItems.map(voucher => (
                   <tr
                     key={voucher.id}
                     className={`hover:bg-[#D6FADC]/20 transition-colors ${
@@ -963,6 +971,16 @@ export default function VouchersPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="vouchers"
+          />
         </div>
       )}
 

@@ -11,6 +11,8 @@ import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import MemberSearchInput from '../../components/shared/MemberSearchInput';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -178,6 +180,12 @@ export default function InvoicesPage() {
       return matchSearch && matchStat && matchType;
     });
   }, [invoices, search, statFilter, typeFilter]);
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statFilter, typeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const unpaidList = invoices.filter(inv => inv.status === 'unpaid');
   const paidList = invoices.filter(inv => inv.status === 'paid');
@@ -632,7 +640,7 @@ export default function InvoicesPage() {
                         : 'No invoices created yet.'}
                     </td>
                   </tr>
-                ) : filtered.map(invoice => (
+                ) : pageItems.map(invoice => (
                   <tr
                     key={invoice.id}
                     className={`hover:bg-[#D6FADC]/20 transition-colors ${
@@ -755,6 +763,16 @@ export default function InvoicesPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="invoices"
+          />
         </div>
       )}
 

@@ -36,6 +36,8 @@ import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import Modal from '../../components/ui/Modal';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 
 import {
   getLoans,
@@ -492,6 +494,12 @@ export default function LoansPage() {
     return arr;
   }, [filtered, sortConfig]);
 
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(sorted, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, frequencyFilter, methodFilter, dueFilter, productFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const stats = useMemo(() => {
   const activeLoans = loans.filter(l => ['approved', 'released', 'active', 'ongoing'].includes(l.status));
   const totalReleased = loans
@@ -809,7 +817,7 @@ export default function LoansPage() {
                     </td>
                   </tr>
                 ) : (
-                  sorted.map(loan => {
+                  pageItems.map(loan => {
                     const dueInfo = getNextDueInfo(loan);
                     const normalizedStatus = normalizeLoanStatus(loan.status);
 
@@ -924,6 +932,16 @@ export default function LoansPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={sorted.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="loans"
+          />
         </div>
       )}
 

@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { getLogs, subscribeToLogs, trackActivity } from '../../services/logService';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
@@ -165,6 +167,12 @@ export default function ActivityLogsPage() {
   };
 
   const hasActiveFilters = appliedSearch || dateFrom || dateTo;
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(logs, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [logs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Export ──
   const handleExport = async () => {
@@ -350,7 +358,7 @@ export default function ActivityLogsPage() {
                       {hasActiveFilters ? 'No logs match your filters.' : 'No activity logs found.'}
                     </td>
                   </tr>
-                ) : logs.map(log => (
+                ) : pageItems.map(log => (
                   <tr key={log.id} className="hover:bg-gray-50/60 transition-colors">
 
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
@@ -397,6 +405,16 @@ export default function ActivityLogsPage() {
               Showing {logs.length} record{logs.length !== 1 ? 's' : ''}
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={logs.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="records"
+          />
         </div>
       )}
     </div>

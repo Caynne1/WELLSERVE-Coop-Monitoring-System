@@ -4,6 +4,8 @@ import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
+import Pagination from '../../components/ui/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { getTransactions, subscribeToTransactions } from '../../services/transactionService';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
@@ -48,6 +50,12 @@ export default function TransactionsPage() {
       t.category?.toLowerCase().includes(q)
     );
   });
+
+  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handlePrint() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
@@ -170,7 +178,7 @@ export default function TransactionsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map(tx => {
+                  pageItems.map(tx => {
                     const isInflow = INFLOW_TYPES.includes(tx.type);
                     return (
                       <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
@@ -233,6 +241,16 @@ export default function TransactionsPage() {
               </p>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="transactions"
+          />
         </div>
       )}
     </div>
