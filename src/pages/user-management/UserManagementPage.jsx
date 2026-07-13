@@ -24,6 +24,7 @@ import {
   PERMISSION_MODULES,
   PERMISSION_ACTIONS,
 } from '../../services/userManagementService';
+import { trackActivity } from '../../services/logService';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatDate(str) {
@@ -166,6 +167,7 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
 
 // ─── Create User Modal ────────────────────────────────────────────────────────
 function CreateUserModal({ open, onClose, onCreated }) {
+  const { user: currentUser } = useAuth();
   const [form, setForm] = useState({
     full_name: '', email: '', password: '', role: 'staff',
   });
@@ -193,6 +195,13 @@ function CreateUserModal({ open, onClose, onCreated }) {
     try {
       const user = await createUser({ ...form, permissions });
       toast.success(`Staff account created for ${form.full_name}`);
+      trackActivity({
+        userId: currentUser?.id,
+        module: 'user_management',
+        action: 'create',
+        description: `Created staff account "${form.full_name}" (role: ${form.role})`,
+        recordId: user?.id,
+      });
       onCreated(user);
       onClose();
     } catch (err) {
@@ -325,7 +334,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
 
 // ─── Edit User Modal ──────────────────────────────────────────────────────────
 function EditUserModal({ open, onClose, user, onUpdated }) {
-  const { profile: currentProfile } = useAuth();
+  const { user: currentUser, profile: currentProfile } = useAuth();
   const [form, setForm] = useState({ full_name: '', role: 'staff' });
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
   const [loading, setLoading] = useState(false);
@@ -347,12 +356,34 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
 
     setLoading(true);
     try {
+      const originalPermissions = user.permissions || DEFAULT_PERMISSIONS;
+      const changedModules = PERMISSION_MODULES.filter(mod => {
+        const before = originalPermissions[mod.key] || {};
+        const after = permissions[mod.key] || {};
+        return PERMISSION_ACTIONS.some(a => !!before[a] !== !!after[a]);
+      }).map(mod => mod.label);
+      const roleChanged = form.role !== user.role;
+
       const updated = await updateUser(user.id, {
         full_name: form.full_name,
         role: form.role,
         permissions,
       });
       toast.success('User updated successfully');
+
+      const changeParts = [];
+      if (roleChanged) changeParts.push(`role changed from ${user.role} to ${form.role}`);
+      if (changedModules.length) changeParts.push(`permissions updated for: ${changedModules.join(', ')}`);
+      trackActivity({
+        userId: currentUser?.id,
+        module: 'user_management',
+        action: 'update',
+        description: changeParts.length
+          ? `Updated staff account "${form.full_name}" — ${changeParts.join('; ')}`
+          : `Updated staff account "${form.full_name}"`,
+        recordId: user.id,
+      });
+
       onUpdated(updated);
       onClose();
     } catch (err) {
@@ -578,7 +609,7 @@ function UserRow({ user, onEdit, onToggleStatus, onViewPermissions, isSelf }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function UserManagementPage() {
-  const { profile: currentProfile } = useAuth();
+  const { user: currentUser, profile: currentProfile } = useAuth();
   const [users, setUsers]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
@@ -639,6 +670,13 @@ export default function UserManagementPage() {
         u.id === toggleTarget.id ? { ...u, status: newStatus } : u
       ));
       toast.success(`User ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
+      trackActivity({
+        userId: currentUser?.id,
+        module: 'user_management',
+        action: newStatus === 'active' ? 'reactivate' : 'deactivate',
+        description: `${newStatus === 'active' ? 'Activated' : 'Deactivated'} staff account "${toggleTarget.full_name || toggleTarget.email}"`,
+        recordId: toggleTarget.id,
+      });
     } catch {
       toast.error('Failed to update status');
     } finally {

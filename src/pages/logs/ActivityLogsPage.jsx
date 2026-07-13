@@ -24,6 +24,7 @@ const MODULE_COLORS = {
   transaction:   'bg-teal-50 text-teal-700 ring-1 ring-teal-200',
   time_deposit:  'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
   account_monitoring: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  user_management: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
 };
 
 // ─── Action badge colours ─────────────────────────────────────────────────────
