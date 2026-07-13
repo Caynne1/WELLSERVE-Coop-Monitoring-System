@@ -244,6 +244,27 @@ function isIncomeTransaction(t) {
   return !outTypes.has(type) && (incomeTypes.has(type) || incomeTypes.has(category));
 }
 
+function productTransactionFlow(transactions, category, range = null) {
+  const target = String(category || '').toLowerCase();
+  const scoped = inRange(
+    transactions.filter(t => {
+      const type = String(t?.type || '').toLowerCase();
+      const cat = String(t?.category || '').toLowerCase();
+      return cat === target || type === target || type === `${target}_withdrawal`;
+    }),
+    range
+  );
+
+  return scoped.reduce((acc, tx) => {
+    const type = String(tx?.type || '').toLowerCase();
+    const amount = Number(tx?.amount || 0);
+    if (type.includes('withdrawal')) acc.outflow += amount;
+    else acc.inflow += amount;
+    acc.net = acc.inflow - acc.outflow;
+    return acc;
+  }, { inflow: 0, outflow: 0, net: 0 });
+}
+
 async function attachTransactionPageFields(transactions = []) {
   const memberIds = [...new Set(transactions.map(t => t.member_id).filter(Boolean))];
   const createdByIds = [...new Set(transactions.map(t => t.created_by).filter(Boolean))];
@@ -322,6 +343,8 @@ export async function getDashboardStats(period = 'month') {
 
     const cbuAccounts = accountData.filter(a => a.account_type === 'cbu');
     const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
+    const cbuFlow = productTransactionFlow(allTxData, 'cbu');
+    const savingsFlow = productTransactionFlow(allTxData, 'savings');
     const activeLoans = loanData.filter(isReleasedOrActiveLoan);
     const overduePayments = countOverdueSchedulePayments(loanData, now);
 
@@ -397,8 +420,8 @@ export async function getDashboardStats(period = 'month') {
       totalIncome,
 
       // ── Product balances ────────────────────────────────────────────────────
-      totalCBU: cbuAccounts.reduce((s, a) => s + (a.balance || 0), 0),
-      totalSavings: savingsAccounts.reduce((s, a) => s + (a.balance || 0), 0),
+      totalCBU: cbuFlow.net,
+      totalSavings: savingsFlow.net,
       totalTimeDeposit: tdData.filter(td => td.status === 'active').reduce((s, td) => s + (td.amount || 0), 0),
       timeDepositCount: tdData.filter(td => td.status === 'active').length,
       totalKiddySavings: kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),
@@ -510,6 +533,8 @@ export async function getDashboardStats(period = 'month') {
 
   const cbuAccounts     = accountData.filter(a => a.account_type === 'cbu');
   const savingsAccounts = accountData.filter(a => a.account_type === 'savings');
+  const totalCBUFlow = productTransactionFlow(allTxData, 'cbu');
+  const totalSavingsFlow = productTransactionFlow(allTxData, 'savings');
   const activeLoans     = loanData.filter(isReleasedOrActiveLoan);
   const overduePayments = countOverdueSchedulePayments(loanData, now);
 
@@ -593,15 +618,12 @@ export async function getDashboardStats(period = 'month') {
   const periodTransactions = inRange(allTxData, range).length;
 
   // ── Product Balances ──────────────────────────────────────────────────────
-  function productFlow(inTypes, outTypes) {
-    const matches = (t, set) => set.has((t.type || '').toLowerCase()) || set.has((t.category || '').toLowerCase());
-    const inflow  = inRange(allTxData.filter(t => matches(t, inTypes)), range).reduce((s, t) => s + (t.amount || 0), 0);
-    const outflow = inRange(allTxData.filter(t => matches(t, outTypes)), range).reduce((s, t) => s + (t.amount || 0), 0);
-    return { inflow, outflow, net: inflow - outflow };
+  function productFlow(category) {
+    return productTransactionFlow(allTxData, category, range);
   }
 
-  const periodCBU            = productFlow(new Set(['cbu']), new Set(['cbu_withdrawal']));
-  const periodSavings        = productFlow(new Set(['savings']), new Set(['savings_withdrawal']));
+  const periodCBU            = productFlow('cbu');
+  const periodSavings        = productFlow('savings');
   const periodTimeDeposit    = productFlow(new Set(['time_deposit']), new Set(['time_deposit_withdrawal']));
   const periodKiddySavings   = productFlow(new Set(['kiddy_savings', 'kiddy']), new Set(['kiddy_savings_withdrawal', 'kiddy_withdrawal']));
   const periodSavingsBooster = productFlow(new Set(['savings_booster']), new Set(['savings_booster_withdrawal']));
@@ -638,8 +660,8 @@ export async function getDashboardStats(period = 'month') {
     periodExpense,
 
     // ── Product balances ────────────────────────────────────────────────────
-    totalCBU:             cbuAccounts.reduce((s, a) => s + (a.balance || 0), 0),
-    totalSavings:         savingsAccounts.reduce((s, a) => s + (a.balance || 0), 0),
+    totalCBU:             totalCBUFlow.net,
+    totalSavings:         totalSavingsFlow.net,
     totalTimeDeposit:     tdData.filter(td => td.status === 'active').reduce((s, td) => s + (td.amount || 0), 0),
     timeDepositCount:     tdData.filter(td => td.status === 'active').length,
     totalKiddySavings:    kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),

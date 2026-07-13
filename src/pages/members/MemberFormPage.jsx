@@ -45,7 +45,7 @@ const MEMBERSHIP_TYPE_OPTIONS = [
 ];
 
 // Old membership has no Kiddy breakdown, so the type list is narrowed when
-// "Old / Historical Membership" is selected.
+// "Old Membership" is selected.
 const MEMBERSHIP_TYPE_OPTIONS_OLD = MEMBERSHIP_TYPE_OPTIONS.filter(o => o.value !== 'kiddy');
 
 // Record type — mirrors the Loan Type selector pattern in LoanFormPage:
@@ -53,7 +53,7 @@ const MEMBERSHIP_TYPE_OPTIONS_OLD = MEMBERSHIP_TYPE_OPTIONS.filter(o => o.value 
 // New members use the current fee structure with live onboarding payments.
 const RECORD_TYPE_OPTS = [
   { value: 'new_member', label: 'New Membership — current fee structure' },
-  { value: 'old_member', label: 'Old / Historical Membership — previous fee structure' },
+  { value: 'old_member', label: 'Old Membership — previous fee structure' },
 ];
 
 const PAYMENT_OPTION_OPTIONS = [
@@ -135,11 +135,17 @@ const ALL_NEW_ITEM_KEYS = [
 ];
 
 const OLD_MEMBER_BREAKDOWN = {
-  associate: { label: 'Entry Membership',      membership_fee: 300,  cbu: 1000, savings: 500  },
-  regular:   { label: 'Full Pledge Member',    membership_fee: 1800, cbu: 4000, savings: 1000 },
+  associate: { label: 'Old Associate Membership',        membership_fee: 300,  cbu: 1000, savings: 500  },
+  regular:   { label: 'Old Regular / Fullpledge Member', membership_fee: 1800, cbu: 4000, savings: 1000 },
 };
 
 // ─── Membership type selector shown before form ────────────────────────────
+
+function formatMemberNo(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /^\d+$/.test(text) ? text.padStart(4, '0') : text;
+}
 
 const MEMBERSHIP_CARDS = [
   {
@@ -722,7 +728,7 @@ export function MemberFormContent({
     if (isEdit) loadMember();
   }, [memberId]);
 
-  // Old / Historical membership has no Kiddy breakdown — fall back to
+  // Old membership has no Kiddy breakdown — fall back to
   // Associate if the user switches record type while Kiddy is selected.
   useEffect(() => {
     if (isOldMember && membershipType === 'kiddy') {
@@ -844,7 +850,7 @@ export function MemberFormContent({
       // Kiddy has its own independent number sequence; Associate & Regular share one.
       // This prevents a duplicate DB error with a clear user-facing message.
       if (values.member_no?.trim() && !isEdit) {
-        const memberNo = values.member_no.trim();
+        const memberNo = formatMemberNo(values.member_no);
         const membershipType = values.membership_type;
 
         let query = supabase
@@ -875,7 +881,7 @@ export function MemberFormContent({
         first_name: values.first_name,
         last_name: values.last_name,
         middle_initial: values.middle_initial,
-        member_no: values.member_no,
+        member_no: formatMemberNo(values.member_no),
         email: values.email,
         phone: values.phone,
         address: values.address,
@@ -1420,12 +1426,12 @@ export function MemberFormContent({
           <UserPlus size={16} className="flex-shrink-0 mt-0.5" />
           <span>
             Register the member and optionally post initial onboarding payments at the same time.
-            Use <strong>Record Type</strong> below to encode a historical (pre-system) membership instead.
+            Use <strong>Record Type</strong> below to encode an old pre-system membership instead.
           </span>
         </div>
       )}
 
-      {/* Record Type — Old / Historical vs New Membership */}
+      {/* Record Type — Old vs New Membership */}
       <section className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
           <h3 className="text-sm font-semibold text-gray-700">
@@ -1439,7 +1445,7 @@ export function MemberFormContent({
             }`}
           >
             {isOldMember && <Archive size={11} />}
-            {isOldMember ? 'Old / Historical Membership' : 'New Membership'}
+            {isOldMember ? 'Old Membership' : 'New Membership'}
           </span>
         </div>
 
@@ -1447,7 +1453,7 @@ export function MemberFormContent({
           <div>
             {isEdit ? (
               <>
-                <Input label="Record Type" value={isOldMember ? 'Old / Historical Membership' : 'New Membership'} readOnly />
+                <Input label="Record Type" value={isOldMember ? 'Old Membership' : 'New Membership'} readOnly />
                 <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
                   Record type is set at registration and can't be changed after the member is created.
                 </p>
@@ -1554,11 +1560,12 @@ export function MemberFormContent({
                 {isOldMember && (
                   <div className="space-y-3 text-sm">
                     <p className="text-xs text-amber-600 mb-3">
-                      Standard amounts are pre-filled. Leave a field blank to use the default, or type a new value to override.
+                      Old structure defaults are pre-filled. Associate total is ₱1,800; Regular total is ₱6,800.
+                      Leave a field blank to use the default, or type a new value to override.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {[
-                        { field: 'old_manual_membership_fee', label: 'Membership Entry', def: oldDefaults.membership_fee },
+                        { field: 'old_manual_membership_fee', label: 'Membership Entry/Regulatory Fee', def: oldDefaults.membership_fee },
                         { field: 'old_manual_cbu',            label: 'Initial CBU',      def: oldDefaults.cbu            },
                         { field: 'old_manual_savings',        label: 'Initial Savings',  def: oldDefaults.savings        },
                       ].map(({ field, label, def }) => (
@@ -1582,7 +1589,7 @@ export function MemberFormContent({
                       <span>₱{oldEffectiveTotal.toLocaleString()}</span>
                     </div>
                     <p className="text-xs text-amber-500 mt-0.5">
-                      This total is recorded as the historical membership amount — marked fully paid automatically.
+                      This total is recorded as the old membership amount — marked fully paid automatically.
                     </p>
                   </div>
                 )}

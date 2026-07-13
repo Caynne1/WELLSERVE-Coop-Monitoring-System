@@ -6,7 +6,7 @@ import {
   Upload, Eye, Search, UserPlus, Pencil, Trash2, Users, Printer,
   Download, Filter, RotateCcw, CheckSquare, Square, MinusSquare,
   X, UserCheck, UserX, ChevronDown, CalendarDays, Baby,
-  Sparkles, LayoutGrid, List,
+  Sparkles, LayoutGrid, List, FileSpreadsheet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -17,6 +17,7 @@ import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import AddMemberModal from '../../components/members/AddMemberModal';
 import ImportMembersModal from '../../components/members/ImportMembersModal';
 import ImportFinancialModal from '../../components/members/ImportFinancialModal';
+import MembershipMasterlistMigrationModal from '../../components/members/MembershipMasterlistMigrationModal';
 import { getMembers, deleteMember, updateMember } from '../../services/memberService';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
@@ -49,6 +50,12 @@ const kiddyAvatarColors = [
 
 const statusVariant = { active: 'success', inactive: 'warning', closed: 'dark' };
 const statusLabel = { active: 'Active', inactive: 'Inactive', closed: 'Closed Account' };
+
+function formatMemberNo(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /^\d+$/.test(text) ? text.padStart(4, '0') : text;
+}
 
 const membershipTypeClass = {
   regular:   'bg-blue-50 text-blue-700 border border-blue-200',
@@ -192,6 +199,7 @@ export default function MembersPage() {
   const [addMemberOpen, setAddMemberOpen]             = useState(false);
   const [importOpen, setImportOpen]                   = useState(false);
   const [importFinancialOpen, setImportFinancialOpen] = useState(false);
+  const [migrationImportOpen, setMigrationImportOpen] = useState(false);
 
   const [deleting, setDeleting]                       = useState(false);
   const [reactivatingId, setReactivatingId]           = useState(null);
@@ -490,19 +498,11 @@ export default function MembersPage() {
                 <>
                   <Button 
                     variant="outline" 
-                    onClick={() => setImportFinancialOpen(true)} 
-                    icon={<Upload size={16} />}
-                    className="border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    onClick={() => setMigrationImportOpen(true)} 
+                    icon={<FileSpreadsheet size={16} />}
+                    className="border-amber-200 text-amber-700 hover:border-amber-300 hover:bg-amber-50"
                   >
-                    Import Financial
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setImportOpen(true)} 
-                    icon={<Upload size={16} />}
-                    className="border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                  >
-                    Import Members
+                    Migration Import
                   </Button>
                 </>
               )}
@@ -880,11 +880,6 @@ export default function MembersPage() {
                                       {member.membership_type}
                                     </span>
                                   )}
-                                  {member.record_type === 'old_member' && (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-200">
-                                      Historical
-                                    </span>
-                                  )}
                                 </div>
                                 {member.email && (
                                   <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[150px]">{member.email}</p>
@@ -902,7 +897,7 @@ export default function MembersPage() {
                                 ? 'bg-teal-50 text-teal-700 ring-teal-200/60'
                                 : 'bg-gray-50 text-gray-700 ring-gray-200/60'
                             }`}>
-                              {member.member_no || '—'}
+                              {formatMemberNo(member.member_no) || '—'}
                             </span>
                           </td>
 
@@ -1080,6 +1075,12 @@ export default function MembersPage() {
           onImported={() => { fetchMembers(); }}
         />
       )}
+
+      <MembershipMasterlistMigrationModal
+        open={migrationImportOpen}
+        onClose={() => setMigrationImportOpen(false)}
+        onImported={() => { fetchMembers(); }}
+      />
     </div>
   );
 }

@@ -37,6 +37,12 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'Others', label: 'Others' },
 ];
 
+function formatMemberNo(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /^\d+$/.test(text) ? text.padStart(4, '0') : text;
+}
+
 export default function CBUPage() {
   const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
@@ -362,9 +368,8 @@ export default function CBUPage() {
       if (filtered.length === 0) { toast.error('No data to export.'); return; }
       const rows = filtered.map(a => ({
         member: `${a.members?.first_name || ''} ${a.members?.last_name || ''}`.trim(),
-        member_no: a.members?.member_no || '',
+        member_no: formatMemberNo(a.members?.member_no) || '',
         account_no: a.account_no || '',
-        balance: a.balance || 0,
         total_deposits: a.total_deposits || 0,
         total_withdrawals: a.total_withdrawals || 0,
         status: a.status || '',
@@ -452,8 +457,8 @@ export default function CBUPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Member', 'Account No.', 'Balance', 'Total Deposits', 'Total Withdrawals', 'Status', 'Updated', 'Actions'].map(h => (
-                    <th key={h} className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${['Account No.', 'Balance', 'Total Deposits', 'Total Withdrawals', 'Actions'].includes(h) ? 'text-center' : 'text-left'}`}>
+                  {['Member', 'Account No.', 'Total Deposits', 'Total Withdrawals', 'Status', 'Updated', 'Actions'].map(h => (
+                    <th key={h} className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${['Account No.', 'Total Deposits', 'Total Withdrawals', 'Actions'].includes(h) ? 'text-center' : 'text-left'}`}>
                       {h}
                     </th>
                   ))}
@@ -462,7 +467,7 @@ export default function CBUPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-gray-400">
+                    <td colSpan={7} className="text-center py-12 text-gray-400">
                       <PiggyBank size={32} className="mx-auto mb-2 text-gray-200" />
                       {search ? 'No CBU accounts match your search.' : 'No CBU accounts found.'}
                     </td>
@@ -482,7 +487,7 @@ export default function CBUPage() {
                           </p>
                           {account.members?.member_no && (
                             <p className="text-xs text-gray-400 font-mono">
-                              {account.members.member_no}
+                              {formatMemberNo(account.members.member_no)}
                             </p>
                           )}
                         </div>
@@ -490,9 +495,6 @@ export default function CBUPage() {
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-600 text-center">
                       {account.account_no || '—'}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-green-700 text-center">
-                      {formatCurrency(account.balance || 0)}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-center">
                       {formatCurrency(account.total_deposits || 0)}
@@ -537,9 +539,6 @@ export default function CBUPage() {
           {filtered.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
               <p className="text-xs text-gray-500">Showing {filtered.length} of {accounts.length} CBU accounts</p>
-              <p className="text-xs font-medium text-green-700">
-                Filtered total: {formatCurrency(filtered.reduce((s, a) => s + (a.balance || 0), 0))}
-              </p>
             </div>
           )}
         </div>

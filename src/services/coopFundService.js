@@ -233,10 +233,20 @@ export async function computeCoopSummaryFromInvoices() {
   const profileMap = Object.fromEntries((profilesRes.data || []).map(p => [p.id, profileName(p)]));
 
   // ── Cash In from transactions ─────────────────────────────────────────────
+  const isMembershipBreakdownDeposit = (t) => {
+    const type = (t.type || '').toLowerCase();
+    const cat  = (t.category || '').toLowerCase();
+    const notes = String(t.notes || '').toLowerCase();
+    return type === 'deposit' && ['cbu', 'savings'].includes(cat) && notes.includes('membership breakdown');
+  };
+
+  const membershipBreakdownTx = txList.filter(isMembershipBreakdownDeposit);
+
   const cashInTx = dedupeLoanDeductionTransactions(txList.filter(t => {
     const type = (t.type || '').toLowerCase();
     const cat  = (t.category || '').toLowerCase();
     if (CASH_OUT_TX_TYPES.has(type)) return false;
+    if (isMembershipBreakdownDeposit(t)) return false;
     return CASH_IN_TX_TYPES.has(type) || CASH_IN_TX_TYPES.has(cat);
   }));
 
@@ -285,6 +295,22 @@ export async function computeCoopSummaryFromInvoices() {
     created_at:  t.created_at || t.transaction_date,
   }));
 
+  const membershipBreakdownRows = membershipBreakdownTx.map(t => ({
+    id:          t.id,
+    type:        'cash_in',
+    category:    transactionReportCategory(t),
+    raw_type:    t.type || null,
+    raw_category: t.category || null,
+    amount:      t.amount,
+    description: t.notes || 'Membership breakdown deposit',
+    ref_no:      t.reference || null,
+    member_name: memberMap[t.member_id] || null,
+    loan_id:     t.loan_id || null,
+    created_by:  profileMap[t.created_by] || t.created_by || 'System',
+    created_at:  t.created_at || t.transaction_date,
+    display_only: true,
+  }));
+
   const cashOutTxRows = cashOutTx.map(t => ({
     id:          t.id,
     type:        'cash_out',
@@ -322,7 +348,7 @@ export async function computeCoopSummaryFromInvoices() {
     created_at:  vch.created_at,
   }));
 
-  const allRows = dedupeLedgerRows([...txRows, ...cashOutTxRows, ...invRows, ...vchRows])
+  const allRows = dedupeLedgerRows([...txRows, ...membershipBreakdownRows, ...cashOutTxRows, ...invRows, ...vchRows])
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return {

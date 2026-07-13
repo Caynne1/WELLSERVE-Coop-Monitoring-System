@@ -62,7 +62,7 @@ const TABS = [
   { id: 'time_deposit',    label: 'Time Deposit',   icon: Clock },
   { id: 'savings_booster', label: 'Savings Booster', icon: Sprout },
   { id: 'membership',      label: 'Membership',     icon: Shield },
-  { id: 'transactions',    label: 'Transactions',   icon: ArrowLeftRight },
+  { id: 'wellife_vip',     label: 'WELLife VIP Card', icon: CreditCard },
   { id: 'penalty',         label: 'Penalty',        icon: BadgeAlert },
   { id: 'credit_profile',  label: 'Credit Profile', icon: TrendingUp },
 ];
@@ -107,6 +107,12 @@ function frequencyLabel(value) {
     yearly: 'year',
   };
   return map[value] || value;
+}
+
+function formatMemberNo(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /^\d+$/.test(text) ? text.padStart(4, '0') : text;
 }
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
@@ -254,7 +260,10 @@ export default function MemberDetailPage() {
   }, [fetchMembership, fetchPenalties, fetchTimeDeposits, fetchBoosterSlots]);
 
   useEffect(() => {
-    if (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(activeTab)) {
+    if (
+      (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(activeTab)) ||
+      activeTab === 'transactions'
+    ) {
       setSearchParams({ tab: 'overview' });
     }
   }, [member, activeTab, setSearchParams]);
@@ -280,12 +289,35 @@ export default function MemberDetailPage() {
     () => transactions.filter(t => ['savings', 'savings_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['savings', 'savings_withdrawal'].includes(String(t.type || '').toLowerCase())),
     [transactions]
   );
+  const cbuDisplayBalance = useMemo(
+    () => cbuTransactions.reduce((sum, tx) => {
+      const type = String(tx.type || '').toLowerCase();
+      const amount = Number(tx.amount || 0);
+      return type.includes('withdrawal') ? sum - amount : sum + amount;
+    }, 0),
+    [cbuTransactions]
+  );
+  const savingsDisplayBalance = useMemo(
+    () => savingsTransactions.reduce((sum, tx) => {
+      const type = String(tx.type || '').toLowerCase();
+      const amount = Number(tx.amount || 0);
+      return type.includes('withdrawal') ? sum - amount : sum + amount;
+    }, 0),
+    [savingsTransactions]
+  );
   const timeDepositTransactions = useMemo(
     () => transactions.filter(t => t.category === 'time_deposit'),
     [transactions]
   );
   const savingsBoosterTransactions = useMemo(
     () => transactions.filter(t => t.category === 'savings_booster'),
+    [transactions]
+  );
+  const wellifeVipTransactions = useMemo(
+    () => transactions.filter(t => {
+      const text = `${t.category || ''} ${t.type || ''} ${t.notes || ''}`.toLowerCase();
+      return text.includes('wellife') || text.includes('vip');
+    }),
     [transactions]
   );
 
@@ -382,7 +414,7 @@ export default function MemberDetailPage() {
       <div class="section-heading">Personal Information</div>
       <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
         <div class="stat-box"><div class="stat-label">Full Name</div><div class="stat-value" style="font-size:12pt">${member?.first_name||''} ${member?.last_name||''}</div></div>
-        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${member?.member_no||'—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${formatMemberNo(member?.member_no)||'—'}</div></div>
         <div class="stat-box"><div class="stat-label">Type</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.membership_type||'—'}</div></div>
         <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.status||'—'}</div></div>
         <div class="stat-box"><div class="stat-label">Contact</div><div class="stat-value" style="font-size:11pt">${member?.contact_no||'—'}</div></div>
@@ -470,7 +502,7 @@ export default function MemberDetailPage() {
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     {member.member_no && (
                       <span className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded-lg">
-                        {member.member_no}
+                        {formatMemberNo(member.member_no)}
                       </span>
                     )}
                     <Badge variant={member.status === 'active' ? 'success' : member.status === 'closed' ? 'dark' : 'warning'} dot>
@@ -480,11 +512,6 @@ export default function MemberDetailPage() {
                       <Badge variant={displayMembershipType === 'regular' ? 'info' : displayMembershipType === 'kiddy' ? 'success' : 'default'}>
                         {displayMembershipType === 'kiddy' ? 'Kiddy' : displayMembershipType}
                       </Badge>
-                    )}
-                    {member.record_type === 'old_member' && (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-                        Historical
-                      </span>
                     )}
                   </div>
                 </div>
@@ -553,7 +580,7 @@ export default function MemberDetailPage() {
                   </div>
                   <div>
                     <p className="text-[10px] font-medium text-green-500 uppercase tracking-wider">CBU Total</p>
-                    <p className="text-sm font-bold text-green-700 tabular-nums">{formatCurrency(cbuAccount?.balance ?? 0)}</p>
+                    <p className="text-sm font-bold text-green-700 tabular-nums">{formatCurrency(cbuDisplayBalance)}</p>
                   </div>
                 </div>
               )}
@@ -563,16 +590,7 @@ export default function MemberDetailPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-medium text-blue-500 uppercase tracking-wider">Savings</p>
-                  <p className="text-sm font-bold text-blue-700 tabular-nums">{formatCurrency(savingsAccount?.balance ?? 0)}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50/60 border border-purple-100/50">
-                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
-                  <ArrowLeftRight size={15} className="text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-medium text-purple-500 uppercase tracking-wider">Transactions</p>
-                  <p className="text-sm font-bold text-purple-700 tabular-nums">{transactions.length}</p>
+                  <p className="text-sm font-bold text-blue-700 tabular-nums">{formatCurrency(savingsDisplayBalance)}</p>
                 </div>
               </div>
               {memberTimeDeposits.length > 0 && (
@@ -611,6 +629,7 @@ export default function MemberDetailPage() {
               if (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(tab.id)) return false;
               if (tab.id === 'time_deposit') return memberTimeDeposits.length > 0;
               if (tab.id === 'savings_booster') return memberBoosterSlots.length > 0;
+              if (tab.id === 'wellife_vip') return wellifeVipTransactions.length > 0;
               return true;
             }).map(tab => {
               const isActive = activeTab === tab.id;
@@ -663,6 +682,7 @@ export default function MemberDetailPage() {
             <CBUTab
               account={cbuAccount}
               transactions={cbuTransactions}
+              displayBalance={cbuDisplayBalance}
               paymentCount={cbuPaymentCount}
               onDeposit={() => setCbuDepositModal(true)}
               onWithdraw={() => setCbuWithdrawModal(true)}
@@ -673,6 +693,7 @@ export default function MemberDetailPage() {
             <SavingsTab
               account={savingsAccount}
               transactions={savingsTransactions}
+              displayBalance={savingsDisplayBalance}
               paymentCount={savingsPaymentCount}
               onDeposit={() => setSavingsDepositModal(true)}
               onWithdraw={() => setSavingsWithdrawModal(true)}
@@ -690,6 +711,9 @@ export default function MemberDetailPage() {
               userId={user?.id}
               cbuAccount={cbuAccount}
               savingsAccount={savingsAccount}
+              cbuTransactions={cbuTransactions}
+              savingsTransactions={savingsTransactions}
+              wellifeVipTransactions={wellifeVipTransactions}
               onRefresh={refreshEverything}
               memberRecordType={member?.record_type}
             />
@@ -714,8 +738,8 @@ export default function MemberDetailPage() {
             />
           )}
 
-          {activeTab === 'transactions' && (
-            <TransactionsTab transactions={transactions} />
+          {activeTab === 'wellife_vip' && (
+            <WellifeVipTab transactions={wellifeVipTransactions} />
           )}
 
           {activeTab === 'penalty' && (
@@ -830,7 +854,7 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Personal Information</h3>
         <div className="space-y-0.5">
           <InfoRow icon={User} label="Full Name" value={`${member.first_name || ''} ${member.middle_initial ? `${member.middle_initial}. ` : ''}${member.last_name || ''}`.trim()} />
-          <InfoRow icon={Hash} label="Member Number" value={member.member_no} />
+          <InfoRow icon={Hash} label="Member Number" value={formatMemberNo(member.member_no)} />
           <InfoRow icon={Mail} label="Email" value={member.email} />
           <InfoRow icon={Phone} label="Mobile No." value={member.phone} />
           <InfoRow icon={Phone} label="Res. Tel. No." value={member.res_tel_no} />
@@ -1050,7 +1074,7 @@ function LoanPaymentHistoryTable({ rows }) {
 
 // ─── CBU TAB ─────────────────────────────────────────────────────────────────
 
-function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) {
+function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit, onWithdraw }) {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('cbu', 'edit');
   if (!account) return <EmptyState icon={PiggyBank} message="No CBU account initialized for this member." />;
@@ -1064,7 +1088,7 @@ function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) 
           </div>
           <div>
             <p className="text-xs text-gray-400">CBU Balance</p>
-            <p className="text-2xl font-bold text-green-700">{formatCurrency(account.balance ?? 0)}</p>
+            <p className="text-2xl font-bold text-green-700">{formatCurrency(displayBalance ?? 0)}</p>
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
@@ -1099,7 +1123,7 @@ function CBUTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) 
 
 // ─── SAVINGS TAB ─────────────────────────────────────────────────────────────
 
-function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw }) {
+function SavingsTab({ account, transactions, displayBalance, paymentCount, onDeposit, onWithdraw }) {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('savings', 'edit');
   if (!account) return <EmptyState icon={Wallet} message="No Savings account initialized for this member." />;
@@ -1113,7 +1137,7 @@ function SavingsTab({ account, transactions, paymentCount, onDeposit, onWithdraw
           </div>
           <div>
             <p className="text-xs text-gray-400">Savings Balance</p>
-            <p className="text-2xl font-bold text-blue-700">{formatCurrency(account.balance ?? 0)}</p>
+            <p className="text-2xl font-bold text-blue-700">{formatCurrency(displayBalance ?? 0)}</p>
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
@@ -1222,6 +1246,51 @@ function MemberSavingsBoosterTab({ slots, transactions, loading }) {
 }
 
 // ─── TRANSACTIONS TAB ────────────────────────────────────────────────────────
+
+function WellifeVipTab({ transactions }) {
+  const total = transactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center">
+          <CreditCard size={20} className="text-purple-600" />
+        </div>
+        <div>
+          <p className="text-xs text-gray-400">WELLife VIP Card Payments</p>
+          <p className="text-2xl font-bold text-purple-700">{formatCurrency(total)}</p>
+        </div>
+      </div>
+
+      {transactions.length === 0 ? (
+        <EmptyState icon={CreditCard} message="No WELLife VIP Card payment recorded for this member." />
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {transactions.map(tx => (
+            <div key={tx.id} className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center">
+                  <CreditCard size={14} className="text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">WELLife VIP Card</p>
+                  <p className="text-xs text-gray-400">
+                    {tx.payment_mode && <span>{tx.payment_mode} Â· </span>}
+                    {tx.created_by_name && <span>By: {tx.created_by_name} Â· </span>}
+                    {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : 'â€”'}
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm font-semibold text-purple-700">
+                {formatCurrency(tx.amount || 0)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TransactionsTab({ transactions }) {
   const typeStyles = {
@@ -2507,7 +2576,22 @@ const MEMBERSHIP_FEES = {
   },
 };
 
-function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs, loading, userId, cbuAccount, savingsAccount, onRefresh, memberRecordType }) {
+function MembershipTab({
+  memberId,
+  memberName,
+  membership,
+  payments,
+  upgradeLogs,
+  loading,
+  userId,
+  cbuAccount,
+  savingsAccount,
+  cbuTransactions = [],
+  savingsTransactions = [],
+  wellifeVipTransactions = [],
+  onRefresh,
+  memberRecordType,
+}) {
   const { hasPermission } = useAuth();
   const canEditMember = hasPermission('members', 'edit');
   const [setupOpen, setSetupOpen] = useState(false);
@@ -2541,17 +2625,117 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
   const membershipFees = MEMBERSHIP_FEES[feeKey] || null;
   const storedFeeRequired = parseFloat(membership?.fee_required) || 0;
   const feePaid = parseFloat(membership?.fee_paid) || 0;
+  const importedComponentTotals = useMemo(() => {
+    const isDeposit = tx => !String(tx.type || '').toLowerCase().includes('withdraw');
+    const isImportedMembershipTx = tx => {
+      const text = `${tx.notes || ''} ${tx.reference || ''}`.toLowerCase();
+      return text.includes('membership breakdown') || text.includes('membership masterlist migration') || text.includes('migration');
+    };
+    const sumImported = rows => rows.reduce((sum, tx) => {
+      if (!isDeposit(tx) || !isImportedMembershipTx(tx)) return sum;
+      return sum + (parseFloat(tx.amount) || 0);
+    }, 0);
+
+    return {
+      cbu: sumImported(cbuTransactions),
+      savings: sumImported(savingsTransactions),
+      vip_card: wellifeVipTransactions.reduce((sum, tx) => {
+        if (!isDeposit(tx)) return sum;
+        return sum + (parseFloat(tx.amount) || 0);
+      }, 0),
+    };
+  }, [cbuTransactions, savingsTransactions, wellifeVipTransactions]);
+  const adjustedImportedComponentTotals = useMemo(() => {
+    const savings = importedComponentTotals.savings || 0;
+    const vipCard = importedComponentTotals.vip_card || 0;
+    const savingsTargetAfterVip = Math.max(0, (membershipFees?.savings || 0) - vipCard);
+
+    return {
+      ...importedComponentTotals,
+      savings: vipCard > 0 && savings > savingsTargetAfterVip ? savingsTargetAfterVip : savings,
+    };
+  }, [importedComponentTotals, membershipFees]);
+  const displayPayments = useMemo(() => {
+    const actualPayments = payments || [];
+    const actualPaymentTotal = actualPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const actualComponents = actualPayments.reduce((acc, p) => {
+      try {
+        const data = JSON.parse(p.notes || '{}');
+        if (typeof data !== 'object' || data === null) return acc;
+        Object.entries(data).forEach(([key, val]) => {
+          if (key !== 'text') acc[key] = (acc[key] || 0) + Number(val || 0);
+        });
+      } catch { /* plain text notes - skip */ }
+      return acc;
+    }, {});
+    const entryTarget = membershipFees?.entry || feePaid;
+    const entryPaid = Math.min(feePaid, entryTarget);
+    const storedEntryRemainder = Math.max(0, entryPaid - (actualComponents.entry || 0));
+    const expectedImportedTotal =
+      entryPaid +
+      (adjustedImportedComponentTotals.cbu || 0) +
+      (adjustedImportedComponentTotals.savings || 0) +
+      (adjustedImportedComponentTotals.vip_card || 0);
+    let missingImportedTotal = Math.max(0, expectedImportedTotal - actualPaymentTotal - storedEntryRemainder);
+    const missingComponents = {};
+
+    ['cbu', 'savings', 'vip_card'].forEach(key => {
+      const missing = Math.max(0, (adjustedImportedComponentTotals[key] || 0) - (actualComponents[key] || 0));
+      const amount = Math.min(missing, missingImportedTotal);
+      if (amount > 0) {
+        missingComponents[key] = amount;
+        missingImportedTotal -= amount;
+      }
+    });
+
+    const syntheticPayments = [];
+
+    if (membership && storedEntryRemainder > 0.009) {
+      syntheticPayments.push({
+        id: `stored-membership-entry-${membership.id}`,
+        payment_date: membership.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        amount: storedEntryRemainder,
+        notes: JSON.stringify({
+          entry: storedEntryRemainder,
+          text: 'Imported Membership Paid record',
+        }),
+        created_at: membership.created_at,
+        is_stored_payment: true,
+      });
+    }
+
+    const missingComponentTotal = Object.values(missingComponents).reduce((sum, amount) => sum + amount, 0);
+    if (membership && missingComponentTotal > 0.009) {
+      syntheticPayments.push({
+        id: `stored-membership-breakdown-${membership.id}`,
+        payment_date: membership.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        amount: missingComponentTotal,
+        notes: JSON.stringify({
+          ...missingComponents,
+          text: 'Imported CBU, Savings, and WELLife VIP Card records',
+        }),
+        created_at: membership.created_at,
+        is_stored_payment: true,
+      });
+    }
+
+    return [...actualPayments, ...syntheticPayments];
+  }, [membership, payments, feePaid, membershipFees, adjustedImportedComponentTotals]);
+  const totalPaidForDisplay = Math.max(
+    feePaid,
+    displayPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+  );
   const effectiveFeeRequired = membershipFees
     ? Math.max(storedFeeRequired, membershipFees.total)
     : storedFeeRequired;
-  const feeBalance = Math.max(0, effectiveFeeRequired - feePaid);
+  const feeBalance = Math.max(0, effectiveFeeRequired - totalPaidForDisplay);
   const isFullyPaid = membership != null && feeBalance <= 0;
   const isSetupNewMember = setupRecordType === 'new_member';
   const setupFeeKey = isSetupNewMember ? `new_${setupType}` : setupType;
   const setupFees = MEMBERSHIP_FEES[setupFeeKey] || MEMBERSHIP_FEES.associate;
 
   const perComponentTotals = useMemo(() => {
-    return (payments || []).reduce((acc, p) => {
+    return displayPayments.reduce((acc, p) => {
       try {
         const data = JSON.parse(p.notes || '{}');
         if (typeof data !== 'object' || data === null) return acc;
@@ -2567,7 +2751,28 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
       } catch { /* plain text notes — skip */ }
       return acc;
     }, {});
-  }, [payments]);
+  }, [displayPayments]);
+
+  const membershipBreakdownRows = useMemo(() => {
+    if (!membershipFees) return [];
+    const vipPaid = perComponentTotals.vip_card || 0;
+    const rows = (membershipFees.rows || [
+      ['Membership Entry', membershipFees.entry,   'entry'],
+      ['Initial CBU',      membershipFees.cbu,     'cbu'],
+      ['Initial Savings',  membershipFees.savings, 'savings'],
+    ]).map(row => {
+      const [label, target, key] = row;
+      if (key === 'savings' && vipPaid > 0) {
+        return [label, Math.max(0, target - vipPaid), key];
+      }
+      return row;
+    });
+    const hasVipRow = rows.some(([, , key]) => key === 'vip_card');
+    if (!hasVipRow && (perComponentTotals.vip_card || 0) > 0) {
+      return [...rows, ['WELLife VIP Card', perComponentTotals.vip_card, 'vip_card']];
+    }
+    return rows;
+  }, [membershipFees, perComponentTotals]);
 
   const allocationPreview = useMemo(() => {
     if (!isNewMember || !membershipFees?.rows) return [];
@@ -2633,7 +2838,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         userId,
         module: 'member',
         action: 'create',
-        description: `Set up ${isSetupNewMember ? 'new' : 'old / historical'} ${setupType} membership for member (${memberName}), total fee: ${formatCurrency(setupFees.total)}`,
+        description: `Set up ${isSetupNewMember ? 'new' : 'old'} ${setupType} membership for member (${memberName}), total fee: ${formatCurrency(setupFees.total)}`,
       });
       toast.success('Membership record created.');
       setSetupOpen(false);
@@ -2903,7 +3108,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
                     : 'bg-amber-50 text-amber-700 border border-amber-200'
                 }`}
               >
-                {isSetupNewMember ? 'New Membership' : 'Old / Historical Membership'}
+                {isSetupNewMember ? 'New Membership' : 'Old Membership'}
               </span>
             </div>
             <div className="flex flex-col gap-1">
@@ -2913,7 +3118,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
                 className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
               >
                 <option value="new_member">New Membership — current fee structure</option>
-                <option value="old_member">Old / Historical Membership — previous fee structure</option>
+                <option value="old_member">Old Membership — previous fee structure</option>
               </select>
               <p className="text-[11px] text-gray-400">
                 {isSetupNewMember
@@ -2960,7 +3165,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             <p className="text-xs text-gray-400">
               {isSetupNewMember
                 ? 'Use "Record Payment" after setup to log partial or full payments.'
-                : 'Historical records are recorded as fully paid at setup — no further payment needed.'}
+                : 'Old records are recorded as fully paid at setup — no further payment needed.'}
             </p>
           </div>
 
@@ -2977,7 +3182,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
     );
   }
 
-  const paidPct = effectiveFeeRequired > 0 ? Math.min(100, (feePaid / effectiveFeeRequired) * 100) : 0;
+  const paidPct = effectiveFeeRequired > 0 ? Math.min(100, (totalPaidForDisplay / effectiveFeeRequired) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -2994,7 +3199,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             <p className="text-xs text-gray-400 mt-0.5">
               {isFullyPaid
                 ? 'Fully Paid'
-                : `${formatCurrency(feePaid)} paid of ${formatCurrency(effectiveFeeRequired)}`}
+                : `${formatCurrency(totalPaidForDisplay)} paid of ${formatCurrency(effectiveFeeRequired)}`}
             </p>
           </div>
         </div>
@@ -3013,21 +3218,19 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             Payment Breakdown — {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
           </p>
           <div className="divide-y divide-gray-50">
-            {(membershipFees.rows || [
-              ['Membership Entry', membershipFees.entry,   'entry'],
-              ['Initial CBU',      membershipFees.cbu,     'cbu'],
-              ['Initial Savings',  membershipFees.savings, 'savings'],
-            ]).map(([label, target, componentKey]) => {
-              const paid = perComponentTotals[componentKey] ?? 0;
-              const remaining = Math.max(0, target - paid);
-              const pct = target > 0 ? Math.min(100, (paid / target) * 100) : 0;
+            {membershipBreakdownRows.map(([label, target, componentKey]) => {
+              const displayTarget = Math.max(target, perComponentTotals[componentKey] || 0);
+              const recordedPaid = perComponentTotals[componentKey] ?? 0;
+              const paid = recordedPaid > 0 ? recordedPaid : (isFullyPaid ? displayTarget : 0);
+              const remaining = Math.max(0, displayTarget - paid);
+              const pct = displayTarget > 0 ? Math.min(100, (paid / displayTarget) * 100) : 0;
               return (
                 <div key={label} className="px-4 py-3">
                   <div className="flex items-center justify-between text-sm mb-1.5">
                     <span className="text-gray-600">{label}</span>
                     <span className="text-xs text-gray-500">
                       <span className="font-semibold text-green-700">{formatCurrency(paid)}</span>
-                      <span className="text-gray-400"> / {formatCurrency(target)}</span>
+                      <span className="text-gray-400"> / {formatCurrency(displayTarget)}</span>
                       {remaining > 0 && (
                         <span className="ml-2 text-amber-600 font-medium">({formatCurrency(remaining)} left)</span>
                       )}
@@ -3045,7 +3248,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
             <div className="flex justify-between items-center px-4 py-2.5 text-sm font-semibold bg-gray-50">
               <span className="text-gray-700">Total</span>
               <span className={feeBalance > 0 ? 'text-amber-700' : 'text-green-700'}>
-                {formatCurrency(feePaid)} / {formatCurrency(effectiveFeeRequired)}
+                {formatCurrency(totalPaidForDisplay)} / {formatCurrency(effectiveFeeRequired)}
               </span>
             </div>
           </div>
@@ -3061,13 +3264,9 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
         </div>
         <div className="flex items-start justify-between px-4 py-3 text-sm">
           <span className="text-gray-400 font-medium w-36 flex-shrink-0">Status</span>
-          <Badge variant={membership.status === 'active' ? 'success' : 'warning'}>
-            {membership.status}
+          <Badge variant={isFullyPaid ? 'success' : 'warning'}>
+            {isFullyPaid ? 'Fully Paid' : 'With Balance'}
           </Badge>
-        </div>
-        <div className="flex items-start justify-between px-4 py-3 text-sm">
-          <span className="text-gray-400 font-medium w-36 flex-shrink-0">Enrolled</span>
-          <span className="text-gray-900">{formatDate(membership.created_at)}</span>
         </div>
         <div className="px-4 py-3">
           <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
@@ -3085,7 +3284,7 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
 
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Payment History</h3>
-        {payments.length === 0 ? (
+        {displayPayments.length === 0 ? (
           <p className="text-xs text-gray-400 py-4 text-center">No payments recorded yet.</p>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
@@ -3100,12 +3299,14 @@ function MembershipTab({ memberId, memberName, membership, payments, upgradeLogs
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {payments.map(p => (
+                {displayPayments.map(p => (
                   <tr key={p.id} className="hover:bg-gray-50/50">
                     <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-3 font-semibold text-green-700">{formatCurrency(p.amount)}</td>
                     <td className="px-4 py-3 text-gray-500">{parsePaymentNotes(p.notes)}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDateTime(p.created_at)}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                      {p.is_stored_payment ? 'Imported' : formatDateTime(p.created_at)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
