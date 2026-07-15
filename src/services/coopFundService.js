@@ -18,11 +18,12 @@ export async function getFundTransactions(filters = {}) {
   let query = supabase
     .from('fund_transactions')
     .select('*')
+    .order('transaction_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false });
 
   if (filters.type) query = query.eq('type', filters.type);
-  if (filters.from) query = query.gte('created_at', filters.from);
-  if (filters.to) query = query.lte('created_at', filters.to);
+  if (filters.from) query = query.gte('transaction_date', filters.from);
+  if (filters.to) query = query.lte('transaction_date', filters.to);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -114,10 +115,11 @@ function dedupeLoanDeductionTransactions(rows) {
 }
 
 function ledgerDedupeKey(row) {
-  const dateValue = row?.created_at ? new Date(row.created_at) : null;
+  const dateValue = row?.transaction_date || row?.created_at;
+  const parsedDate = dateValue ? new Date(dateValue) : null;
   const dateKey =
-    dateValue && !Number.isNaN(dateValue.getTime())
-      ? dateValue.toISOString().slice(0, 10)
+    parsedDate && !Number.isNaN(parsedDate.getTime())
+      ? parsedDate.toISOString().slice(0, 10)
       : '';
   const descriptionKey =
     row?.category && ['service_fee', 'insurance', 'legal_fees', 'cbu', 'savings', 'annual_dues', 'penalty', 'petty_cash', 'membership'].includes(row.category)
@@ -144,6 +146,26 @@ function dedupeLedgerRows(rows) {
     seen.add(key);
     return true;
   });
+}
+
+function extractMemberNameFromHistoricalNotes(value = '') {
+  const text = String(value || '');
+  const marker = 'Migrated Historical Record |';
+  if (!text.includes(marker)) return null;
+  const afterMarker = text.split(marker)[1] || '';
+  const beforeFinalCategory = afterMarker.split('| Final Category:')[0] || '';
+  const cleaned = beforeFinalCategory
+    .replace(/\bloan payment\b/ig, '')
+    .replace(/\bloan\b/ig, '')
+    .replace(/\bcbu\b/ig, '')
+    .replace(/\bsavings\b/ig, '')
+    .replace(/\bmembership\b/ig, '')
+    .replace(/\bpenalty\b/ig, '')
+    .replace(/\binterest\b/ig, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || null;
 }
 
 // ── Unified Coop Fund Summary ────────────────────────────────────────────────
@@ -197,7 +219,7 @@ export async function computeCoopSummaryFromInvoices() {
     // All transactions
     supabase
       .from('transactions')
-      .select('id, type, category, amount, transaction_date, created_at, notes, reference, member_id, loan_id, created_by')
+      .select('id, type, category, amount, transaction_date, created_at, notes, reference, member_id, loan_id, created_by, source, record_type')
       .order('transaction_date', { ascending: false }),
     // Only admin-level invoices not captured in transactions
     supabase
@@ -289,10 +311,14 @@ export async function computeCoopSummaryFromInvoices() {
     amount:      t.amount,
     description: t.notes || t.type,
     ref_no:      t.reference || null,
-    member_name: memberMap[t.member_id] || null,
+    member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
     loan_id:     t.loan_id || null,
     created_by:  profileMap[t.created_by] || t.created_by || 'System',
-    created_at:  t.created_at || t.transaction_date,
+    created_at:  t.transaction_date || t.created_at,
+    imported_at: t.created_at || null,
+    transaction_date: t.transaction_date || null,
+    source:      t.source || 'manual',
+    record_type: t.record_type || 'workflow',
   }));
 
   const membershipBreakdownRows = membershipBreakdownTx.map(t => ({
@@ -304,10 +330,14 @@ export async function computeCoopSummaryFromInvoices() {
     amount:      t.amount,
     description: t.notes || 'Membership breakdown deposit',
     ref_no:      t.reference || null,
-    member_name: memberMap[t.member_id] || null,
+    member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
     loan_id:     t.loan_id || null,
     created_by:  profileMap[t.created_by] || t.created_by || 'System',
-    created_at:  t.created_at || t.transaction_date,
+    created_at:  t.transaction_date || t.created_at,
+    imported_at: t.created_at || null,
+    transaction_date: t.transaction_date || null,
+    source:      t.source || 'manual',
+    record_type: t.record_type || 'workflow',
     display_only: true,
   }));
 
@@ -320,10 +350,14 @@ export async function computeCoopSummaryFromInvoices() {
     amount:      t.amount,
     description: t.notes || 'Withdrawal',
     ref_no:      t.reference || null,
-    member_name: memberMap[t.member_id] || null,
+    member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
     loan_id:     t.loan_id || null,
     created_by:  profileMap[t.created_by] || t.created_by || 'System',
-    created_at:  t.created_at || t.transaction_date,
+    created_at:  t.transaction_date || t.created_at,
+    imported_at: t.created_at || null,
+    transaction_date: t.transaction_date || null,
+    source:      t.source || 'manual',
+    record_type: t.record_type || 'workflow',
   }));
 
   const invRows = [...cashInInv, ...cashOutInv].map(inv => ({
@@ -335,7 +369,8 @@ export async function computeCoopSummaryFromInvoices() {
     member_name: inv.payee || '—',
     ref_no:      inv.invoice_no,
     created_by:  profileMap[inv.created_by] || inv.created_by || 'System',
-    created_at:  inv.created_at,
+    created_at:  inv.date || inv.created_at,
+    transaction_date: inv.date || null,
   }));
 
   const vchRows = vchList.map(vch => ({
@@ -345,11 +380,12 @@ export async function computeCoopSummaryFromInvoices() {
     amount:      vch.amount,
     description: vch.purpose || vch.payee,
     ref_no:      vch.voucher_no,
-    created_at:  vch.created_at,
+    created_at:  vch.date || vch.created_at,
+    transaction_date: vch.date || null,
   }));
 
   const allRows = dedupeLedgerRows([...txRows, ...membershipBreakdownRows, ...cashOutTxRows, ...invRows, ...vchRows])
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    .sort((a, b) => new Date(b.transaction_date || b.created_at) - new Date(a.transaction_date || a.created_at));
 
   return {
     fund: {

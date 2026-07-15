@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   TrendingUp, TrendingDown,  RefreshCw, ArrowUpRight, ArrowDownRight,
   LayoutDashboard, Plus, AlertTriangle, Calendar,
-  X, Printer, Download,
+  X, Printer, Download, FileSpreadsheet,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
@@ -12,6 +12,7 @@ import Spinner from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
+import FinancialMigrationImportModal from '../../components/coop-monitoring/FinancialMigrationImportModal';
 import {
   computeCoopSummaryFromInvoices,
   CATEGORY_LABEL,
@@ -38,6 +39,10 @@ const PAYMENT_MODE_OPTIONS = [
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function txDisplayDate(tx) {
+  return tx?.transaction_date || tx?.created_at || null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -132,7 +137,7 @@ function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
 
   const n = labels.length;
   const H = height;
-  const PAD = { t: 16, b: 26, l: 6, r: 6 };
+  const PAD = { t: 22, b: 32, l: 14, r: 14 };
   const iW = W - PAD.l - PAD.r;
   const iH = H - PAD.t - PAD.b;
 
@@ -174,19 +179,35 @@ function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
           <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
             <defs>
               <linearGradient id="cm-area-in" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#22c55e" stopOpacity="0.22" />
-                <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
+                <stop offset="0%"   stopColor="#10b981" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="#10b981" stopOpacity="0.03" />
               </linearGradient>
               <linearGradient id="cm-area-out" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#ef4444" stopOpacity="0.16" />
-                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.02" />
+                <stop offset="0%"   stopColor="#f43f5e" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.03" />
               </linearGradient>
+              <filter id="cm-soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="#0f172a" floodOpacity="0.08" />
+              </filter>
             </defs>
+
+            <rect
+              x={PAD.l}
+              y={PAD.t - 6}
+              width={iW}
+              height={iH + 6}
+              rx={12}
+              fill="#f8fafc"
+            />
 
             {/* Dashed grid lines */}
             {gridYs.map((y, i) => (
               <line key={i} x1={PAD.l} y1={y} x2={W - PAD.r} y2={y}
-                stroke="#F3F4F6" strokeWidth={1} strokeDasharray="3 4" />
+                stroke={i === gridYs.length - 1 ? '#e2e8f0' : '#e5e7eb'}
+                strokeWidth={1}
+                strokeDasharray={i === gridYs.length - 1 ? '0' : '4 6'}
+                opacity={i === gridYs.length - 1 ? 1 : 0.75}
+              />
             ))}
 
             {/* Hover vertical guide */}
@@ -194,7 +215,7 @@ function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
               <line
                 x1={px(hoveredIdx)} y1={PAD.t}
                 x2={px(hoveredIdx)} y2={PAD.t + iH}
-                stroke="#CBD5E1" strokeWidth={1} strokeDasharray="3 3"
+                stroke="#94a3b8" strokeWidth={1.2} strokeDasharray="4 5"
               />
             )}
 
@@ -203,12 +224,12 @@ function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
             <path d={makeArea(cashOutData, outPath)} fill="url(#cm-area-out)" />
 
             {/* Line glows */}
-            <path d={inPath}  fill="none" stroke="#22c55e" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} />
-            <path d={outPath} fill="none" stroke="#ef4444" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} />
+            <path d={inPath}  fill="none" stroke="#10b981" strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" opacity={0.12} />
+            <path d={outPath} fill="none" stroke="#f43f5e" strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" opacity={0.12} />
 
             {/* Lines */}
-            <path d={inPath}  fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-            <path d={outPath} fill="none" stroke="#dc2626" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+            <path d={inPath}  fill="none" stroke="#059669" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" filter="url(#cm-soft-shadow)" />
+            <path d={outPath} fill="none" stroke="#e11d48" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" filter="url(#cm-soft-shadow)" />
 
             {/* Per-column interaction zones + dots */}
             {labels.map((lbl, i) => {
@@ -238,11 +259,15 @@ function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
                   />
 
                   {/* Cash In dot */}
-                  <circle cx={px(i)} cy={py(inV)} r={isHov ? 5 : 3}
-                    fill="white" stroke="#16a34a" strokeWidth={isHov ? 2.5 : 1.5} />
+                  <circle cx={px(i)} cy={py(inV)} r={isHov ? 6 : 3.8}
+                    fill="white" stroke="#059669" strokeWidth={isHov ? 3 : 2} />
+                  <circle cx={px(i)} cy={py(inV)} r={isHov ? 2.2 : 1.4}
+                    fill="#059669" opacity={isHov ? 1 : 0.8} />
                   {/* Cash Out dot */}
-                  <circle cx={px(i)} cy={py(outV)} r={isHov ? 5 : 3}
-                    fill="white" stroke="#dc2626" strokeWidth={isHov ? 2.5 : 1.5} />
+                  <circle cx={px(i)} cy={py(outV)} r={isHov ? 6 : 3.8}
+                    fill="white" stroke="#e11d48" strokeWidth={isHov ? 3 : 2} />
+                  <circle cx={px(i)} cy={py(outV)} r={isHov ? 2.2 : 1.4}
+                    fill="#e11d48" opacity={isHov ? 1 : 0.8} />
 
                   {/* Hover value labels */}
                   {isHov && inV > 0 && (
@@ -257,8 +282,8 @@ function CashFlowLineChart({ cashInData, cashOutData, labels, height = 180 }) {
                   )}
 
                   {/* X-axis label */}
-                  <text x={px(i)} y={H - 6} textAnchor="middle" fontSize={9}
-                    fill={isHov ? '#374151' : '#9CA3AF'}
+                  <text x={px(i)} y={H - 8} textAnchor="middle" fontSize={10}
+                    fill={isHov ? '#0f172a' : '#94a3b8'}
                     fontWeight={isHov ? '600' : '400'}>
                     {lbl}
                   </text>
@@ -282,14 +307,14 @@ function MonthlyDivergingChart({ cashInData, cashOutData, labels, height = 136 }
   const [containerRef, W] = useChartWidth();
 
   const H      = height;
-  const PAD    = { t: 22, b: 22, l: 4, r: 10 };
+  const PAD    = { t: 26, b: 30, l: 14, r: 18 };
   const iW     = W - PAD.l - PAD.r;
   const iH     = H - PAD.t - PAD.b;
   const midY   = PAD.t + iH / 2;
   const halfH  = iH / 2;
   const n      = labels.length;
   const groupW = iW / n;
-  const margin = Math.max(groupW * 0.15, 2);
+  const margin = Math.max(groupW * 0.24, 4);
   const barW   = groupW - margin * 2;
 
   const maxVal = Math.max(...cashInData, ...cashOutData, 1);
@@ -312,32 +337,36 @@ function MonthlyDivergingChart({ cashInData, cashOutData, labels, height = 136 }
           <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
             <defs>
               <linearGradient id="mdiv-green" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#047857" stopOpacity="1" />
-                <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.45" />
+                <stop offset="0%"   stopColor="#059669" stopOpacity="1" />
+                <stop offset="100%" stopColor="#6ee7b7" stopOpacity="0.72" />
               </linearGradient>
               <linearGradient id="mdiv-red" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#FCA5A5" stopOpacity="0.45" />
-                <stop offset="100%" stopColor="#B91C1C" stopOpacity="1" />
+                <stop offset="0%"   stopColor="#fecdd3" stopOpacity="0.72" />
+                <stop offset="100%" stopColor="#e11d48" stopOpacity="1" />
               </linearGradient>
+              <filter id="mdiv-soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="5" stdDeviation="5" floodColor="#0f172a" floodOpacity="0.08" />
+              </filter>
             </defs>
 
             {/* Half-backgrounds */}
-            <rect x={PAD.l} y={PAD.t}  width={iW} height={halfH} fill="#F0FDF4" opacity={0.65} />
-            <rect x={PAD.l} y={midY}   width={iW} height={halfH} fill="#FFF5F5" opacity={0.65} />
+            <rect x={PAD.l} y={PAD.t - 8} width={iW} height={iH + 8} rx={12} fill="#f8fafc" />
+            <rect x={PAD.l} y={PAD.t - 8} width={iW} height={halfH + 8} rx={12} fill="#ecfdf5" opacity={0.75} />
+            <rect x={PAD.l} y={midY} width={iW} height={halfH} rx={12} fill="#fff1f2" opacity={0.74} />
 
             {/* Quarter guide lines */}
             <line x1={PAD.l} y1={PAD.t + halfH * 0.5} x2={W - PAD.r} y2={PAD.t + halfH * 0.5}
-              stroke="#D1FAE5" strokeWidth={1} strokeDasharray="4 5" />
+              stroke="#bbf7d0" strokeWidth={1} strokeDasharray="5 7" />
             <line x1={PAD.l} y1={midY  + halfH * 0.5} x2={W - PAD.r} y2={midY  + halfH * 0.5}
-              stroke="#FEE2E2" strokeWidth={1} strokeDasharray="4 5" />
+              stroke="#fecdd3" strokeWidth={1} strokeDasharray="5 7" />
 
             {/* Center zero line */}
-            <line x1={PAD.l} y1={midY} x2={W - PAD.r} y2={midY} stroke="#94A3B8" strokeWidth={1.5} />
-            <text x={W - PAD.r + 2} y={midY + 3.5} fontSize={7} fill="#94A3B8" textAnchor="start">0</text>
+            <line x1={PAD.l} y1={midY} x2={W - PAD.r} y2={midY} stroke="#64748b" strokeWidth={1.4} />
+            <text x={W - PAD.r + 3} y={midY + 3.5} fontSize={8} fill="#64748b" textAnchor="start">0</text>
 
             {/* Corner axis labels */}
-            <text x={PAD.l + 2} y={PAD.t + 9}     fontSize={7} fill="#059669" fontWeight="700">↑ In</text>
-            <text x={PAD.l + 2} y={PAD.t + iH - 3} fontSize={7} fill="#DC2626" fontWeight="700">↓ Out</text>
+            <text x={PAD.l + 8} y={PAD.t + 6} fontSize={8} fill="#047857" fontWeight="700">Cash In</text>
+            <text x={PAD.l + 8} y={PAD.t + iH - 4} fontSize={8} fill="#be123c" fontWeight="700">Cash Out</text>
 
             {labels.map((lbl, i) => {
               const ciH    = Math.max(sh(cashInData[i]  || 0), cashInData[i]  > 0 ? 3 : 0);
@@ -357,18 +386,18 @@ function MonthlyDivergingChart({ cashInData, cashOutData, labels, height = 136 }
                 >
                   {/* Column hover highlight */}
                   {isHov && (
-                    <rect x={bx(i) - 2} y={PAD.t} width={barW + 4} height={iH}
-                      fill="#6366F1" opacity={0.05} rx={3} />
+                    <rect x={bx(i) - 6} y={PAD.t - 8} width={barW + 12} height={iH + 8}
+                      fill="#0f172a" opacity={0.05} rx={8} />
                   )}
 
                   {/* Cash In bar — rises upward */}
                   {ciH > 0 && (
                     <>
                       <rect x={bx(i)} y={midY - ciH} width={barW} height={ciH}
-                        fill="url(#mdiv-green)" opacity={op} rx={2.5} />
+                        fill="url(#mdiv-green)" opacity={op} rx={6} filter="url(#mdiv-soft-shadow)" />
                       {isHov && (
                         <text x={bx(i) + barW / 2} y={midY - ciH - 4}
-                          textAnchor="middle" fontSize={7} fontWeight="700" fill="#065F46">
+                          textAnchor="middle" fontSize={8} fontWeight="700" fill="#065f46">
                           {fmtShort(cashInData[i] || 0)}
                         </text>
                       )}
@@ -379,10 +408,10 @@ function MonthlyDivergingChart({ cashInData, cashOutData, labels, height = 136 }
                   {coH > 0 && (
                     <>
                       <rect x={bx(i)} y={midY} width={barW} height={coH}
-                        fill="url(#mdiv-red)" opacity={op} rx={2.5} />
+                        fill="url(#mdiv-red)" opacity={op} rx={6} filter="url(#mdiv-soft-shadow)" />
                       {isHov && (
                         <text x={bx(i) + barW / 2} y={midY + coH + 9}
-                          textAnchor="middle" fontSize={7} fontWeight="700" fill="#7F1D1D">
+                          textAnchor="middle" fontSize={8} fontWeight="700" fill="#9f1239">
                           {fmtShort(cashOutData[i] || 0)}
                         </text>
                       )}
@@ -390,8 +419,8 @@ function MonthlyDivergingChart({ cashInData, cashOutData, labels, height = 136 }
                   )}
 
                   {/* Month label */}
-                  <text x={mX(i)} y={H - 6} textAnchor="middle" fontSize={9}
-                    fill={isHov ? '#374151' : '#9CA3AF'}
+                  <text x={mX(i)} y={H - 8} textAnchor="middle" fontSize={10}
+                    fill={isHov ? '#0f172a' : '#94a3b8'}
                     fontWeight={isHov ? '600' : '400'}>
                     {lbl}
                   </text>
@@ -554,18 +583,40 @@ function CashInBreakdown({ transactions }) {
 
 function DashboardCharts({ transactions }) {
   const now = new Date();
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    return { year: d.getFullYear(), month: d.getMonth(), label: MONTH_NAMES[d.getMonth()] };
-  });
+  const txDates = transactions
+    .map(tx => new Date(txDisplayDate(tx)))
+    .filter(d => !Number.isNaN(d.getTime()));
+
+  const firstMonth = txDates.length
+    ? new Date(Math.min(...txDates.map(d => new Date(d.getFullYear(), d.getMonth(), 1).getTime())))
+    : new Date(now.getFullYear(), 0, 1);
+  const lastMonth = txDates.length
+    ? new Date(Math.max(...txDates.map(d => new Date(d.getFullYear(), d.getMonth(), 1).getTime())))
+    : new Date(now.getFullYear(), 11, 1);
+  const hasMultipleYears = firstMonth.getFullYear() !== lastMonth.getFullYear();
+  const months = [];
+
+  for (
+    let d = new Date(firstMonth.getFullYear(), firstMonth.getMonth(), 1);
+    d <= lastMonth;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+  ) {
+    months.push({
+      year: d.getFullYear(),
+      month: d.getMonth(),
+      label: hasMultipleYears
+        ? `${MONTH_NAMES[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`
+        : MONTH_NAMES[d.getMonth()],
+    });
+  }
 
   const bucket = (tx) => {
-    const d = new Date(tx.created_at);
+    const d = new Date(txDisplayDate(tx));
     return months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
   };
 
-  const cashInByMonth  = Array(6).fill(0);
-  const cashOutByMonth = Array(6).fill(0);
+  const cashInByMonth  = Array(months.length).fill(0);
+  const cashOutByMonth = Array(months.length).fill(0);
 
   transactions.forEach(tx => {
     const idx = bucket(tx);
@@ -575,6 +626,7 @@ function DashboardCharts({ transactions }) {
   });
 
   const labels = months.map(m => m.label);
+  const chartMinWidth = Math.max(640, labels.length * 72);
 
   const breakdownDefs = [
     { key: 'loan_payment', label: 'Loan Payments', color: '#f97316' },
@@ -600,29 +652,33 @@ function DashboardCharts({ transactions }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* Cash Flow Area-Line Chart */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-800">Cash Flow — Last 6 Months</h3>
+              <h3 className="text-sm font-semibold text-gray-800">Cash Flow Trend</h3>
               <p className="text-xs text-gray-400 mt-0.5">Monthly inflow vs. outflow trend · hover to inspect</p>
             </div>
-            <div className="flex items-center gap-4 text-[11px]">
-              <span className="flex items-center gap-1.5 text-green-700">
-                <span className="w-5 h-0.5 bg-green-500 inline-block rounded-full" />
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                <span className="w-4 h-1 bg-emerald-500 inline-block rounded-full" />
                 Cash In
               </span>
-              <span className="flex items-center gap-1.5 text-red-600">
-                <span className="w-5 h-0.5 bg-red-400 inline-block rounded-full" />
+              <span className="flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 font-medium text-rose-700">
+                <span className="w-4 h-1 bg-rose-500 inline-block rounded-full" />
                 Cash Out
               </span>
             </div>
           </div>
-          <CashFlowLineChart
-            cashInData={cashInByMonth}
-            cashOutData={cashOutByMonth}
-            labels={labels}
-            height={180}
-          />
+          <div className="overflow-x-auto pb-1">
+            <div style={{ minWidth: chartMinWidth }}>
+              <CashFlowLineChart
+                cashInData={cashInByMonth}
+                cashOutData={cashOutByMonth}
+                labels={labels}
+                height={180}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Cash-In Donut */}
@@ -656,27 +712,31 @@ function DashboardCharts({ transactions }) {
       <div className="grid grid-cols-1 gap-4">
 
         {/* Diverging monthly comparison */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-800">Monthly Comparison</h3>
               <p className="text-xs text-gray-400 mt-0.5">Cash In ↑ rises · Cash Out ↓ falls from center line</p>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-gray-500">
-              <span className="flex items-center gap-1">
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-80" /> In
               </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500 opacity-80" /> Out
+              <span className="flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 font-medium text-rose-700">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-500 opacity-80" /> Out
               </span>
             </div>
           </div>
-          <MonthlyDivergingChart
-            cashInData={cashInByMonth}
-            cashOutData={cashOutByMonth}
-            labels={labels}
-            height={136}
-          />
+          <div className="overflow-x-auto pb-1">
+            <div style={{ minWidth: chartMinWidth }}>
+              <MonthlyDivergingChart
+                cashInData={cashInByMonth}
+                cashOutData={cashOutByMonth}
+                labels={labels}
+                height={136}
+              />
+            </div>
+          </div>
         </div>
 
       </div>
@@ -688,9 +748,25 @@ function DashboardCharts({ transactions }) {
 // Date Range Picker
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DateRangePicker({ from, to, onChange }) {
+function DateRangePicker({ from, to, onChange, years = [] }) {
+  const selectedYear = years.find(year => from === `${year}-01-01` && to === `${year}-12-31`) || '';
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      {years.length > 0 && (
+        <select
+          value={selectedYear}
+          onChange={e => {
+            const year = e.target.value;
+            onChange(year ? { from: `${year}-01-01`, to: `${year}-12-31` } : { from: '', to: '' });
+          }}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E] bg-white text-gray-700"
+        >
+          <option value="">All Years</option>
+          {years.map(year => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+      )}
       <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
         <Calendar size={13} className="text-gray-400 flex-shrink-0" />
         <span className="text-gray-400 text-xs">From</span>
@@ -730,10 +806,16 @@ function DateRangePicker({ from, to, onChange }) {
 
 function TxRow({ tx }) {
   const isCashIn = tx.type === 'cash_in';
+  const displayDate = txDisplayDate(tx);
   return (
     <tr className="hover:bg-gray-50/60 transition-colors">
       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-        {tx.created_at ? formatDateTime(tx.created_at) : '—'}
+        {displayDate ? formatDateTime(displayDate) : '—'}
+        {tx.source === 'imported' && tx.imported_at && (
+          <div className="text-[10px] text-gray-400">
+            Imported {formatDateTime(tx.imported_at)}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 text-center">
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -866,6 +948,7 @@ export default function CoopMonitoringPage() {
   const [dateRange, setDateRange]     = useState({ from: '', to: '' });
 
   const [fundModalOpen, setFundModalOpen]       = useState(false);
+  const [migrationModalOpen, setMigrationModalOpen] = useState(false);
   const [fundAmount, setFundAmount]             = useState('');
   const [fundDate, setFundDate]                 = useState(new Date().toISOString().split('T')[0]);
   const [fundDescription, setFundDescription]   = useState('');
@@ -895,10 +978,20 @@ export default function CoopMonitoringPage() {
     return { from: null, to: null };
   }
 
+  function applyIncomePeriod(period) {
+    setIncomePeriod(period);
+    if (period !== 'custom') {
+      const range = getDateRangeForPeriod(period);
+      setDateRange({ from: range.from || '', to: range.to || '' });
+    }
+  }
+
   const fetchIncome = useCallback(async (period = incomePeriod, range = incomeRange) => {
     try {
       setIncomeLoading(true);
-      const dr = period === 'custom' ? range : getDateRangeForPeriod(period);
+      const dr = dateRange.from || dateRange.to
+        ? dateRange
+        : period === 'custom' ? range : getDateRangeForPeriod(period);
       const data = await getIncomeBreakdown({ from: dr.from || null, to: dr.to || null });
       setIncomeData(data);
     } catch (err) {
@@ -907,7 +1000,7 @@ export default function CoopMonitoringPage() {
       setIncomeLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incomePeriod, incomeRange]);
+  }, [incomePeriod, incomeRange, dateRange]);
 
   const fetchPenalties = useCallback(async () => {
     try {
@@ -946,7 +1039,24 @@ export default function CoopMonitoringPage() {
     fetchPenalties();
   }, [fetchData, fetchPenalties]);
 
-  useEffect(() => { fetchIncome(incomePeriod, incomeRange); }, [incomePeriod, incomeRange, fetchIncome]);
+  useEffect(() => { fetchIncome(incomePeriod, incomeRange); }, [incomePeriod, incomeRange, dateRange, fetchIncome]);
+
+  const handleRefresh = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      await Promise.all([
+        fetchData(true),
+        fetchPenalties(),
+        fetchIncome(incomePeriod, incomeRange),
+      ]);
+      toast.success('Fund monitoring refreshed.');
+    } catch (err) {
+      console.error('[CoopMonitoringPage] refresh error:', err);
+      toast.error(err.message || 'Failed to refresh fund monitoring.');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchData, fetchPenalties, fetchIncome, incomePeriod, incomeRange]);
 
   async function handleAddFund() {
     if (!canCreate) {
@@ -987,29 +1097,83 @@ export default function CoopMonitoringPage() {
     }
   }
 
-  const filtered = useMemo(() => {
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const baseYears = Array.from({ length: Math.max(8, currentYear - 2024 + 5) }, (_, i) => 2024 + i);
+    const transactionYears = transactions
+      .map(tx => new Date(txDisplayDate(tx)))
+      .filter(d => !Number.isNaN(d.getTime()))
+      .map(d => d.getFullYear());
+
+    return [...new Set([...baseYears, ...transactionYears])].sort((a, b) => b - a);
+  }, [transactions]);
+
+  const dateFilteredTransactions = useMemo(() => {
     return transactions.filter(tx => {
-      if (typeFilter && tx.type !== typeFilter) return false;
-      if (catFilter  && tx.category !== catFilter) return false;
-      if (dateRange.from) {
-        const txDate = new Date(tx.created_at);
-        if (txDate < new Date(dateRange.from)) return false;
-      }
+      const txDate = new Date(txDisplayDate(tx));
+      if (Number.isNaN(txDate.getTime())) return !dateRange.from && !dateRange.to;
+      if (dateRange.from && txDate < new Date(dateRange.from)) return false;
       if (dateRange.to) {
-        const txDate = new Date(tx.created_at);
         const toDate = new Date(dateRange.to);
         toDate.setHours(23, 59, 59, 999);
         if (txDate > toDate) return false;
       }
       return true;
     });
-  }, [transactions, typeFilter, catFilter, dateRange]);
+  }, [transactions, dateRange]);
+
+  const scopedFund = useMemo(() => {
+    if (!dateRange.from && !dateRange.to) return fund;
+    const cashIn = dateFilteredTransactions
+      .filter(tx => tx.type === 'cash_in')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const cashOut = dateFilteredTransactions
+      .filter(tx => tx.type === 'cash_out')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+    return {
+      cash_in: Math.round(cashIn * 100) / 100,
+      cash_out: Math.round(cashOut * 100) / 100,
+      balance: Math.round((cashIn - cashOut) * 100) / 100,
+    };
+  }, [fund, dateFilteredTransactions, dateRange]);
+
+  const filtered = useMemo(() => {
+    return dateFilteredTransactions.filter(tx => {
+      if (typeFilter && tx.type !== typeFilter) return false;
+      if (catFilter  && tx.category !== catFilter) return false;
+      return true;
+    });
+  }, [dateFilteredTransactions, typeFilter, catFilter]);
 
   const loanPaymentTotal = useMemo(() => {
-    return transactions
+    return dateFilteredTransactions
       .filter(tx => tx.type === 'cash_in' && (tx.category === 'loan_payment' || tx.raw_type === 'loan_payment'))
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-  }, [transactions]);
+  }, [dateFilteredTransactions]);
+
+  const importedExpenseTotal = useMemo(() => {
+    return dateFilteredTransactions
+      .filter(tx => tx.source === 'imported' && tx.type === 'cash_out')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  }, [dateFilteredTransactions]);
+
+  const expenseMonitoring = useMemo(() => {
+    const cashOutRows = dateFilteredTransactions.filter(tx => tx.type === 'cash_out');
+    const sumBy = predicate => cashOutRows
+      .filter(predicate)
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+    return {
+      total: sumBy(() => true),
+      imported: sumBy(tx => tx.source === 'imported'),
+      loanReleases: sumBy(tx => tx.category === 'loan_release'),
+      withdrawals: sumBy(tx => ['cbu_withdrawal', 'savings_withdrawal'].includes(tx.category)),
+      pettyCash: sumBy(tx => tx.category === 'petty_cash'),
+      otherExpenses: sumBy(tx => !['loan_release', 'cbu_withdrawal', 'savings_withdrawal', 'petty_cash'].includes(tx.category)),
+      count: cashOutRows.length,
+    };
+  }, [dateFilteredTransactions]);
 
   const filteredPenalties = useMemo(() => {
     return penalties.filter(p => {
@@ -1020,19 +1184,23 @@ export default function CoopMonitoringPage() {
   }, [penalties, dateRange]);
 
   const penaltyTotal = filteredPenalties.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const categories   = [...new Set(transactions.map(tx => tx.category).filter(Boolean))];
+  const categories   = [...new Set(dateFilteredTransactions.map(tx => tx.category).filter(Boolean))];
   const hasFilters   = typeFilter || catFilter || dateRange.from || dateRange.to;
+  const hasDateFilter = dateRange.from || dateRange.to;
 
   function handlePrint() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
-    const rows = filtered.map(tx => `<tr>
-      <td style="white-space:nowrap">${tx.created_at?formatDateTime(tx.created_at):'—'}</td>
+    const rows = filtered.map(tx => {
+      const displayDate = txDisplayDate(tx);
+      return `<tr>
+      <td style="white-space:nowrap">${displayDate ? formatDateTime(displayDate) : '—'}</td>
       <td>${CATEGORY_LABEL[tx.category]||tx.category||'—'}</td>
       <td>${tx.description||'—'}</td>
       <td style="font-family:monospace">${tx.ref_no||'—'}</td>
       <td style="text-align:right;font-weight:600;color:${tx.type==='cash_in'?'#065f46':'#b91c1c'}">${fmt(tx.amount)}</td>
       <td style="text-align:center">${tx.type==='cash_in'?'Cash In':'Cash Out'}</td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     const totalIn  = filtered.filter(t=>t.type==='cash_in').reduce((s,t)=>s+(t.amount||0),0);
     const totalOut = filtered.filter(t=>t.type==='cash_out').reduce((s,t)=>s+(t.amount||0),0);
     const html = `
@@ -1058,16 +1226,19 @@ export default function CoopMonitoringPage() {
   function handleExportCSV() {
     try {
       if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
-      const rows = filtered.map(tx => ({
-        date:        tx.created_at ? formatDateTime(tx.created_at) : '',
-        type:        tx.type === 'cash_in' ? 'IN' : 'OUT',
-        category:    CATEGORY_LABEL[tx.category] || tx.category || '',
-        amount:      tx.amount || 0,
-        member:      tx.member_name || '',
-        loan_no:     tx.ref_no || '',
-        description: tx.description || '',
-        created_by:  tx.created_by || '',
-      }));
+      const rows = filtered.map(tx => {
+        const displayDate = txDisplayDate(tx);
+        return {
+          date:        displayDate ? formatDateTime(displayDate) : '',
+          type:        tx.type === 'cash_in' ? 'IN' : 'OUT',
+          category:    CATEGORY_LABEL[tx.category] || tx.category || '',
+          amount:      tx.amount || 0,
+          member:      tx.member_name || '',
+          loan_no:     tx.ref_no || '',
+          description: tx.description || '',
+          created_by:  tx.created_by || '',
+        };
+      });
       exportToCSV('coop_monitoring_transactions.csv', rows);
       toast.success('CSV exported successfully');
     } catch (err) {
@@ -1082,6 +1253,13 @@ export default function CoopMonitoringPage() {
         subtitle="Cooperative fund — cash inflow and outflow overview"
         action={
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              icon={<FileSpreadsheet size={14} />}
+              onClick={() => setMigrationModalOpen(true)}
+            >
+              Financial Migration
+            </Button>
             {canCreate && (
             <Button variant="primary" icon={<Plus size={14} />} onClick={() => setFundModalOpen(true)}>
               Add Fund
@@ -1090,7 +1268,7 @@ export default function CoopMonitoringPage() {
             <Button
               variant="outline"
               icon={<RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />}
-              onClick={() => fetchData(true)}
+              onClick={handleRefresh}
               disabled={refreshing}
             >
               Refresh
@@ -1103,16 +1281,30 @@ export default function CoopMonitoringPage() {
         <div className="flex justify-center py-24"><Spinner /></div>
       ) : (
         <>
+          <div className="mt-6 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <DateRangePicker
+                from={dateRange.from}
+                to={dateRange.to}
+                onChange={range => {
+                  setIncomePeriod(range.from || range.to ? 'custom' : 'all');
+                  setDateRange(range);
+                }}
+                years={availableYears}
+              />
+            </div>
+          </div>
+
           {/* ── Stat Cards ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mt-4 mb-6">
             <StatCard
               icon={<PesoSign size={22} className="text-emerald-600" />}
               label="Current Fund Balance"
-              value={formatCurrency(fund.balance)}
-              sub="Cash In minus Cash Out"
+              value={formatCurrency(scopedFund.balance)}
+              sub={hasDateFilter ? 'Selected period: Cash In minus Cash Out' : 'Cash In minus Cash Out'}
               bg="bg-emerald-50"
-              textColor={fund.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}
-              accentColor={fund.balance >= 0 ? 'bg-emerald-400' : 'bg-red-400'}
+              textColor={scopedFund.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}
+              accentColor={scopedFund.balance >= 0 ? 'bg-emerald-400' : 'bg-red-400'}
             />
             <StatCard
               icon={<ArrowUpRight size={22} className="text-orange-600" />}
@@ -1135,19 +1327,28 @@ export default function CoopMonitoringPage() {
             <StatCard
               icon={<TrendingDown size={22} className="text-red-500" />}
               label="Total Cash Out"
-              value={formatCurrency(fund.cash_out)}
+              value={formatCurrency(scopedFund.cash_out)}
               sub="Approved vouchers"
               bg="bg-red-50"
               textColor="text-red-600"
               accentColor="bg-red-400"
             />
+            <StatCard
+              icon={<FileSpreadsheet size={22} className="text-slate-600" />}
+              label="Imported Expenses"
+              value={formatCurrency(importedExpenseTotal)}
+              sub="Historical cash-out from Excel"
+              bg="bg-slate-50"
+              textColor="text-slate-700"
+              accentColor="bg-slate-400"
+            />
           </div>
 
           {/* ── Dashboard Charts ── */}
-          <DashboardCharts transactions={transactions} />
+          <DashboardCharts transactions={dateFilteredTransactions} />
 
           {/* ── Cash-In Breakdown ── */}
-          <CashInBreakdown transactions={transactions} />
+          <CashInBreakdown transactions={dateFilteredTransactions} />
 
           {/* ── Income Monitoring Breakdown ── */}
           <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -1168,7 +1369,7 @@ export default function CoopMonitoringPage() {
                 ].map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => setIncomePeriod(key)}
+                    onClick={() => applyIncomePeriod(key)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                       incomePeriod === key
                         ? 'bg-[#07A04E] text-white'
@@ -1193,15 +1394,21 @@ export default function CoopMonitoringPage() {
               <div className="flex flex-wrap items-center gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100">
                 <input
                   type="date"
-                  value={incomeRange.from}
-                  onChange={e => setIncomeRange(r => ({ ...r, from: e.target.value }))}
+                  value={dateRange.from}
+                  onChange={e => {
+                    setIncomeRange(r => ({ ...r, from: e.target.value }));
+                    setDateRange(r => ({ ...r, from: e.target.value }));
+                  }}
                   className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
                 />
                 <span className="text-xs text-gray-400">to</span>
                 <input
                   type="date"
-                  value={incomeRange.to}
-                  onChange={e => setIncomeRange(r => ({ ...r, to: e.target.value }))}
+                  value={dateRange.to}
+                  onChange={e => {
+                    setIncomeRange(r => ({ ...r, to: e.target.value }));
+                    setDateRange(r => ({ ...r, to: e.target.value }));
+                  }}
                   className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
                 />
               </div>
@@ -1259,6 +1466,47 @@ export default function CoopMonitoringPage() {
           </section>
 
           {/* ── Filters Row ── */}
+          <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden mt-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-bold text-gray-800">Expense Monitoring</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Breakdown by cash-out source — releases, withdrawals, imported expenses</p>
+              </div>
+              <div className="text-xs text-gray-400">
+                {expenseMonitoring.count} cash-out record{expenseMonitoring.count !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            <div className="p-5">
+              <div className="mb-4 p-4 bg-gradient-to-r from-red-50 to-slate-50 rounded-xl border border-red-100 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wide">Total Expenses / Cash Out</p>
+                  <p className="text-2xl font-bold text-red-700 mt-0.5">{formatCurrency(expenseMonitoring.total)}</p>
+                  <p className="text-xs text-red-500 mt-0.5">
+                    Imported historical expenses: {formatCurrency(expenseMonitoring.imported)}
+                  </p>
+                </div>
+                <TrendingDown size={32} className="text-red-300" />
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {[
+                  { label: 'Imported Expenses', value: expenseMonitoring.imported, color: 'bg-slate-50 border-slate-100', text: 'text-slate-700', sub: 'Historical cash-out from Excel' },
+                  { label: 'Loan Releases', value: expenseMonitoring.loanReleases, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Released loan proceeds' },
+                  { label: 'CBU/Savings Withdrawals', value: expenseMonitoring.withdrawals, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Member withdrawal records' },
+                  { label: 'Petty Cash', value: expenseMonitoring.pettyCash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Office-use expenses' },
+                  { label: 'Other Expenses', value: expenseMonitoring.otherExpenses, color: 'bg-gray-50 border-gray-100', text: 'text-gray-700', sub: 'Other cash-out categories' },
+                ].map(card => (
+                  <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
+                    <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
+                    <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <select
               value={typeFilter}
@@ -1281,11 +1529,9 @@ export default function CoopMonitoringPage() {
               ))}
             </select>
 
-            <DateRangePicker from={dateRange.from} to={dateRange.to} onChange={setDateRange} />
-
             {hasFilters && (
               <button
-                onClick={() => { setTypeFilter(''); setCatFilter(''); setDateRange({ from: '', to: '' }); }}
+                onClick={() => { setTypeFilter(''); setCatFilter(''); setIncomePeriod('all'); setDateRange({ from: '', to: '' }); }}
                 className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
               >
                 Clear all filters
@@ -1306,7 +1552,7 @@ export default function CoopMonitoringPage() {
             </button>
 
             <p className="ml-auto self-center text-xs text-gray-400">
-              {filtered.length} of {transactions.length} transactions
+              {filtered.length} of {dateFilteredTransactions.length} transactions
             </p>
           </div>
 
@@ -1364,7 +1610,7 @@ export default function CoopMonitoringPage() {
               <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between">
                 <p className="text-xs text-gray-400">
                   Showing <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
-                  <span className="font-medium text-gray-600">{transactions.length}</span> transactions
+                  <span className="font-medium text-gray-600">{dateFilteredTransactions.length}</span> transactions
                 </p>
                 <div className="flex items-center gap-4 text-xs">
                   <span className="text-green-700 font-medium tabular-nums">
@@ -1462,6 +1708,11 @@ export default function CoopMonitoringPage() {
           </Button>
         </div>
       </Modal>
+
+      <FinancialMigrationImportModal
+        open={migrationModalOpen}
+        onClose={() => setMigrationModalOpen(false)}
+      />
     </div>
   );
 }
