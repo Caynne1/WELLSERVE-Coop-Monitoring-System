@@ -169,9 +169,10 @@ export function getFinancialMigrationTargetPage(category, type) {
   if (category.includes('TIME DEPOSIT')) return 'Time Deposit / Fund Monitoring';
   if (category.includes('BANK')) return 'Fund Monitoring';
   if (category.includes('PAYROLL') || category.includes('EXPENSE') || category.includes('PETTYCASH') || category.includes('GLOBE') || category.includes('LEYECO') || category.includes('OFFICE RENTAL') || category.includes('ADMIN')) {
-    return 'Expenses / Fund Monitoring';
+    return 'Expenses / Voucher / Checkbook / Fund Monitoring';
   }
   if (type === 'cash_in') return 'Fund Monitoring';
+  if (type === 'cash_out') return 'Expenses / Voucher / Checkbook / Fund Monitoring';
   return 'Expenses / Fund Monitoring';
 }
 

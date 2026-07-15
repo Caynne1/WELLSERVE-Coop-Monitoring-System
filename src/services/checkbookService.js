@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { releaseLoanFromCheck } from './loanWorkflowService';
+import { getImportedHistoricalRows, mapHistoricalCheck } from './historicalMigrationRecordService';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
 // Only these fields are ever written to the DB.
@@ -33,22 +34,32 @@ export async function getCheckbookEntries(filters = {}) {
 
   const { data: entries, error } = await query;
   if (error) throw error;
-  if (!entries || entries.length === 0) return [];
+  const entryRows = entries || [];
 
   // ── Optional join: attach linked voucher for display in detail modal ──────
-  const voucherIds = [...new Set(entries.map(e => e.voucher_id).filter(Boolean))];
-  if (voucherIds.length === 0) return entries;
+  const voucherIds = [...new Set(entryRows.map(e => e.voucher_id).filter(Boolean))];
+  let enriched = entryRows;
 
-  const { data: vouchers } = await supabase
-    .from('vouchers')
-    .select('id, voucher_no, payee, amount, status')
-    .in('id', voucherIds);
+  if (voucherIds.length > 0) {
+    const { data: vouchers } = await supabase
+      .from('vouchers')
+      .select('id, voucher_no, payee, amount, status')
+      .in('id', voucherIds);
 
-  const voucherMap = Object.fromEntries((vouchers || []).map(v => [v.id, v]));
-  return entries.map(e => ({
-    ...e,
-    vouchers: e.voucher_id ? (voucherMap[e.voucher_id] || null) : null,
-  }));
+    const voucherMap = Object.fromEntries((vouchers || []).map(v => [v.id, v]));
+    enriched = entryRows.map(e => ({
+      ...e,
+      vouchers: e.voucher_id ? (voucherMap[e.voucher_id] || null) : null,
+    }));
+  }
+
+  if (filters.status && filters.status !== 'historical') return enriched;
+
+  const historicalRows = await getImportedHistoricalRows('Checkbook', { flowType: 'cash_out' });
+  const historicalChecks = historicalRows.map(mapHistoricalCheck);
+
+  return [...enriched, ...historicalChecks]
+    .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0));
 }
 
 export async function getCheckbookEntryById(id) {

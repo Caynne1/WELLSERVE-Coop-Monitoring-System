@@ -937,7 +937,7 @@ export default function VouchersPage() {
                           </button>
                         )}
 
-                        {canEdit && (voucher.status === 'draft' || voucher.status === 'approved') && (
+                        {canEdit && (voucher.status === 'draft' || voucher.status === 'approved') && voucher.source !== 'imported' && voucher.record_type !== 'migrated_historical' && (
                           <button
                             onClick={() => setVoidTarget(voucher)}
                             title="Void Voucher"
@@ -1370,7 +1370,7 @@ export default function VouchersPage() {
               </Button>
             </div>
 
-            {(viewTarget.status === 'draft' || viewTarget.status === 'approved') && (
+            {(viewTarget.status === 'draft' || viewTarget.status === 'approved') && viewTarget.source !== 'imported' && viewTarget.record_type !== 'migrated_historical' && (
               <div className="flex justify-end gap-3 mt-5">
                 {viewTarget.status === 'draft' && (
                   <>

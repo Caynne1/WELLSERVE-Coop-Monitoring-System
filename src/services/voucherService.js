@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getLoanByReference, getLoanDeductionItems } from './loanWorkflowService';
+import { getImportedHistoricalRows, mapHistoricalVoucher } from './historicalMigrationRecordService';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
 // Only these fields are ever written to the DB.
@@ -71,11 +72,11 @@ export async function getVouchers(filters = {}) {
 
   const { data: vouchers, error } = await query;
   if (error) throw error;
-  if (!vouchers || vouchers.length === 0) return [];
+  const voucherRows = vouchers || [];
 
-  const expenseIds = [...new Set(vouchers.map(v => v.expense_id).filter(Boolean))];
-  const memberIds = [...new Set(vouchers.map(v => v.member_id).filter(Boolean))];
-  const accountIds = [...new Set(vouchers.map(v => v.account_id).filter(Boolean))];
+  const expenseIds = [...new Set(voucherRows.map(v => v.expense_id).filter(Boolean))];
+  const memberIds = [...new Set(voucherRows.map(v => v.member_id).filter(Boolean))];
+  const accountIds = [...new Set(voucherRows.map(v => v.account_id).filter(Boolean))];
 
   const [expensesRes, membersRes, accountsRes] = await Promise.all([
     expenseIds.length
@@ -93,12 +94,20 @@ export async function getVouchers(filters = {}) {
   const memberMap = Object.fromEntries((membersRes.data || []).map(m => [m.id, m]));
   const accountMap = Object.fromEntries((accountsRes.data || []).map(a => [a.id, a]));
 
-  return vouchers.map(v => ({
+  const enriched = voucherRows.map(v => ({
     ...v,
     expenses: v.expense_id ? (expenseMap[v.expense_id] || null) : null,
     members: v.member_id ? (memberMap[v.member_id] || null) : null,
     accounts: v.account_id ? (accountMap[v.account_id] || null) : null,
   }));
+
+  if (filters.status && filters.status !== 'historical') return enriched;
+
+  const historicalRows = await getImportedHistoricalRows('Voucher', { flowType: 'cash_out' });
+  const historicalVouchers = historicalRows.map(mapHistoricalVoucher);
+
+  return [...enriched, ...historicalVouchers]
+    .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0));
 }
 
 export async function getVoucherById(id) {

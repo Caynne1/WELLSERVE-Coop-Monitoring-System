@@ -155,7 +155,6 @@ export default function CheckbookPage() {
 
   const issuedList   = entries.filter(e => e.status === 'issued');
   const clearedList  = entries.filter(e => e.status === 'released' || e.status === 'cleared');
-  const totalIssued  = issuedList.reduce((s, e)  => s + (e.amount || 0), 0);
   const totalCleared = clearedList.reduce((s, e) => s + (e.amount || 0), 0);
   const linkedVoucherIds = new Set(
     entries
@@ -447,22 +446,20 @@ export default function CheckbookPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
         <SummaryCard
           icon={<Hash size={20} className="text-amber-500" />}
-          label="Issued"
-          value={`${issuedList.length} check${issuedList.length !== 1 ? 's' : ''}`}
-          sub={formatCurrency(totalIssued)}
+          label="Issued Checks"
+          value={issuedList.length}
           bg="bg-amber-50"
         />
         <SummaryCard
           icon={<CheckCircle size={20} className="text-green-600" />}
-          label="Released"
-          value={`${clearedList.length} check${clearedList.length !== 1 ? 's' : ''}`}
-          sub={formatCurrency(totalCleared)}
+          label="Released Checks"
+          value={clearedList.length}
           bg="bg-green-50"
         />
         <SummaryCard
           icon={<PesoSign size={20} className="text-blue-600" />}
-          label="Total Outstanding"
-          value={formatCurrency(totalIssued)}
+          label="Total Amount Released"
+          value={formatCurrency(totalCleared)}
           bg="bg-blue-50"
         />
       </div>

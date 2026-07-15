@@ -38,6 +38,31 @@ const CATEGORIES = [
   { value: 'salaries',    label: 'Salaries' },
   { value: 'maintenance', label: 'Maintenance' },
   { value: 'others',      label: 'Others' },
+  { value: 'LOAN RELEASES', label: 'LOAN RELEASES' },
+  { value: 'LOAN PAYMENT', label: 'LOAN PAYMENT' },
+  { value: 'LOAN ONLY / INTEREST', label: 'LOAN ONLY / INTEREST' },
+  { value: 'INTEREST', label: 'INTEREST' },
+  { value: 'SERVICE FEE', label: 'SERVICE FEE' },
+  { value: 'PENALTY', label: 'PENALTY' },
+  { value: 'MEMBERSHIP', label: 'MEMBERSHIP' },
+  { value: 'FOR CBU', label: 'FOR CBU' },
+  { value: 'FOR SAVINGS', label: 'FOR SAVINGS' },
+  { value: 'TIME DEPOSIT', label: 'TIME DEPOSIT' },
+  { value: 'COMMISSION FROM WELLIFE', label: 'COMMISSION FROM WELLIFE' },
+  { value: 'ADMIN & REGULATORY FEES', label: 'ADMIN & REGULATORY FEES' },
+  { value: 'BANK CHARGES / ADJUSTMENTS', label: 'BANK CHARGES / ADJUSTMENTS' },
+  { value: 'PAYROLL', label: 'PAYROLL' },
+  { value: 'PETTYCASH - OFFICE USE', label: 'PETTYCASH - OFFICE USE' },
+  { value: 'GLOBE', label: 'GLOBE' },
+  { value: 'LEYECO / UTILITIES', label: 'LEYECO / UTILITIES' },
+  { value: 'OFFICE RENTAL', label: 'OFFICE RENTAL' },
+  { value: 'OPERATING EXPENSES', label: 'OPERATING EXPENSES' },
+  { value: 'CBU AND SAVINGS WITHDRAWAL & TIME DEPOSIT WITHDRAWAL', label: 'CBU AND SAVINGS WITHDRAWAL & TIME DEPOSIT WITHDRAWAL' },
+  { value: 'BREAKDOWN OF BANK TRANSFERS', label: 'BREAKDOWN OF BANK TRANSFERS' },
+  { value: 'BANK DEPOSIT / BANK TRANSFER', label: 'BANK DEPOSIT / BANK TRANSFER' },
+  { value: 'OTHER WITHDRAWAL/EXPENSES', label: 'OTHER WITHDRAWAL/EXPENSES' },
+  { value: 'OTHER DEPOSIT', label: 'OTHER DEPOSIT' },
+  { value: 'NEEDS MANUAL REVIEW', label: 'NEEDS MANUAL REVIEW' },
 ];
 
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.value, c.label]));
@@ -482,7 +507,7 @@ export default function ExpensesPage() {
       />
 
       {/* ── Summary cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6 mb-6">
         <SummaryCard
           icon={<Clock size={20} className="text-amber-600" />}
           label="Pending Approval"
@@ -496,6 +521,12 @@ export default function ExpensesPage() {
           value={approvedList.length}
           sub={formatCurrency(approvedTotal)}
           bg="bg-green-50"
+        />
+        <SummaryCard
+          icon={<CheckCircle size={20} className="text-emerald-600" />}
+          label="Total Amount Approved"
+          value={formatCurrency(approvedTotal)}
+          bg="bg-emerald-50"
         />
         <SummaryCard
           icon={<Ban size={20} className="text-red-500" />}
@@ -683,7 +714,7 @@ export default function ExpensesPage() {
                             </button>
                           </>
                         )}
-                        {canEdit && expense.status !== 'voided' && (
+                        {canEdit && expense.status !== 'voided' && expense.source !== 'imported' && expense.record_type !== 'migrated_historical' && (
                           <button
                             onClick={() => setVoidTarget(expense)}
                             title="Void Expense"

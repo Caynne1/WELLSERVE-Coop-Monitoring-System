@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getImportedHistoricalRows, mapHistoricalExpense } from './historicalMigrationRecordService';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
 // Only these fields are ever written to the DB.
@@ -32,7 +33,15 @@ export async function getExpenses(filters = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+
+  const expenses = data || [];
+  if (filters.status && filters.status !== 'historical') return expenses;
+
+  const historicalRows = await getImportedHistoricalRows('Expenses', { flowType: 'cash_out' });
+  const historicalExpenses = historicalRows.map(mapHistoricalExpense);
+
+  return [...expenses, ...historicalExpenses]
+    .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0));
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
