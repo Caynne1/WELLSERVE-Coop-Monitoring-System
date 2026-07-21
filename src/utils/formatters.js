@@ -41,6 +41,30 @@ export function formatNumber(n) {
   return new Intl.NumberFormat('en-PH').format(n);
 }
 
+// ── Live-typing amount formatting ───────────────────────────────────────────
+// Used by "type=text" money inputs so the user sees thousand separators
+// while typing (e.g. "1000000" -> "1,000,000"), while the underlying form
+// state stays a clean numeric string ("1000000") for parseFloat/validation.
+
+// Strips everything except digits and a single decimal point, so pasted or
+// typed junk (extra commas, letters, extra dots) never breaks the field.
+export function cleanAmountInput(raw) {
+  let value = String(raw ?? '').replace(/[^0-9.]/g, '');
+  const firstDot = value.indexOf('.');
+  if (firstDot !== -1) {
+    value = value.slice(0, firstDot + 1) + value.slice(firstDot + 1).replace(/\./g, '');
+  }
+  return value;
+}
+
+// Adds thousand separators to the integer part for display, e.g. "1234.5" -> "1,234.5".
+export function formatAmountInput(raw) {
+  if (!raw) return '';
+  const [intPart, ...rest] = String(raw).split('.');
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return rest.length ? `${withCommas}.${rest.join('')}` : withCommas;
+}
+
 export function formatPercent(n) {
   if (n == null || isNaN(n)) return '0%';
   return `${Number(n).toFixed(2)}%`;

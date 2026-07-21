@@ -26,7 +26,7 @@ import {
 } from '../../services/checkbookService';
 // Load approved vouchers for the required voucher link dropdown.
 import { getVouchers } from '../../services/voucherService';
-import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -707,12 +707,11 @@ export default function CheckbookPage() {
             <Input
               label="Amount"
               required
-              type="number"
-              step="0.01"
-              min="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
-              value={form.amount}
-              onChange={e => setField('amount', e.target.value)}
+              value={formatAmountInput(form.amount)}
+              onChange={e => setField('amount', cleanAmountInput(e.target.value))}
               error={formErr.amount}
               disabled={!editTarget}
             />

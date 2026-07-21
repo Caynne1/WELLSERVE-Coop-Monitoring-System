@@ -13,7 +13,7 @@ import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import MemberSearchInput from '../../components/shared/MemberSearchInput';
 import { useAuth } from '../../context/AuthContext';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { trackActivity } from '../../services/logService';
 import { createInvoice, checkInvoiceNoExists } from '../../services/invoiceService';
 import { createTransaction } from '../../services/transactionService';
@@ -259,7 +259,9 @@ function TimeDepositForm({ form, onChange, showSiNumber }) {
         <input type="number" min="1" value={form.terms} onChange={set('terms')} placeholder="12" className={inputCls} />
       </Field>
       <Field label="Amount (₱)" required>
-        <input type="number" min="0" step="0.01" value={form.amount} onChange={set('amount')} placeholder="0.00" className={inputCls} />
+        <input type="text" inputMode="decimal" value={formatAmountInput(form.amount)}
+          onChange={e => onChange({ ...form, amount: cleanAmountInput(e.target.value) })}
+          placeholder="0.00" className={inputCls} />
       </Field>
       <Field label="Interest Rate (%)" required>
         <input type="number" min="0" step="0.01" value={form.interest_rate} onChange={set('interest_rate')} placeholder="5.00" className={inputCls} />
@@ -1389,11 +1391,10 @@ export default function TimeDepositPage() {
               </Field>
               <Field label="Amount Paid (₱)" required>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={payAmount}
-                  onChange={e => setPayAmount(e.target.value)}
+                  type="text"
+                  inputMode="decimal"
+                  value={formatAmountInput(payAmount)}
+                  onChange={e => setPayAmount(cleanAmountInput(e.target.value))}
                   placeholder="0.00"
                   className={inputCls}
                 />

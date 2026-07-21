@@ -54,7 +54,7 @@ import {
 import { createPenalty } from '../../services/penaltyService';
 import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
 import { createTransaction } from '../../services/transactionService';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
@@ -1496,11 +1496,10 @@ function PaymentField({ label, value, onChange }) {
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input
-        type="number"
-        step="0.01"
-        min="0"
-        value={value}
-        onChange={e => onChange(e.target.value)}
+        type="text"
+        inputMode="decimal"
+        value={formatAmountInput(value)}
+        onChange={e => onChange(cleanAmountInput(e.target.value))}
         placeholder="0.00"
         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
       />

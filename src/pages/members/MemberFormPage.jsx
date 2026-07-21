@@ -29,7 +29,7 @@ import { createTimeDeposit } from '../../services/timeDepositService';
 
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { supabase } from '../../services/supabase';
 
 const STATUS_OPTIONS = [
@@ -302,6 +302,29 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
   const isFull = kiddyItem ? (paid >= kiddyItem.amount && kiddyItem.amount > 0) : false;
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
 
+  // Wraps register() for money fields. While typing, the box shows the
+  // plain number so react-hook-form's own re-reads of the DOM stay a clean
+  // numeric string. Commas are only added for display once the field is
+  // blurred, and stripped again on focus so editing is never affected.
+  function registerAmount(name, options) {
+    const field = register(name, options);
+    return {
+      ...field,
+      onChange: e => {
+        e.target.value = cleanAmountInput(e.target.value);
+        field.onChange(e);
+      },
+      onBlur: e => {
+        field.onBlur(e);
+        e.target.value = formatAmountInput(cleanAmountInput(e.target.value));
+      },
+      onFocus: e => {
+        e.target.value = cleanAmountInput(e.target.value);
+      },
+    };
+  }
+
+
   return (
     <>
       {/* Child / Youth Information */}
@@ -511,10 +534,10 @@ function KiddyFormFields({ register, errors, watch, setValue, inModal,
                   <div className="relative">
                     <Input
                       label={`${kiddyItem.label} (₱${kiddyItem.amount.toLocaleString()})`}
-                      type="number" step="0.01" min="0"
+                      type="text" inputMode="decimal"
                       placeholder="0.00"
                       disabled={paymentOption !== 'partial'}
-                      {...register(`paid_${kiddyItem.key}`)}
+                      {...registerAmount(`paid_${kiddyItem.key}`)}
                     />
                     <p className={`text-xs mt-0.5 ${isFull ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>
                       {isFull ? '✓ Fully paid' : `Remaining: ₱${remaining.toLocaleString()}`}
@@ -723,6 +746,29 @@ export function MemberFormContent({
     : 0;
 
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
+
+  // Wraps register() for money fields. While typing, the box shows the
+  // plain number so react-hook-form's own re-reads of the DOM stay a clean
+  // numeric string. Commas are only added for display once the field is
+  // blurred, and stripped again on focus so editing is never affected.
+  function registerAmount(name, options) {
+    const field = register(name, options);
+    return {
+      ...field,
+      onChange: e => {
+        e.target.value = cleanAmountInput(e.target.value);
+        field.onChange(e);
+      },
+      onBlur: e => {
+        field.onBlur(e);
+        e.target.value = formatAmountInput(cleanAmountInput(e.target.value));
+      },
+      onFocus: e => {
+        e.target.value = cleanAmountInput(e.target.value);
+      },
+    };
+  }
+
 
   useEffect(() => {
     if (isEdit) loadMember();
@@ -1575,10 +1621,10 @@ export function MemberFormContent({
                             <span className="ml-1 text-amber-500 font-normal">(default ₱{def.toLocaleString()})</span>
                           </label>
                           <input
-                            type="number" step="0.01" min="0"
+                            type="text" inputMode="decimal"
                             placeholder={String(def)}
                             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
-                            {...register(field)}
+                            {...registerAmount(field)}
                           />
                         </div>
                       ))}
@@ -1695,10 +1741,10 @@ export function MemberFormContent({
                                   <div key={item.key} className="relative">
                                     <Input
                                       label={`${item.label} (₱${item.amount.toLocaleString()})`}
-                                      type="number" step="0.01" min="0"
+                                      type="text" inputMode="decimal"
                                       placeholder="0.00"
                                       disabled={isDisabled}
-                                      {...register(`paid_${item.key}`)}
+                                      {...registerAmount(`paid_${item.key}`)}
                                     />
                                     <p className={`text-xs mt-0.5 ${isFull ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>
                                       {isFull ? '✓ Fully paid' : `Remaining: ₱${remaining.toLocaleString()}`}
@@ -1752,9 +1798,9 @@ export function MemberFormContent({
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input label="CBU Account No." placeholder="Enter CBU account number" {...register('cbu_account_no')} />
-              <Input label="CBU Balance" type="number" step="0.01" min="0" placeholder="0.00" {...register('old_cbu_balance')} />
+              <Input label="CBU Balance" type="text" inputMode="decimal" placeholder="0.00" {...registerAmount('old_cbu_balance')} />
               <Input label="Savings Account No." placeholder="Enter Savings account number" {...register('savings_account_no')} />
-              <Input label="Savings Balance" type="number" step="0.01" min="0" placeholder="0.00" {...register('old_savings_balance')} />
+              <Input label="Savings Balance" type="text" inputMode="decimal" placeholder="0.00" {...registerAmount('old_savings_balance')} />
             </div>
           </div>
 
@@ -1767,7 +1813,7 @@ export function MemberFormContent({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
                 <Input label="Date Applied *" type="date" {...register('td_date_applied')} />
                 <Input label="Terms (months) *" type="number" min="1" placeholder="e.g. 12" {...register('td_terms')} />
-                <Input label="Amount *" type="number" step="0.01" min="0.01" placeholder="0.00" {...register('td_amount')} />
+                <Input label="Amount *" type="text" inputMode="decimal" placeholder="0.00" {...registerAmount('td_amount')} />
                 <Input label="Interest Rate (%) *" type="number" step="0.01" min="0" placeholder="e.g. 5.00" {...register('td_interest_rate')} />
                 <Input label="Termination / Maturity Date" type="date" {...register('td_termination_date')} />
               </div>

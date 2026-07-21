@@ -34,7 +34,7 @@ import {
   generateLoanPreview,
   frequencyDisplayLabel,
 } from '../../utils/loanCalculator';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const STATUS_OPTS = [
@@ -1475,17 +1475,28 @@ export default function LoanFormPage() {
             </div>
 
             <div>
-              <Input
-                label="Loan Proposal"
-                type="number"
-                step="0.01"
-                required
-                error={errors.loan_proposal?.message}
-                {...register('loan_proposal', {
+              {(() => {
+                const loanProposalField = register('loan_proposal', {
                   required: 'Loan Proposal is required',
                   min: { value: 1, message: 'Must be > 0' },
-                })}
-              />
+                });
+                return (
+                  <Input
+                    label="Loan Proposal"
+                    type="text"
+                    inputMode="decimal"
+                    required
+                    error={errors.loan_proposal?.message}
+                    {...loanProposalField}
+                    onChange={e => {
+                      const raw = cleanAmountInput(e.target.value);
+                      e.target.value = raw;
+                      loanProposalField.onChange(e);
+                      e.target.value = formatAmountInput(raw);
+                    }}
+                  />
+                );
+              })()}
               <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Principal amount to be released</p>
             </div>
 

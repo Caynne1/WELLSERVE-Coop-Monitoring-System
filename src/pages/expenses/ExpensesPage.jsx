@@ -26,7 +26,7 @@ import {
 } from '../../services/expenseService';
 import { createVoucherFromExpense, voidVoucher } from '../../services/voucherService';
 import { getLoansForExpenseCreation, buildLoanExpensePayload } from '../../services/loanWorkflowService';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -813,12 +813,11 @@ export default function ExpensesPage() {
             <Input
               label="Amount"
               required
-              type="number"
-              step="0.01"
-              min="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
-              value={form.amount}
-              onChange={e => setField('amount', e.target.value)}
+              value={formatAmountInput(form.amount)}
+              onChange={e => setField('amount', cleanAmountInput(e.target.value))}
               error={formErr.amount}
             />
             <Input

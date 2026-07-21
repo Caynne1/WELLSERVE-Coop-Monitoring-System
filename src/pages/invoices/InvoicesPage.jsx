@@ -24,7 +24,7 @@ import {
   getMemberPaymentSummary,
   createMultiCategoryInvoice,
 } from '../../services/invoiceService';
-import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -822,12 +822,11 @@ export default function InvoicesPage() {
           <Input
             label="Amount"
             required
-            type="number"
-            step="0.01"
-            min="0.01"
+            type="text"
+            inputMode="decimal"
             placeholder="0.00"
-            value={form.amount}
-            onChange={e => setField('amount', e.target.value)}
+            value={formatAmountInput(form.amount)}
+            onChange={e => setField('amount', cleanAmountInput(e.target.value))}
             error={formErr.amount}
           />
 
@@ -1481,12 +1480,11 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                       <td className="px-4 py-3 text-right">
                         {info.payable ? (
                           <input
-                            type="number"
-                            step="0.01"
-                            min="0"
+                            type="text"
+                            inputMode="decimal"
                             placeholder="0.00"
-                            value={amounts[cat] || ''}
-                            onChange={e => setAmount(cat, e.target.value)}
+                            value={formatAmountInput(amounts[cat] || '')}
+                            onChange={e => setAmount(cat, cleanAmountInput(e.target.value))}
                             className="w-32 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                           />
                         ) : (

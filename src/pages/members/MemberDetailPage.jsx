@@ -51,7 +51,7 @@ import { exportMemberReport } from '../../utils/excelExport.js';
 import { createInvoiceForPayment, createInvoice, checkInvoiceNoExists } from '../../services/invoiceService';
 import { trackActivity } from '../../services/logService';
 
-import { formatDate, formatCurrency, formatDateTime } from '../../utils/formatters';
+import { formatDate, formatCurrency, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const TABS = [
@@ -1464,12 +1464,11 @@ function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefres
       <Modal open={open} onClose={() => setOpen(false)} title="Add Penalty" size="sm">
         <div className="space-y-4">
           <input
-            type="number"
-            step="0.01"
-            min="0.01"
+            type="text"
+            inputMode="decimal"
             placeholder="Amount"
-            value={amount}
-            onChange={e => setAmount(e.target.value)}
+            value={formatAmountInput(amount)}
+            onChange={e => setAmount(cleanAmountInput(e.target.value))}
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
           />
           <input
@@ -1997,12 +1996,10 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             Loan Payment <span className="text-gray-400">(max {formatCurrency(loan?.balance ?? 0)})</span>
           </label>
           <input
-            type="number"
-            step="0.01"
-            min="0"
-            max={loan?.balance ?? undefined}
-            value={loanAmt}
-            onChange={e => setLoanAmt(e.target.value)}
+            type="text"
+            inputMode="decimal"
+            value={formatAmountInput(loanAmt)}
+            onChange={e => setLoanAmt(cleanAmountInput(e.target.value))}
             placeholder="0.00"
             className={fieldClass}
           />
@@ -2013,11 +2010,10 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             CBU Deposit <span className="text-gray-400">(current: {formatCurrency(cbuAccount?.balance ?? 0)})</span>
           </label>
           <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={cbuAmt}
-            onChange={e => setCbuAmt(e.target.value)}
+            type="text"
+            inputMode="decimal"
+            value={formatAmountInput(cbuAmt)}
+            onChange={e => setCbuAmt(cleanAmountInput(e.target.value))}
             placeholder="0.00"
             className={fieldClass}
           />
@@ -2028,11 +2024,10 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             Savings Deposit <span className="text-gray-400">(current: {formatCurrency(savingsAccount?.balance ?? 0)})</span>
           </label>
           <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={savingsAmt}
-            onChange={e => setSavingsAmt(e.target.value)}
+            type="text"
+            inputMode="decimal"
+            value={formatAmountInput(savingsAmt)}
+            onChange={e => setSavingsAmt(cleanAmountInput(e.target.value))}
             placeholder="0.00"
             className={fieldClass}
           />
@@ -2242,11 +2237,10 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
           <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={amount}
-            onChange={e => setAmount(e.target.value)}
+            type="text"
+            inputMode="decimal"
+            value={formatAmountInput(amount)}
+            onChange={e => setAmount(cleanAmountInput(e.target.value))}
             placeholder="0.00"
             autoFocus
             className={fieldClass}
@@ -3362,8 +3356,8 @@ function MembershipTab({
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Payment Amount <span className="text-red-400">*</span>
                 </label>
-                <input type="number" step="0.01" min="0" placeholder="0.00"
-                  value={payTotalAmount} onChange={e => setPayTotalAmount(e.target.value)} className={fieldClass} />
+                <input type="text" inputMode="decimal" placeholder="0.00"
+                  value={formatAmountInput(payTotalAmount)} onChange={e => setPayTotalAmount(cleanAmountInput(e.target.value))} className={fieldClass} />
                 {allocationPreview.length > 0 && (
                   <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 space-y-1">
                     <p className="text-xs font-semibold text-blue-700 mb-1.5">Allocation Preview</p>
@@ -3399,25 +3393,25 @@ function MembershipTab({
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Membership Entry <span className="text-gray-400">(optional)</span>
                 </label>
-                <input type="number" step="0.01" min="0"
+                <input type="text" inputMode="decimal"
                   placeholder={membershipFees ? `e.g. ₱${membershipFees.entry.toLocaleString()}` : '0.00'}
-                  value={payEntry} onChange={e => setPayEntry(e.target.value)} className={fieldClass} />
+                  value={formatAmountInput(payEntry)} onChange={e => setPayEntry(cleanAmountInput(e.target.value))} className={fieldClass} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   CBU <span className="text-gray-400">(optional)</span>
                 </label>
-                <input type="number" step="0.01" min="0"
+                <input type="text" inputMode="decimal"
                   placeholder={membershipFees ? `e.g. ₱${membershipFees.cbu.toLocaleString()}` : '0.00'}
-                  value={payCbu} onChange={e => setPayCbu(e.target.value)} className={fieldClass} />
+                  value={formatAmountInput(payCbu)} onChange={e => setPayCbu(cleanAmountInput(e.target.value))} className={fieldClass} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Savings <span className="text-gray-400">(optional)</span>
                 </label>
-                <input type="number" step="0.01" min="0"
+                <input type="text" inputMode="decimal"
                   placeholder={membershipFees ? `e.g. ₱${membershipFees.savings.toLocaleString()}` : '0.00'}
-                  value={paySavings} onChange={e => setPaySavings(e.target.value)} className={fieldClass} />
+                  value={formatAmountInput(paySavings)} onChange={e => setPaySavings(cleanAmountInput(e.target.value))} className={fieldClass} />
               </div>
               <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 flex justify-between text-sm">
                 <span className="text-gray-500">Total</span>
@@ -3799,8 +3793,8 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₱) <span className="text-red-400">*</span></label>
-            <input type="number" min="0" step="0.01" placeholder="0.00" value={tdForm.amount}
-              onChange={e => setTdForm(f => ({ ...f, amount: e.target.value }))}
+            <input type="text" inputMode="decimal" placeholder="0.00" value={formatAmountInput(tdForm.amount)}
+              onChange={e => setTdForm(f => ({ ...f, amount: cleanAmountInput(e.target.value) }))}
               className={tdFieldClass} />
           </div>
           <div>
@@ -3867,8 +3861,8 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (₱) <span className="text-red-400">*</span></label>
-                <input type="number" min="0" step="0.01" placeholder="0.00" value={payAmount}
-                  onChange={e => setPayAmount(e.target.value)} className={tdFieldClass} />
+                <input type="text" inputMode="decimal" placeholder="0.00" value={formatAmountInput(payAmount)}
+                  onChange={e => setPayAmount(cleanAmountInput(e.target.value))} className={tdFieldClass} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Payment Date <span className="text-red-400">*</span></label>

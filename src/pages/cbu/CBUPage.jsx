@@ -27,7 +27,7 @@ import { getAllCBUAccounts } from '../../services/accountService';
 import { createTransaction } from '../../services/transactionService';
 import { createInvoiceForPayment, checkInvoiceNoExists } from '../../services/invoiceService';
 import { getApprovedWithdrawalVouchers, markVoucherUsed } from '../../services/voucherService';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const PAYMENT_MODE_OPTIONS = [
@@ -587,11 +587,10 @@ export default function CBUPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={amount}
-                  onChange={e => setAmount(e.target.value)}
+                  type="text"
+                  inputMode="decimal"
+                  value={formatAmountInput(amount)}
+                  onChange={e => setAmount(cleanAmountInput(e.target.value))}
                   placeholder="0.00"
                   autoFocus
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]"

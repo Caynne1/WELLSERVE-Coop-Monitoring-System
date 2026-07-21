@@ -28,7 +28,7 @@ import {
 import { getExpenses } from '../../services/expenseService';
 import { getMembers } from '../../services/memberService';
 import { getAccountsByMemberId } from '../../services/accountService';
-import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
+import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1021,12 +1021,11 @@ export default function VouchersPage() {
             <Input
               label="Amount"
               required
-              type="number"
-              step="0.01"
-              min="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
-              value={form.amount}
-              onChange={e => setField('amount', e.target.value)}
+              value={formatAmountInput(form.amount)}
+              onChange={e => setField('amount', cleanAmountInput(e.target.value))}
               error={formErr.amount}
             />
           </div>
@@ -1213,11 +1212,11 @@ export default function VouchersPage() {
                   Matches the LOAN / PF / DEL / PB / ADV lines on the printed slip. Leave blank if not applicable.
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <Input label="LOAN" type="number" step="0.01" min="0" value={form.loan_amount} onChange={e => setField('loan_amount', e.target.value)} />
-                  <Input label="PF" type="number" step="0.01" min="0" value={form.pf_amount} onChange={e => setField('pf_amount', e.target.value)} />
-                  <Input label="DEL." type="number" step="0.01" min="0" value={form.del_amount} onChange={e => setField('del_amount', e.target.value)} />
-                  <Input label="PB" type="number" step="0.01" min="0" value={form.pb_amount} onChange={e => setField('pb_amount', e.target.value)} />
-                  <Input label="ADV" type="number" step="0.01" min="0" value={form.adv_amount} onChange={e => setField('adv_amount', e.target.value)} />
+                  <Input label="LOAN" type="text" inputMode="decimal" value={formatAmountInput(form.loan_amount)} onChange={e => setField('loan_amount', cleanAmountInput(e.target.value))} />
+                  <Input label="PF" type="text" inputMode="decimal" value={formatAmountInput(form.pf_amount)} onChange={e => setField('pf_amount', cleanAmountInput(e.target.value))} />
+                  <Input label="DEL." type="text" inputMode="decimal" value={formatAmountInput(form.del_amount)} onChange={e => setField('del_amount', cleanAmountInput(e.target.value))} />
+                  <Input label="PB" type="text" inputMode="decimal" value={formatAmountInput(form.pb_amount)} onChange={e => setField('pb_amount', cleanAmountInput(e.target.value))} />
+                  <Input label="ADV" type="text" inputMode="decimal" value={formatAmountInput(form.adv_amount)} onChange={e => setField('adv_amount', cleanAmountInput(e.target.value))} />
                 </div>
               </div>
 
