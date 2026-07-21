@@ -61,6 +61,10 @@ const CATEGORIES = [
 
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.value, c.label]));
 
+// Alphabetical copy used only for the Add/Edit Expense modal's Category
+// dropdown, so the filter bar above the table keeps its original order.
+const CATEGORIES_ALPHA = [...CATEGORIES].sort((a, b) => a.label.localeCompare(b.label));
+
 const CATEGORY_BADGE = {
   utilities:   'info',
   office:      'purple',
@@ -778,7 +782,7 @@ export default function ExpensesPage() {
               value={form.category}
               onChange={e => setField('category', e.target.value)}
               placeholder="Select category"
-              options={CATEGORIES}
+              options={CATEGORIES_ALPHA}
               error={formErr.category}
             />
           </div>
