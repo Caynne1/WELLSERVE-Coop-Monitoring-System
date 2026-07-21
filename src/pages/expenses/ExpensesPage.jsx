@@ -32,12 +32,6 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { value: 'loan_net_proceeds', label: 'Loan Net Proceeds' },
-  { value: 'utilities',   label: 'Utilities' },
-  { value: 'office',      label: 'Office' },
-  { value: 'salaries',    label: 'Salaries' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'others',      label: 'Others' },
   { value: 'LOAN RELEASES', label: 'LOAN RELEASES' },
   { value: 'LOAN PAYMENT', label: 'LOAN PAYMENT' },
   { value: 'LOAN ONLY / INTEREST', label: 'LOAN ONLY / INTEREST' },
