@@ -34,25 +34,15 @@ function sanitizeVoucherPayload(payload) {
   );
 }
 
-// ── Voucher number generation ─────────────────────────────────────────────────
-// Format: VCH-YYYY-NNN
-// Counts all vouchers for the current year and increments by 1.
-// Not guaranteed to be gap-free (voided records still count),
-// which is correct behaviour for an audit trail.
+export const NEED_VOUCHER_NUMBER_PREFIX = 'NEED-VOUCHER-NUMBER';
 
-async function generateVoucherNo() {
-  const year = new Date().getFullYear();
-  const prefix = `VCH-${year}-`;
+export function makeNeedVoucherNumber(expenseId = '') {
+  const suffix = String(expenseId || Date.now()).replace(/[^A-Za-z0-9]/g, '').slice(0, 12);
+  return `${NEED_VOUCHER_NUMBER_PREFIX}-${suffix}`;
+}
 
-  const { count, error } = await supabase
-    .from('vouchers')
-    .select('*', { count: 'exact', head: true })
-    .like('voucher_no', `${prefix}%`);
-
-  if (error) throw error;
-
-  const next = String((count || 0) + 1).padStart(3, '0');
-  return `${prefix}${next}`;
+export function isNeedVoucherNumber(value = '') {
+  return String(value || '').startsWith(`${NEED_VOUCHER_NUMBER_PREFIX}-`);
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
@@ -140,11 +130,8 @@ export async function getApprovedWithdrawalVouchers({ member_id, account_id, acc
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
-// voucher_no is always auto-generated unless caller explicitly supplies one.
-// This preserves your old flow while allowing future manual override if needed.
-
 export async function createVoucher(payload) {
-  const voucher_no = payload?.voucher_no?.trim() || await generateVoucherNo();
+  const voucher_no = payload?.voucher_no?.trim() || null;
 
   const clean = sanitizeVoucherPayload({
     status: 'draft',
@@ -178,6 +165,7 @@ export async function createVoucherFromExpense(expense, createdBy) {
     : null;
 
   return createVoucher({
+    voucher_no: makeNeedVoucherNumber(expense.id),
     date: expense.date,
     payee: expense.payee,
     purpose: expense.description || categoryLabel,
@@ -204,7 +192,8 @@ function extractLoanReference(value = '') {
 
 // helper specifically for member-account withdrawals
 export async function createMemberWithdrawalVoucher(payload) {
-  const voucher_no = payload?.voucher_no?.trim() || await generateVoucherNo();
+  const voucher_no = payload?.voucher_no?.trim();
+  if (!voucher_no) throw new Error('Voucher number is required.');
 
   const clean = sanitizeVoucherPayload({
     status: 'draft',
@@ -224,13 +213,11 @@ export async function createMemberWithdrawalVoucher(payload) {
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
-// Only safe to call on draft vouchers. The page enforces this;
-// voucher_no is excluded from the whitelist so it can never be overwritten.
+// Only safe to call on draft vouchers. The page enforces this.
 
 export async function updateVoucher(id, payload) {
   const clean = sanitizeVoucherPayload(payload);
 
-  delete clean.voucher_no;
   delete clean.status;
 
   const { data, error } = await supabase

@@ -24,7 +24,7 @@ import {
   approveExpense,
   linkExpenseVoucher,
 } from '../../services/expenseService';
-import { createVoucherFromExpense, voidVoucher } from '../../services/voucherService';
+import { createVoucherFromExpense, isNeedVoucherNumber, voidVoucher } from '../../services/voucherService';
 import { getLoansForExpenseCreation, buildLoanExpensePayload } from '../../services/loanWorkflowService';
 import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -84,6 +84,11 @@ const STATUS_LABEL = {
   approved: 'Approved',
   voided:   'Voided',
 };
+
+function voucherDisplay(value) {
+  if (!value) return '';
+  return isNeedVoucherNumber(value) ? 'Need Voucher Number' : value;
+}
 
 // Column defs shared by header + body so alignment can never drift between
 // the two — this is the same pattern used by the Loans / Vouchers tables.
@@ -361,7 +366,7 @@ export default function ExpensesPage() {
     }
   }
 
-  // ── Approve (creates + links a voucher automatically) ────────────────────────
+  // ── Approve ──────────────────────────────────────────────────────────────────
 
   async function handleApprove() {
     if (!approveTarget) return;
@@ -375,17 +380,19 @@ export default function ExpensesPage() {
       const approved = await approveExpense(approveTarget.id, user?.id ?? null);
       trackActivity({ userId: user?.id, module: 'expense', action: 'approve', description: `Approved expense: ${approved.description} — ${approved.amount}` });
 
-      let voucherNo = null;
       try {
         const voucher = await createVoucherFromExpense(approved, user?.id ?? null);
-        await linkExpenseVoucher(approved.id, voucher.id, voucher.voucher_no);
-        voucherNo = voucher.voucher_no;
-        trackActivity({ userId: user?.id, module: 'voucher', action: 'create', description: `Auto-created voucher ${voucher.voucher_no} from approved expense: ${approved.description}` });
+        await linkExpenseVoucher(approved.id, voucher.id, voucher.voucher_no || null);
+        trackActivity({
+          userId: user?.id,
+          module: 'voucher',
+          action: 'create',
+          description: `Auto-created draft voucher for approved expense: ${approved.description}`,
+        });
+        toast.success('Expense approved. Draft voucher created; edit it to add the voucher number.');
       } catch (voucherErr) {
-        toast.error('Expense approved, but the linked voucher could not be created: ' + (voucherErr.message || 'Unknown error.'));
+        toast.error(`Expense approved, but the draft voucher could not be created: ${voucherErr.message || 'Unknown error.'}`);
       }
-
-      toast.success(voucherNo ? `Expense approved. Voucher ${voucherNo} created.` : 'Expense approved.');
       setApproveTarget(null);
       fetchExpenses();
     } catch (err) {
@@ -431,7 +438,7 @@ export default function ExpensesPage() {
       <td>${e.payee||'—'}</td>
       <td style="text-align:right;font-weight:600">${fmt(e.amount)}</td>
       <td style="text-align:center">${STATUS_LABEL[e.status]||e.status||'—'}</td>
-      <td style="text-align:center;font-family:monospace">${e.voucher_no||'—'}</td>
+      <td style="text-align:center;font-family:monospace">${voucherDisplay(e.voucher_no)||'—'}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Expenses</h1>
@@ -685,8 +692,12 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       {expense.voucher_no ? (
-                        <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                          {expense.voucher_no}
+                        <span className={`font-mono text-xs font-semibold px-2 py-0.5 rounded ${
+                          isNeedVoucherNumber(expense.voucher_no)
+                            ? 'text-amber-700 bg-amber-50'
+                            : 'text-gray-700 bg-gray-100'
+                        }`}>
+                          {voucherDisplay(expense.voucher_no)}
                         </span>
                       ) : (
                         <span className="text-gray-300">—</span>
@@ -868,7 +879,7 @@ export default function ExpensesPage() {
         {approveTarget && (
           <>
             <p className="text-sm text-gray-600 mb-3">
-              Approve the following expense? A voucher will be created and linked automatically.
+              Approve the following expense? A draft voucher will be created automatically, then you can edit it to add the voucher number.
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-medium text-gray-900 text-sm">{approveTarget.description}</p>

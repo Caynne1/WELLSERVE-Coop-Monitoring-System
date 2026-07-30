@@ -514,7 +514,7 @@ export default function CheckbookPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Check No.', 'Date', 'Payee', 'Purpose', 'Bank', 'Amount', 'Status', ''].map(h => (
+                  {['Check No.', 'Date', 'Payee', 'Purpose', 'Bank', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -691,7 +691,31 @@ export default function CheckbookPage() {
               disabled={!editTarget}
             />
           </div>
-
+          {/* Linked voucher stays directly under Check No. / Date so the user selects it first. */}
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-gray-700">
+              Linked Voucher <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={form.voucher_id}
+              onChange={e => applyVoucherToForm(e.target.value)}
+              className={`px-3 py-2 text-sm border rounded-lg
+                focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition ${
+                  formErr.voucher_id ? 'border-red-300' : 'border-gray-200'
+                }`}
+            >
+              <option value="">— None —</option>
+              {availableVouchers.map(v => (
+                <option key={v.id} value={v.id}>
+                  {v.voucher_no} · {v.payee} · {formatCurrency(v.amount)}
+                </option>
+              ))}
+            </select>
+            {formErr.voucher_id && <p className="text-xs text-red-500">{formErr.voucher_id}</p>}
+            <p className="text-xs text-gray-400">
+              Selecting a voucher fills the check details. Only Check No. is manually entered for new checks.
+            </p>
+          </div>
           <Input
             label="Payee"
             required
@@ -718,7 +742,7 @@ export default function CheckbookPage() {
             <Input
               label="Bank"
               type="text"
-              placeholder="Filled from linked voucher when available"
+              placeholder="Optional"
               value={form.bank}
               onChange={e => setField('bank', e.target.value)}
               disabled={!editTarget}
@@ -735,32 +759,6 @@ export default function CheckbookPage() {
             error={formErr.purpose}
             disabled={!editTarget}
           />
-
-          {/* [ADDED] Optional voucher link ──────────────────────────────────── */}
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-gray-700">
-              Linked Voucher <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={form.voucher_id}
-              onChange={e => applyVoucherToForm(e.target.value)}
-              className={`px-3 py-2 text-sm border rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition ${
-                  formErr.voucher_id ? 'border-red-300' : 'border-gray-200'
-                }`}
-            >
-              <option value="">— None —</option>
-              {availableVouchers.map(v => (
-                <option key={v.id} value={v.id}>
-                  {v.voucher_no} · {v.payee} · {formatCurrency(v.amount)}
-                </option>
-              ))}
-            </select>
-            {formErr.voucher_id && <p className="text-xs text-red-500">{formErr.voucher_id}</p>}
-            <p className="text-xs text-gray-400">
-              Selecting a voucher fills the check details. Only Check No. is manually entered for new checks.
-            </p>
-          </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">Notes</label>

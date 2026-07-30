@@ -21,11 +21,12 @@ import {
   getVouchers,
   createVoucher,
   createMemberWithdrawalVoucher,
+  isNeedVoucherNumber,
   updateVoucher,
   approveVoucher,
   voidVoucher,
 } from '../../services/voucherService';
-import { getExpenses } from '../../services/expenseService';
+import { getExpenses, linkExpenseVoucher } from '../../services/expenseService';
 import { getMembers } from '../../services/memberService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
@@ -60,6 +61,7 @@ const PAYMENT_MODE_OPTIONS = [
 ];
 
 const EMPTY_FORM = {
+  voucher_no: '',
   voucher_kind: 'expense',
   date: new Date().toISOString().split('T')[0],
   payee: '',
@@ -100,6 +102,26 @@ function memberLabel(member) {
 function voucherKindLabel(kind) {
   if (kind === 'member_withdrawal') return 'Member Withdrawal';
   return 'Expense';
+}
+
+function needsVoucherNumber(voucher) {
+  return voucher?.status === 'draft' && (!voucher.voucher_no?.trim() || isNeedVoucherNumber(voucher.voucher_no));
+}
+
+function voucherStatusLabel(voucher) {
+  if (needsVoucherNumber(voucher)) return 'Need Voucher Number';
+  if (voucher?.status === 'draft') return 'Pending Approval';
+  return STATUS_LABEL[voucher?.status] || voucher?.status || '';
+}
+
+function voucherStatusBadge(voucher) {
+  if (needsVoucherNumber(voucher)) return 'warning';
+  return STATUS_BADGE[voucher?.status] || 'default';
+}
+
+function voucherNoDisplay(value) {
+  if (!value) return '';
+  return isNeedVoucherNumber(value) ? 'Need Voucher Number' : value;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -158,8 +180,8 @@ export default function VouchersPage() {
   }, [fetchVouchers]);
 
   useEffect(() => {
-    getExpenses({ status: 'recorded' })
-      .then(setExpenseList)
+    getExpenses({ status: 'approved' })
+      .then(expenses => setExpenseList((expenses || []).filter(exp => !exp.voucher_id)))
       .catch(() => setExpenseList([]));
 
     getMembers()
@@ -222,13 +244,16 @@ export default function VouchersPage() {
   const active = vouchers.filter(v => v.status !== 'voided');
   const approvedList = vouchers.filter(v => v.status === 'approved');
   const draftList = vouchers.filter(v => v.status === 'draft');
+  const needVoucherNoList = draftList.filter(needsVoucherNumber);
+  const pendingApprovalList = draftList.filter(v => !needsVoucherNumber(v));
   const totalActive = active.reduce((s, v) => s + (v.amount || 0), 0);
+  const lockedExpenseVoucher = Boolean(editTarget && form.voucher_kind === 'expense' && form.expense_id);
 
   // ── Form helpers ────────────────────────────────────────────────────────────
 
   function handlePrint() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
-    const statusLabel = {draft:'Draft',approved:'Approved',voided:'Voided'};
+    const statusLabel = {draft:'Pending Approval',approved:'Approved',voided:'Voided'};
     const kindLabel = {expense:'Expense',member_withdrawal:'Member Withdrawal'};
     const rows = filtered.map(v => `<tr>
       <td style="text-align:center;font-family:monospace">${v.voucher_no||'—'}</td>
@@ -296,7 +321,7 @@ export default function VouchersPage() {
       <html>
         <head>
           <meta charset="UTF-8"/>
-          <title>Cash Voucher — ${voucher.voucher_no}</title>
+          <title>Cash Voucher — ${voucherNoDisplay(voucher.voucher_no) || '—'}</title>
           <style>
             * { box-sizing: border-box; }
             body { font-family: 'Courier New', Courier, monospace; color: #111; padding: 24px; }
@@ -340,7 +365,7 @@ export default function VouchersPage() {
 
             <div class="title-row">
               <h2>CASH VOUCHER</h2>
-              <span class="voucher-no">No. ${voucher.voucher_no || '—'}</span>
+              <span class="voucher-no">No. ${voucherNoDisplay(voucher.voucher_no) || '—'}</span>
             </div>
 
             <div class="row">
@@ -433,13 +458,13 @@ export default function VouchersPage() {
     try {
       if (filtered.length === 0) { toast.error('No vouchers to export.'); return; }
       const rows = filtered.map(v => ({
-        voucher_no: v.voucher_no || '',
+        voucher_no: voucherNoDisplay(v.voucher_no),
         type: voucherKindLabel(v.voucher_kind),
         date: v.date || '',
         payee: v.payee || '',
         purpose: v.purpose || '',
         amount: v.amount || 0,
-        status: STATUS_LABEL[v.status] || v.status || '',
+        status: voucherStatusLabel(v),
         notes: v.notes || '',
       }));
       exportToCSV('vouchers_report.csv', rows);
@@ -472,6 +497,7 @@ export default function VouchersPage() {
     }
     setEditTarget(voucher);
     setForm({
+      voucher_no: isNeedVoucherNumber(voucher.voucher_no) ? '' : (voucher.voucher_no || ''),
       voucher_kind: voucher.voucher_kind || 'expense',
       date: voucher.date || '',
       payee: voucher.payee || '',
@@ -559,6 +585,19 @@ export default function VouchersPage() {
   function validateForm() {
     const errs = {};
 
+    const voucherNo = form.voucher_no.trim();
+    if (!voucherNo) {
+      errs.voucher_no = 'Voucher number is required.';
+    } else {
+      const duplicate = vouchers.some(v =>
+        v.id !== editTarget?.id &&
+        !isNeedVoucherNumber(v.voucher_no) &&
+        String(v.voucher_no || '').trim().toLowerCase() === voucherNo.toLowerCase()
+      );
+      if (duplicate) errs.voucher_no = 'This voucher number is already used.';
+    }
+    if (lockedExpenseVoucher) return errs;
+
     if (!form.date) errs.date = 'Date is required.';
 
     const amt = parseFloat(form.amount);
@@ -601,6 +640,7 @@ export default function VouchersPage() {
     setSaving(true);
     try {
       const basePayload = {
+        voucher_no: form.voucher_no.trim(),
         date: form.date,
         payee: form.payee.trim(),
         purpose: form.purpose.trim(),
@@ -636,7 +676,8 @@ export default function VouchersPage() {
         };
 
         if (editTarget) {
-          await updateVoucher(editTarget.id, payload);
+          const voucher = await updateVoucher(editTarget.id, payload);
+          if (payload.expense_id) await linkExpenseVoucher(payload.expense_id, voucher.id, voucher.voucher_no);
           toast.success('Withdrawal voucher updated.');
           trackActivity({ userId: user?.id, module: 'voucher', action: 'update', description: `Updated withdrawal voucher for ${form.payee.trim()}` });
         } else {
@@ -645,6 +686,18 @@ export default function VouchersPage() {
           trackActivity({ userId: user?.id, module: 'voucher', action: 'create', description: `Created withdrawal voucher for ${form.payee.trim()} — ₱${form.amount}` });
         }
       } else {
+        if (lockedExpenseVoucher) {
+          const voucher = await updateVoucher(editTarget.id, {
+            voucher_no: form.voucher_no.trim(),
+          });
+          await linkExpenseVoucher(form.expense_id, voucher.id, voucher.voucher_no);
+          toast.success('Voucher number updated.');
+          trackActivity({ userId: user?.id, module: 'voucher', action: 'update', description: `Updated voucher number: ${voucher.voucher_no}` });
+          setFormOpen(false);
+          fetchVouchers();
+          return;
+        }
+
         const payload = {
           ...basePayload,
           voucher_kind: 'expense',
@@ -657,11 +710,13 @@ export default function VouchersPage() {
         };
 
         if (editTarget) {
-          await updateVoucher(editTarget.id, payload);
+          const voucher = await updateVoucher(editTarget.id, payload);
+          if (payload.expense_id) await linkExpenseVoucher(payload.expense_id, voucher.id, voucher.voucher_no);
           toast.success('Voucher updated.');
           trackActivity({ userId: user?.id, module: 'voucher', action: 'update', description: `Updated voucher: ${form.purpose.trim()}` });
         } else {
-          await createVoucher(payload);
+          const voucher = await createVoucher(payload);
+          if (payload.expense_id) await linkExpenseVoucher(payload.expense_id, voucher.id, voucher.voucher_no);
           toast.success('Voucher created.');
           trackActivity({ userId: user?.id, module: 'voucher', action: 'create', description: `Created voucher: ${form.purpose.trim()} — ₱${form.amount}` });
         }
@@ -670,7 +725,12 @@ export default function VouchersPage() {
       setFormOpen(false);
       fetchVouchers();
     } catch (err) {
-      toast.error(err.message || 'Failed to save voucher.');
+      const isDuplicate = err.message?.includes('unique') || err.code === '23505';
+      toast.error(
+        isDuplicate
+          ? `Voucher number "${form.voucher_no}" already exists.`
+          : err.message || 'Failed to save voucher.'
+      );
     } finally {
       setSaving(false);
     }
@@ -683,6 +743,10 @@ export default function VouchersPage() {
     if (!canEdit) {
       toast.error('You do not have permission to edit vouchers');
       setApproveTarget(null);
+      return;
+    }
+    if (!approveTarget.voucher_no?.trim()) {
+      toast.error('Please edit this voucher and enter the voucher number before approval.');
       return;
     }
     setApproving(true);
@@ -738,7 +802,7 @@ export default function VouchersPage() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-6 mb-6">
         <SummaryCard
           icon={<PesoSign size={20} className="text-green-600" />}
           label="Total Amount"
@@ -753,9 +817,15 @@ export default function VouchersPage() {
         />
         <SummaryCard
           icon={<AlertTriangle size={20} className="text-amber-500" />}
-          label="Pending Draft"
-          value={draftList.length}
+          label="Need Voucher No."
+          value={needVoucherNoList.length}
           bg="bg-amber-50"
+        />
+        <SummaryCard
+          icon={<FileText size={20} className="text-purple-600" />}
+          label="Pending Approval"
+          value={pendingApprovalList.length}
+          bg="bg-purple-50"
         />
       </div>
 
@@ -850,8 +920,12 @@ export default function VouchersPage() {
                     }`}
                   >
                     <td className="px-4 py-3 text-center">
-                      <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                        {voucher.voucher_no}
+                      <span className={`font-mono text-xs font-semibold px-2 py-0.5 rounded ${
+                        needsVoucherNumber(voucher)
+                          ? 'text-amber-700 bg-amber-50'
+                          : 'text-gray-700 bg-gray-100'
+                      }`}>
+                        {voucherNoDisplay(voucher.voucher_no)}
                       </span>
                     </td>
 
@@ -894,8 +968,8 @@ export default function VouchersPage() {
                     </td>
 
                     <td className="px-4 py-3 text-center">
-                      <Badge variant={STATUS_BADGE[voucher.status] || 'default'} dot>
-                        {STATUS_LABEL[voucher.status] || voucher.status}
+                      <Badge variant={voucherStatusBadge(voucher)} dot>
+                        {voucherStatusLabel(voucher)}
                       </Badge>
                     </td>
 
@@ -927,7 +1001,7 @@ export default function VouchersPage() {
                           </button>
                         )}
 
-                        {canEdit && voucher.status === 'draft' && (
+                        {canEdit && voucher.status === 'draft' && !needsVoucherNumber(voucher) && (
                           <button
                             onClick={() => setApproveTarget(voucher)}
                             title="Approve Voucher"
@@ -1009,6 +1083,16 @@ export default function VouchersPage() {
             )}
           </div>
 
+          <Input
+            label="Voucher No."
+            required
+            type="text"
+            placeholder="Enter voucher number"
+            value={form.voucher_no}
+            onChange={e => setField('voucher_no', e.target.value)}
+            error={formErr.voucher_no}
+          />
+
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Date"
@@ -1017,6 +1101,7 @@ export default function VouchersPage() {
               value={form.date}
               onChange={e => setField('date', e.target.value)}
               error={formErr.date}
+              disabled={lockedExpenseVoucher}
             />
             <Input
               label="Amount"
@@ -1027,6 +1112,7 @@ export default function VouchersPage() {
               value={formatAmountInput(form.amount)}
               onChange={e => setField('amount', cleanAmountInput(e.target.value))}
               error={formErr.amount}
+              disabled={lockedExpenseVoucher}
             />
           </div>
 
@@ -1040,6 +1126,7 @@ export default function VouchersPage() {
                 value={form.payee}
                 onChange={e => setField('payee', e.target.value)}
                 error={formErr.payee}
+                disabled={lockedExpenseVoucher}
               />
 
               <Input
@@ -1050,6 +1137,7 @@ export default function VouchersPage() {
                 value={form.purpose}
                 onChange={e => setField('purpose', e.target.value)}
                 error={formErr.purpose}
+                disabled={lockedExpenseVoucher}
               />
 
               <div className="flex flex-col gap-1">
@@ -1060,8 +1148,9 @@ export default function VouchersPage() {
                 <select
                   value={form.expense_id}
                   onChange={e => setField('expense_id', e.target.value)}
+                  disabled={lockedExpenseVoucher}
                   className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-                    focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+                    focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition disabled:bg-gray-50"
                 >
                   <option value="">— None —</option>
                   {expenseList.map(exp => (
@@ -1189,11 +1278,12 @@ export default function VouchersPage() {
               value={form.notes}
               onChange={e => setField('notes', e.target.value)}
               className="px-3 py-2 text-sm border border-gray-200 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition resize-none"
+                focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition resize-none disabled:bg-gray-50"
+              disabled={lockedExpenseVoucher}
             />
           </div>
 
-          <details className="rounded-lg border border-gray-200">
+          <details className="rounded-lg border border-gray-200" open={false}>
             <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg">
               Cash Voucher slip details <span className="font-normal text-gray-400">(optional — for the printable slip)</span>
             </summary>
@@ -1204,6 +1294,7 @@ export default function VouchersPage() {
                 placeholder="Payee's address"
                 value={form.address}
                 onChange={e => setField('address', e.target.value)}
+                disabled={lockedExpenseVoucher}
               />
 
               <div>
@@ -1212,11 +1303,11 @@ export default function VouchersPage() {
                   Matches the LOAN / PF / DEL / PB / ADV lines on the printed slip. Leave blank if not applicable.
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <Input label="LOAN" type="text" inputMode="decimal" value={formatAmountInput(form.loan_amount)} onChange={e => setField('loan_amount', cleanAmountInput(e.target.value))} />
-                  <Input label="PF" type="text" inputMode="decimal" value={formatAmountInput(form.pf_amount)} onChange={e => setField('pf_amount', cleanAmountInput(e.target.value))} />
-                  <Input label="DEL." type="text" inputMode="decimal" value={formatAmountInput(form.del_amount)} onChange={e => setField('del_amount', cleanAmountInput(e.target.value))} />
-                  <Input label="PB" type="text" inputMode="decimal" value={formatAmountInput(form.pb_amount)} onChange={e => setField('pb_amount', cleanAmountInput(e.target.value))} />
-                  <Input label="ADV" type="text" inputMode="decimal" value={formatAmountInput(form.adv_amount)} onChange={e => setField('adv_amount', cleanAmountInput(e.target.value))} />
+                  <Input label="LOAN" type="text" inputMode="decimal" value={formatAmountInput(form.loan_amount)} onChange={e => setField('loan_amount', cleanAmountInput(e.target.value))} disabled={lockedExpenseVoucher} />
+                  <Input label="PF" type="text" inputMode="decimal" value={formatAmountInput(form.pf_amount)} onChange={e => setField('pf_amount', cleanAmountInput(e.target.value))} disabled={lockedExpenseVoucher} />
+                  <Input label="DEL." type="text" inputMode="decimal" value={formatAmountInput(form.del_amount)} onChange={e => setField('del_amount', cleanAmountInput(e.target.value))} disabled={lockedExpenseVoucher} />
+                  <Input label="PB" type="text" inputMode="decimal" value={formatAmountInput(form.pb_amount)} onChange={e => setField('pb_amount', cleanAmountInput(e.target.value))} disabled={lockedExpenseVoucher} />
+                  <Input label="ADV" type="text" inputMode="decimal" value={formatAmountInput(form.adv_amount)} onChange={e => setField('adv_amount', cleanAmountInput(e.target.value))} disabled={lockedExpenseVoucher} />
                 </div>
               </div>
 
@@ -1229,14 +1320,15 @@ export default function VouchersPage() {
                     value={form.amount_in_words}
                     onChange={e => setField('amount_in_words', e.target.value)}
                     className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg
-                      focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+                      focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition disabled:bg-gray-50"
+                    disabled={lockedExpenseVoucher}
                   />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => setField('amount_in_words', amountToWords(form.amount))}
-                    disabled={!form.amount}
+                    disabled={!form.amount || lockedExpenseVoucher}
                   >
                     Auto-fill
                   </Button>
@@ -1247,20 +1339,15 @@ export default function VouchersPage() {
                 <label className="text-sm font-medium text-gray-700">Signatories</label>
                 <p className="text-xs text-gray-400 mb-2">Names printed under Prepared by / Verified by / Approved by / Received by.</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <Input label="Prepared by" type="text" value={form.prepared_by_name} onChange={e => setField('prepared_by_name', e.target.value)} />
-                  <Input label="Verified by" type="text" value={form.verified_by_name} onChange={e => setField('verified_by_name', e.target.value)} />
-                  <Input label="Approved by" type="text" value={form.approved_by_name} onChange={e => setField('approved_by_name', e.target.value)} />
-                  <Input label="Received by" type="text" value={form.received_by_name} onChange={e => setField('received_by_name', e.target.value)} />
+                  <Input label="Prepared by" type="text" value={form.prepared_by_name} onChange={e => setField('prepared_by_name', e.target.value)} disabled={lockedExpenseVoucher} />
+                  <Input label="Verified by" type="text" value={form.verified_by_name} onChange={e => setField('verified_by_name', e.target.value)} disabled={lockedExpenseVoucher} />
+                  <Input label="Approved by" type="text" value={form.approved_by_name} onChange={e => setField('approved_by_name', e.target.value)} disabled={lockedExpenseVoucher} />
+                  <Input label="Received by" type="text" value={form.received_by_name} onChange={e => setField('received_by_name', e.target.value)} disabled={lockedExpenseVoucher} />
                 </div>
               </div>
             </div>
           </details>
 
-          {!editTarget && (
-            <p className="text-xs text-gray-400">
-              Voucher number will be assigned automatically.
-            </p>
-          )}
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
@@ -1288,10 +1375,10 @@ export default function VouchersPage() {
           <>
             <div className="flex items-center justify-between mb-5">
               <span className="font-mono text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">
-                {viewTarget.voucher_no}
+                {voucherNoDisplay(viewTarget.voucher_no)}
               </span>
-              <Badge variant={STATUS_BADGE[viewTarget.status] || 'default'} dot>
-                {STATUS_LABEL[viewTarget.status] || viewTarget.status}
+              <Badge variant={voucherStatusBadge(viewTarget)} dot>
+                {voucherStatusLabel(viewTarget)}
               </Badge>
             </div>
 
@@ -1381,14 +1468,16 @@ export default function VouchersPage() {
                     >
                       Edit
                     </Button>
-                    <Button
-                      variant="success"
-                      size="sm"
-                      icon={<CheckCircle size={13} />}
-                      onClick={() => { setViewTarget(null); setApproveTarget(viewTarget); }}
-                    >
-                      Approve
-                    </Button>
+                    {!needsVoucherNumber(viewTarget) && (
+                      <Button
+                        variant="success"
+                        size="sm"
+                        icon={<CheckCircle size={13} />}
+                        onClick={() => { setViewTarget(null); setApproveTarget(viewTarget); }}
+                      >
+                        Approve
+                      </Button>
+                    )}
                   </>
                 )}
                 <Button

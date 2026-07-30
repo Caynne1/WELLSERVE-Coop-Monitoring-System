@@ -12,7 +12,6 @@ import Spinner from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../context/AuthContext';
-import FinancialMigrationImportModal from '../../components/coop-monitoring/FinancialMigrationImportModal';
 import {
   computeCoopSummaryFromInvoices,
   CATEGORY_LABEL,
@@ -948,7 +947,6 @@ export default function CoopMonitoringPage() {
   const [dateRange, setDateRange]     = useState({ from: '', to: '' });
 
   const [fundModalOpen, setFundModalOpen]       = useState(false);
-  const [migrationModalOpen, setMigrationModalOpen] = useState(false);
   const [fundAmount, setFundAmount]             = useState('');
   const [fundDate, setFundDate]                 = useState(new Date().toISOString().split('T')[0]);
   const [fundDescription, setFundDescription]   = useState('');
@@ -1253,13 +1251,6 @@ export default function CoopMonitoringPage() {
         subtitle="Cooperative fund — cash inflow and outflow overview"
         action={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              icon={<FileSpreadsheet size={14} />}
-              onClick={() => setMigrationModalOpen(true)}
-            >
-              Financial Migration
-            </Button>
             {canCreate && (
             <Button variant="primary" icon={<Plus size={14} />} onClick={() => setFundModalOpen(true)}>
               Add Fund
@@ -1708,11 +1699,6 @@ export default function CoopMonitoringPage() {
           </Button>
         </div>
       </Modal>
-
-      <FinancialMigrationImportModal
-        open={migrationModalOpen}
-        onClose={() => setMigrationModalOpen(false)}
-      />
     </div>
   );
 }
