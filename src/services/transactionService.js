@@ -2,6 +2,42 @@ import { notifyPayment } from './notificationService';
 import { supabase } from './supabase';
 import { trackActivity } from './logService';
 
+async function getCurrentUserId() {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function formatMoney(value) {
+  return `PHP ${Number(value || 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function transactionDirection(type = '') {
+  const normalized = String(type || '').toLowerCase();
+  if (['withdrawal', 'loan_release', 'expense', 'check_release'].includes(normalized)) return 'OUT';
+  return 'IN';
+}
+
+function buildTransactionAuditDescription(tx, action = 'recorded') {
+  const parts = [
+    `${transactionDirection(tx.type)} ${String(tx.type || 'transaction').replace(/_/g, ' ')}`,
+    tx.category ? `category ${tx.category}` : null,
+    `amount ${formatMoney(tx.amount)}`,
+    tx.member_id ? `member ${tx.member_id}` : null,
+    tx.reference ? `reference ${tx.reference}` : null,
+    tx.payment_mode ? `mode ${tx.payment_mode}` : null,
+    tx.transaction_date ? `date ${tx.transaction_date}` : null,
+  ].filter(Boolean);
+
+  return `Financial transaction ${action}: ${parts.join(' | ')}.`;
+}
+
 export async function getTransactions(filters = {}) {
   let query = supabase
     .from('transactions')
@@ -28,12 +64,12 @@ export async function getTransactions(filters = {}) {
       ? supabase.from('members').select('id, first_name, last_name, middle_initial, member_no').in('id', memberIds)
       : Promise.resolve({ data: [] }),
     createdByIds.length > 0
-      ? supabase.from('profiles').select('id, full_name').in('id', createdByIds)
+      ? supabase.from('profiles').select('id, full_name, email').in('id', createdByIds)
       : Promise.resolve({ data: [] }),
   ]);
 
   const memberMap = Object.fromEntries((membersResult.data || []).map(m => [m.id, m]));
-  const profileMap = Object.fromEntries((profilesResult.data || []).map(p => [p.id, p.full_name]));
+  const profileMap = Object.fromEntries((profilesResult.data || []).map(p => [p.id, p.full_name || p.email]));
 
   return txList.map(t => ({
     ...t,
@@ -58,9 +94,9 @@ export async function getTransactionsByMemberId(memberId) {
   if (createdByIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name')
+      .select('id, full_name, email')
       .in('id', createdByIds);
-    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p.full_name]));
+    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p.full_name || p.email]));
     return txList.map(t => ({
       ...t,
       created_by_name: t.created_by ? (profileMap[t.created_by] || t.created_by) : 'System',
@@ -71,8 +107,10 @@ export async function getTransactionsByMemberId(memberId) {
 }
 
 export async function createTransaction(payload) {
+  const currentUserId = payload.created_by || await getCurrentUserId();
   const finalPayload = {
     ...payload,
+    created_by: currentUserId,
     transaction_date:
       payload.transaction_date ||
       new Date().toISOString().split('T')[0],
@@ -105,15 +143,13 @@ export async function createTransaction(payload) {
 
   console.log('[createTransaction] success → id:', data.id);
 
-  if (data.created_by) {
-    trackActivity({
-      userId: data.created_by,
-      module: 'transaction',
-      action: data.type || 'create',
-      description: `${data.category || 'Transaction'} recorded for PHP ${Number(data.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}.`,
-      recordId: data.id,
-    });
-  }
+  await trackActivity({
+    userId: data.created_by,
+    module: 'transaction',
+    action: data.type || 'create',
+    description: buildTransactionAuditDescription(data, 'recorded'),
+    recordId: data.id,
+  });
 
   // Fire payment notification (non-blocking)
   try {
@@ -128,13 +164,29 @@ export async function createTransaction(payload) {
   return data;
 }
 
-export async function deleteTransaction(id) {
+export async function deleteTransaction(id, { deletedBy = undefined, reason = '' } = {}) {
+  const { data: existing } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from('transactions')
     .delete()
     .eq('id', id);
 
   if (error) throw error;
+
+  if (existing) {
+    await trackActivity({
+      userId: deletedBy ?? existing.created_by,
+      module: 'transaction',
+      action: 'delete',
+      description: `${buildTransactionAuditDescription(existing, 'deleted')}${reason ? ` Reason: ${reason}.` : ''}`,
+      recordId: id,
+    });
+  }
 }
 
 export function subscribeToTransactions(onChange) {
@@ -142,7 +194,7 @@ export function subscribeToTransactions(onChange) {
     .channel('transactions-realtime')
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'transactions' },
+      { event: '*', schema: 'public', table: 'transactions' },
       onChange
     )
     .subscribe();

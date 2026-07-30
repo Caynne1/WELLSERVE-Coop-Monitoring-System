@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, Printer, Download } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Search, Printer, Download, RefreshCw, Calendar, ArrowDownLeft, ArrowUpRight,
+  Wallet, Filter, X,
+} from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
@@ -8,81 +11,194 @@ import Pagination from '../../components/ui/Pagination';
 import usePagination from '../../hooks/usePagination';
 import { getTransactions, subscribeToTransactions } from '../../services/transactionService';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
-
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 
-const INFLOW_TYPES = ['deposit', 'loan_release', 'membership_payment'];
+const CASH_IN_TYPES = new Set([
+  'deposit',
+  'loan_payment',
+  'loan_interest',
+  'penalty_payment',
+  'membership_payment',
+  'service_fee',
+  'income',
+]);
+
+const CASH_OUT_TYPES = new Set([
+  'withdrawal',
+  'loan_release',
+  'expense',
+  'check_release',
+]);
+
+function memberName(tx) {
+  return [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '-';
+}
+
+function txLabel(value) {
+  return String(value || '-').replace(/_/g, ' ');
+}
+
+function isCashIn(tx) {
+  const type = String(tx.type || '').toLowerCase();
+  if (CASH_IN_TYPES.has(type)) return true;
+  if (CASH_OUT_TYPES.has(type)) return false;
+  return Number(tx.amount || 0) >= 0;
+}
+
+function isCashOut(tx) {
+  return !isCashIn(tx);
+}
+
+function uniqueOptions(rows, key) {
+  return [...new Set(rows.map(row => row[key]).filter(Boolean))]
+    .sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function StatCard({ icon, label, value, sub, tone = 'gray' }) {
+  const tones = {
+    green: 'bg-green-50 text-green-700',
+    red: 'bg-red-50 text-red-700',
+    blue: 'bg-blue-50 text-blue-700',
+    gray: 'bg-gray-50 text-gray-700',
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${tones[tone] || tones.gray}`}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+        <p className="text-xl font-bold text-gray-900 mt-0.5">{value}</p>
+        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+}
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [directionFilter, setDirectionFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
-  const fetchTransactions = useCallback(async () => {
+  const fetchTransactions = useCallback(async ({ quiet = false } = {}) => {
     try {
-      const data = await getTransactions();
+      if (!quiet) setLoading(true);
+      setRefreshing(true);
+      const data = await getTransactions({
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+      });
       setTransactions(data);
     } catch {
       toast.error('Failed to load transactions');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     fetchTransactions();
+  }, [fetchTransactions]);
 
-    const channel = subscribeToTransactions(() => fetchTransactions());
+  useEffect(() => {
+    const channel = subscribeToTransactions(() => fetchTransactions({ quiet: true }));
     return () => supabase.removeChannel(channel);
   }, [fetchTransactions]);
 
-  const filtered = transactions.filter(t => {
-    const q = search.toLowerCase();
-    const name = `${t.members?.first_name || ''} ${t.members?.last_name || ''}`.toLowerCase();
-    return (
-      name.includes(q) ||
-      t.reference?.toLowerCase().includes(q) ||
-      t.notes?.toLowerCase().includes(q) ||
-      t.payment_mode?.toLowerCase().includes(q) ||
-      t.payment_mode_note?.toLowerCase().includes(q) ||
-      t.type?.toLowerCase().includes(q) ||
-      t.category?.toLowerCase().includes(q)
-    );
-  });
+  const typeOptions = useMemo(() => uniqueOptions(transactions, 'type'), [transactions]);
+  const categoryOptions = useMemo(() => uniqueOptions(transactions, 'category'), [transactions]);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return transactions.filter(tx => {
+      const haystack = [
+        memberName(tx),
+        tx.members?.member_no,
+        tx.reference,
+        tx.notes,
+        tx.payment_mode,
+        tx.payment_mode_note,
+        tx.type,
+        tx.category,
+        tx.created_by_name,
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      const matchesSearch = !q || haystack.includes(q);
+      const matchesType = !typeFilter || tx.type === typeFilter;
+      const matchesCategory = !categoryFilter || tx.category === categoryFilter;
+      const matchesDirection =
+        !directionFilter ||
+        (directionFilter === 'in' && isCashIn(tx)) ||
+        (directionFilter === 'out' && isCashOut(tx));
+
+      return matchesSearch && matchesType && matchesCategory && matchesDirection;
+    });
+  }, [transactions, search, typeFilter, categoryFilter, directionFilter]);
+
+  const totals = useMemo(() => {
+    const cashIn = filtered.filter(isCashIn).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const cashOut = filtered.filter(isCashOut).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    return {
+      cashIn,
+      cashOut,
+      net: cashIn - cashOut,
+      inCount: filtered.filter(isCashIn).length,
+      outCount: filtered.filter(isCashOut).length,
+    };
+  }, [filtered]);
+
+  const hasFilters = search || typeFilter || categoryFilter || directionFilter || dateFrom || dateTo;
   const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
 
   useEffect(() => {
     setPage(1);
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, typeFilter, categoryFilter, directionFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function clearFilters() {
+    setSearch('');
+    setTypeFilter('');
+    setCategoryFilter('');
+    setDirectionFilter('');
+    setDateFrom('');
+    setDateTo('');
+  }
 
   function handlePrint() {
-    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const rows = filtered.map(tx => {
-      const name = [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—';
-      const isIn = ['deposit','loan_release','membership_payment'].includes(tx.type);
+      const direction = isCashIn(tx) ? 'IN' : 'OUT';
       return `<tr>
-        <td style="text-transform:capitalize">${(tx.type||'').replace(/_/g,' ')}</td>
-        <td>${tx.category||'—'}</td>
-        <td>${name}</td>
-        <td style="text-align:right;font-weight:600;color:${isIn?'#065f46':'#b91c1c'}">${fmt(tx.amount)}</td>
-        <td>${tx.payment_mode||'—'}</td>
-        <td>${tx.assisted_by||'—'}</td>
-        <td style="max-width:180px;overflow:hidden">${tx.notes||tx.payment_mode_note||'—'}</td>
-        <td style="white-space:nowrap">${tx.created_at?tx.created_at.slice(0,10):'—'}</td>
+        <td style="white-space:nowrap">${tx.transaction_date ? formatDate(tx.transaction_date) : '-'}</td>
+        <td>${direction}</td>
+        <td style="text-transform:capitalize">${txLabel(tx.type)}</td>
+        <td>${tx.category || '-'}</td>
+        <td>${memberName(tx)}</td>
+        <td style="text-align:right;font-weight:600;color:${direction === 'IN' ? '#065f46' : '#b91c1c'}">${fmt(tx.amount)}</td>
+        <td>${tx.payment_mode || '-'}</td>
+        <td>${tx.created_by_name || '-'}</td>
+        <td style="max-width:180px;overflow:hidden">${tx.notes || tx.payment_mode_note || '-'}</td>
+        <td style="white-space:nowrap">${tx.created_at ? formatDateTime(tx.created_at) : '-'}</td>
       </tr>`;
     }).join('');
     const html = `
       <h1 class="report-title">Transactions</h1>
-      <div class="report-meta">All financial transactions &nbsp;|&nbsp; <strong>${filtered.length}</strong> records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <div class="report-meta">Financial transaction ledger | ${filtered.length} records | Cash In: ${fmt(totals.cashIn)} | Cash Out: ${fmt(totals.cashOut)} | Net: ${fmt(totals.net)}</div>
       <table>
-        <thead><tr><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Assisted By</th><th>Notes</th><th>Created</th></tr></thead>
+        <thead><tr><th>Transaction Date</th><th>Direction</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Recorded By</th><th>Notes</th><th>Recorded At</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
     `;
-    const win = printHtmlDocument(wrapWithLetterhead(html, {title:'Transactions — WELLSERVE'}), {
+    const win = printHtmlDocument(wrapWithLetterhead(html, { title: 'Transactions - WELLSERVE' }), {
       onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
     });
     if (win) toast.success('Print dialog opened.');
@@ -92,16 +208,18 @@ export default function TransactionsPage() {
     try {
       if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
       const rows = filtered.map(tx => ({
-        type: (tx.type || '').replace(/_/g, ' '),
+        transaction_date: tx.transaction_date ? formatDate(tx.transaction_date) : '',
+        direction: isCashIn(tx) ? 'IN' : 'OUT',
+        type: txLabel(tx.type),
         category: tx.category || '',
-        member: `${tx.members?.first_name || ''} ${tx.members?.last_name || ''}`.trim(),
+        member: memberName(tx),
         member_no: tx.members?.member_no || '',
         amount: tx.amount || 0,
         payment_mode: tx.payment_mode || '',
         reference: tx.reference || '',
         notes: tx.notes || tx.payment_mode_note || '',
-        transaction_date: tx.transaction_date ? formatDate(tx.transaction_date) : '',
-        created_at: formatDateTime(tx.created_at),
+        recorded_by: tx.created_by_name || '',
+        recorded_at: formatDateTime(tx.created_at),
       }));
       exportToCSV('transactions_report.csv', rows);
       toast.success('CSV exported successfully');
@@ -112,18 +230,113 @@ export default function TransactionsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Transactions" subtitle="All financial transactions" />
+      <PageHeader title="Transactions" subtitle="Live ledger of member and cooperative transactions" />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
+        <StatCard
+          icon={<Wallet size={20} />}
+          label="Filtered Transactions"
+          value={filtered.length.toLocaleString('en-PH')}
+          sub={`${transactions.length.toLocaleString('en-PH')} total loaded`}
+          tone="blue"
+        />
+        <StatCard
+          icon={<ArrowDownLeft size={20} />}
+          label="Cash In"
+          value={formatCurrency(totals.cashIn)}
+          sub={`${totals.inCount} transaction${totals.inCount !== 1 ? 's' : ''}`}
+          tone="green"
+        />
+        <StatCard
+          icon={<ArrowUpRight size={20} />}
+          label="Cash Out"
+          value={formatCurrency(totals.cashOut)}
+          sub={`${totals.outCount} transaction${totals.outCount !== 1 ? 's' : ''}`}
+          tone="red"
+        />
+        <StatCard
+          icon={<Filter size={20} />}
+          label="Net Movement"
+          value={formatCurrency(totals.net)}
+          sub={hasFilters ? 'Based on active filters' : 'All loaded transactions'}
+          tone={totals.net >= 0 ? 'green' : 'red'}
+        />
+      </div>
 
       <div className="mt-5 mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by member, type, reference, notes..."
+            placeholder="Search member, type, reference, notes..."
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+
+        <select
+          value={directionFilter}
+          onChange={e => setDirectionFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Directions</option>
+          <option value="in">Cash In</option>
+          <option value="out">Cash Out</option>
+        </select>
+
+        <select
+          value={typeFilter}
+          onChange={e => setTypeFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Types</option>
+          {typeOptions.map(type => <option key={type} value={type}>{txLabel(type)}</option>)}
+        </select>
+
+        <select
+          value={categoryFilter}
+          onChange={e => setCategoryFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Categories</option>
+          {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
+        </select>
+
+        <div className="flex items-center gap-2">
+          <Calendar size={14} className="text-gray-400" />
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <span className="text-xs text-gray-400">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={e => setDateTo(e.target.value)}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {hasFilters && (
+          <button
+            onClick={clearFilters}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+          >
+            <X size={14} />
+            Clear
+          </button>
+        )}
+
+        <button
+          onClick={() => fetchTransactions({ quiet: true })}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+        >
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+          Refresh
+        </button>
         <button
           onClick={handlePrint}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
@@ -151,19 +364,19 @@ export default function TransactionsPage() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   {[
+                    'Transaction Date',
+                    'Direction',
                     'Type',
                     'Category',
                     'Member',
                     'Amount',
                     'Mode',
-                    'Assisted By',
+                    'Reference',
+                    'Recorded By',
+                    'Recorded At',
                     'Notes',
-                    'Created',
                   ].map(h => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
-                    >
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {h}
                     </th>
                   ))}
@@ -173,58 +386,56 @@ export default function TransactionsPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-gray-400">
-                      {search ? 'No transactions match your search.' : 'No transactions yet.'}
+                    <td colSpan={11} className="text-center py-12 text-gray-400">
+                      {hasFilters ? 'No transactions match your filters.' : 'No transactions yet.'}
                     </td>
                   </tr>
                 ) : (
                   pageItems.map(tx => {
-                    const isInflow = INFLOW_TYPES.includes(tx.type);
+                    const cashIn = isCashIn(tx);
                     return (
                       <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="capitalize text-gray-700">
-                              {tx.type?.replace(/_/g, ' ') || '—'}
-                            </span>
-                          </div>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                          {tx.transaction_date ? formatDate(tx.transaction_date) : '-'}
                         </td>
-
                         <td className="px-4 py-3">
-                          <span className="capitalize text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                            {tx.category || '—'}
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cashIn ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                            {cashIn ? 'IN' : 'OUT'}
                           </span>
                         </td>
-
+                        <td className="px-4 py-3 capitalize text-gray-700 whitespace-nowrap">
+                          {txLabel(tx.type)}
+                        </td>
                         <td className="px-4 py-3">
-                          <p className="font-medium text-gray-900">
-                            {tx.members?.first_name} {tx.members?.last_name}
-                          </p>
+                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                            {tx.category || '-'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-900">{memberName(tx)}</p>
                           {tx.members?.member_no && (
                             <p className="text-xs text-gray-400 font-mono">{tx.members.member_no}</p>
                           )}
                         </td>
-
-                        <td className={`px-4 py-3 font-semibold ${isInflow ? 'text-green-600' : 'text-red-600'}`}>
+                        <td className={`px-4 py-3 font-semibold whitespace-nowrap ${cashIn ? 'text-green-600' : 'text-red-600'}`}>
                           {formatCurrency(tx.amount)}
                         </td>
-
                         <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                          {tx.payment_mode || '—'}
+                          {tx.payment_mode || '-'}
                         </td>
-
+                        <td className="px-4 py-3 text-xs text-gray-500 font-mono max-w-[160px] truncate" title={tx.reference || ''}>
+                          {tx.reference || '-'}
+                        </td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                          {tx.created_by_name || '—'}
+                          {tx.created_by_name || '-'}
                         </td>
-
-                        <td className="px-4 py-3 text-xs text-gray-500 max-w-[280px]">
-                          <div className="truncate" title={tx.notes || tx.payment_mode_note || ''}>
-                            {tx.notes || tx.payment_mode_note || '—'}
-                          </div>
-                        </td>
-
                         <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                           {formatDateTime(tx.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 max-w-[280px]">
+                          <div className="truncate" title={tx.notes || tx.payment_mode_note || ''}>
+                            {tx.notes || tx.payment_mode_note || '-'}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -235,9 +446,12 @@ export default function TransactionsPage() {
           </div>
 
           {filtered.length > 0 && (
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
               <p className="text-xs text-gray-500">
                 Showing {filtered.length} of {transactions.length} transactions
+              </p>
+              <p className="text-xs text-gray-500">
+                Cash In {formatCurrency(totals.cashIn)} | Cash Out {formatCurrency(totals.cashOut)} | Net {formatCurrency(totals.net)}
               </p>
             </div>
           )}

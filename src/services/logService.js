@@ -73,12 +73,29 @@ export async function createLog(payload) {
   if (error) console.warn('[logService] createLog failed:', error.message);
 }
 
+async function resolveActivityUserId(userId) {
+  if (userId !== undefined) return userId;
+
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Track user activity ──────────────────────────────────────────────────────
 // module: 'loan' | 'cbu' | 'savings' | 'member' | 'voucher' | 'logs' | etc.
 // action: 'create' | 'update' | 'delete' | 'view' | 'approve' | 'reject' | 'export'
 export async function trackActivity({ userId, module, action, description, recordId = null }) {
-  if (!userId) return;
-  await createLog({ user_id: userId, module, action, description, record_id: recordId });
+  const resolvedUserId = await resolveActivityUserId(userId);
+  await createLog({
+    user_id: resolvedUserId,
+    module: module || 'system',
+    action: action || 'activity',
+    description: description || '',
+    record_id: recordId,
+  });
 }
 
 // ─── Structured audit event (with before/after values) ───────────────────────
@@ -93,7 +110,7 @@ export async function trackAuditEvent({
   newValues = null,
   description = '',
 }) {
-  if (!userId) return;
+  const resolvedUserId = await resolveActivityUserId(userId);
 
   let detail = description || `${action} on ${entityType}`;
   if (oldValues || newValues) {
@@ -113,7 +130,7 @@ export async function trackAuditEvent({
   }
 
   await createLog({
-    user_id:   userId,
+    user_id:   resolvedUserId,
     module:    entityType?.toLowerCase() || 'unknown',
     action,
     description: detail,
@@ -160,7 +177,7 @@ export function subscribeToLogs(onChange) {
     .channel('activity-logs-realtime')
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'activity_logs' },
+      { event: '*', schema: 'public', table: 'activity_logs' },
       onChange
     )
     .subscribe();
