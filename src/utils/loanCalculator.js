@@ -136,6 +136,7 @@ export function generateLoanPreview({
   previousLoanBalance = 0,
   annualDues = 0,
   extraDeductionItems = [],
+  firstPaymentDate = null,
   firstPaymentDaysAfterStart = null,
 } = {}) {
   const scheduleResult = computeSchedule({
@@ -147,6 +148,7 @@ export function generateLoanPreview({
     startDate,
     cbuPerPeriod,
     savingsPerPeriod,
+    firstPaymentDate,
     firstPaymentDaysAfterStart,
   });
 
@@ -204,6 +206,7 @@ export function generateLoanPreview({
       loan_payment_per_period:  loanPaymentPerPeriod,
       monthly_interest_rate:    round4(monthlyInterestRate),
       weekly_interest_rate:     weeklyInterestRate,
+      first_payment_due_date:   firstScheduleRow.due_date || null,
       total_loan_payable:       totalLoanPayable,
       total_cash_out:          deductions.net_proceeds,
       total_payments_collected: totalLoanPayable,

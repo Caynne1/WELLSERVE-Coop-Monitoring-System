@@ -131,7 +131,7 @@ export function computeNumberOfPayments(termMonths, frequency = 'monthly') {
  */
 export function getRatePerPeriod(monthlyRatePercent, frequency = 'monthly') {
   const monthly = safeNum(monthlyRatePercent) / 100;
-  if (frequency === 'weekly') return round4(monthly / 4);
+  if (frequency === 'weekly') return monthly / 4;
   const cfg = FREQUENCY[frequency] || FREQUENCY.monthly;
   // Periods per month = periodsPerYear / 12
   return round2(monthly / (cfg.periodsPerYear / 12) * 10000) / 10000;
@@ -243,6 +243,7 @@ export function periodLabel(frequency) {
  * @param {number}  [params.cbuPerPeriod=0]    Fixed CBU per period
  * @param {number}  [params.savingsPerPeriod=0] Fixed savings per period
  * @param {number}  [params.numPayments]       Override number of payments (for imports)
+ * @param {string|Date} [params.firstPaymentDate] Exact first payment due date
  * @param {number}  [params.firstPaymentDaysAfterStart] Days after start date for first due date
  *
  * @returns {{ schedule: Array, totals: Object, meta: Object }}
@@ -257,6 +258,7 @@ export function computeSchedule({
   cbuPerPeriod = 0,
   savingsPerPeriod = 0,
   numPayments: numPaymentsOverride = null,
+  firstPaymentDate = null,
   firstPaymentDaysAfterStart = null,
 }) {
   const principal = round2(safeNum(amount));
@@ -275,7 +277,7 @@ export function computeSchedule({
         principal: 0, interest: 0, cbu: 0, savings: 0,
         total_payment: 0, payment_per_period: 0, number_of_payments: 0, roi_percent: 0,
       },
-      meta: { rate_per_period: round2(ratePerPeriod * 100), frequency, method },
+      meta: { rate_per_period: round4(ratePerPeriod * 100), frequency, method },
     };
   }
 
@@ -302,7 +304,8 @@ export function computeSchedule({
     ? Math.max(weeklyTotalExact, 0.0001)
     : numPayments;
 
-  const fixedPrincipalAmort = round2(principal / principalDivisor);
+  const precisePrincipalAmort = principal / principalDivisor;
+  const fixedPrincipalAmort = round2(precisePrincipalAmort);
   let runningBalance = principal;
 
   let sumPrincipal = 0;
@@ -310,10 +313,11 @@ export function computeSchedule({
   let sumCbu = 0;
   let sumSavings = 0;
   const schedule = [];
+  const explicitFirstPaymentDate = firstPaymentDate ? toDateStr(firstPaymentDate) : null;
   const hasFirstDueOffset = firstPaymentDaysAfterStart != null && safeNum(firstPaymentDaysAfterStart) > 0;
-  const firstDueDate = hasFirstDueOffset
+  const firstDueDate = explicitFirstPaymentDate || (hasFirstDueOffset
     ? addDaysToDateInput(startDate, firstPaymentDaysAfterStart)
-    : null;
+    : null);
 
   for (let i = 1; i <= numPayments; i++) {
     const beginBalance = round2(runningBalance);
@@ -334,9 +338,11 @@ export function computeSchedule({
 
     const loanTotal = round2(principalAmort + interest);
     const totalDue = round2(loanTotal + cbu + savings);
-    const endBalance = Math.max(0, round2(beginBalance - principalAmort));
+    const endBalance = isOldWeeklyFrequency
+      ? Math.max(0, round2(principal - (precisePrincipalAmort * i)))
+      : Math.max(0, round2(beginBalance - principalAmort));
     const dueDate = toDateStr(
-      hasFirstDueOffset
+      firstDueDate
         ? advanceDueDate(firstDueDate, frequency, i - 1)
         : advanceDueDate(startDate, frequency, i)
     );
@@ -362,14 +368,17 @@ export function computeSchedule({
     runningBalance = endBalance;
   }
 
-  const totalPayment = round2(sumPrincipal + sumInterest + sumCbu + sumSavings);
+  const effectivePrincipalTotal = isOldWeeklyFrequency && Math.abs(sumPrincipal - principal) <= 0.1
+    ? principal
+    : sumPrincipal;
+  const totalPayment = round2(effectivePrincipalTotal + sumInterest + sumCbu + sumSavings);
   const paymentPerPeriod = schedule[0]?.total_due || 0;
   const roiPercent = principal > 0 ? round2((sumInterest / principal) * 100) : 0;
 
   return {
     schedule,
     totals: {
-      principal: sumPrincipal,
+      principal: effectivePrincipalTotal,
       interest: sumInterest,
       cbu: sumCbu,
       savings: sumSavings,
@@ -379,7 +388,7 @@ export function computeSchedule({
       roi_percent: roiPercent,
     },
     meta: {
-      rate_per_period: round2(ratePerPeriod * 100),
+      rate_per_period: round4(ratePerPeriod * 100),
       frequency,
       period_label: periodLabel(frequency),
       method,
@@ -560,14 +569,17 @@ export function buildScheduleSummary(schedule, loanParams = {}) {
   const unpaidRows = schedule.filter(r => !r.paid);
   const nextUnpaid = unpaidRows[0] || null;
 
-  const totalPrincipal = round2(schedule.reduce((s, r) => s + (r.principal || 0), 0));
+  const schedulePrincipal = round2(schedule.reduce((s, r) => s + (r.principal || 0), 0));
+  const principal = safeNum(loanParams.amount ?? loanParams.loan_amount ?? schedulePrincipal);
+  const totalPrincipal = loanParams.frequency === 'weekly' && principal > 0 && Math.abs(schedulePrincipal - principal) <= 0.1
+    ? principal
+    : schedulePrincipal;
   const totalInterest = round2(schedule.reduce((s, r) => s + (r.interest || 0), 0));
   const totalCbu = round2(schedule.reduce((s, r) => s + (r.cbu_paid || 0), 0));
   const totalSavings = round2(schedule.reduce((s, r) => s + (r.savings_paid || 0), 0));
   const totalPayment = round2(totalPrincipal + totalInterest + totalCbu + totalSavings);
   const totalLoanPayable = round2(totalPrincipal + totalInterest);
 
-  const principal = safeNum(loanParams.amount ?? loanParams.loan_amount ?? totalPrincipal);
   const roiPercent = principal > 0 ? round2((totalInterest / principal) * 100) : 0;
 
   return {

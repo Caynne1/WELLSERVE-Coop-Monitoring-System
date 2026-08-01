@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, useWatch } from 'react-hook-form';
 import {
@@ -79,6 +79,40 @@ const LOAN_METHOD_OPTS = [
   { value: 'straight', label: 'Straight' },
 ];
 
+function addDaysToDateString(dateInput, days = 0) {
+  if (!dateInput) return '';
+  const [year, month, day] = String(dateInput).split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + days);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseFirstScheduleDueDate(value) {
+  try {
+    const rows = typeof value === 'string' ? JSON.parse(value || '[]') : value;
+    return Array.isArray(rows) ? (rows[0]?.due_date || '') : '';
+  } catch {
+    return '';
+  }
+}
+
+function parseJSONSafe(value, fallback = {}) {
+  try {
+    if (value == null) return fallback;
+    return typeof value === 'string' ? JSON.parse(value) : value;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseMoneyInput(value) {
+  return parseFloat(cleanAmountInput(value || '0')) || 0;
+}
+
 // WELLSERVE loan products — per the approved loan products sheet.
 // Selecting a product auto-fills the interest rate & method below;
 // the encoder can still override them manually if a special case requires it.
@@ -157,6 +191,100 @@ const emptyMemberProfile = {
 
 function round2(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+const MEMBERSHIP_DEDUCTION_PRESETS = {
+  old_associate: {
+    label: 'Old Associate',
+    record_type: 'old',
+    membership_type: 'associate',
+    membership_fee: 300,
+    cbu: 1000,
+    savings: 500,
+    wellife_vip: 0,
+    other_fee: 0,
+    other_label: '',
+  },
+  old_regular: {
+    label: 'Old Regular',
+    record_type: 'old',
+    membership_type: 'regular',
+    membership_fee: 1800,
+    cbu: 4000,
+    savings: 1000,
+    wellife_vip: 0,
+    other_fee: 0,
+    other_label: '',
+  },
+  new_associate: {
+    label: 'New Associate',
+    record_type: 'new',
+    membership_type: 'associate',
+    membership_fee: 400,
+    cbu: 500,
+    savings: 0,
+    wellife_vip: 0,
+    other_fee: 0,
+    other_label: '',
+  },
+  new_regular: {
+    label: 'New Regular',
+    record_type: 'new',
+    membership_type: 'regular',
+    membership_fee: 1400,
+    cbu: 4000,
+    savings: 500,
+    wellife_vip: 0,
+    other_fee: 0,
+    other_label: '',
+  },
+};
+
+const emptyMembershipDeduction = {
+  enabled: false,
+  preset: 'new_regular',
+  record_type: 'new',
+  membership_type: 'regular',
+  membership_fee: '1400',
+  cbu: '4000',
+  savings: '500',
+  wellife_vip: '',
+  other_fee: '',
+  other_label: '',
+};
+
+function normalizeMembershipDeduction(value) {
+  if (!value?.enabled) return null;
+  const membershipFee = round2(parseMoneyInput(value.membership_fee));
+  const cbu = round2(parseMoneyInput(value.cbu));
+  const savings = round2(parseMoneyInput(value.savings));
+  const wellifeVip = round2(parseMoneyInput(value.wellife_vip));
+  const otherFee = round2(parseMoneyInput(value.other_fee));
+  const total = round2(membershipFee + cbu + savings + wellifeVip + otherFee);
+  if (total <= 0) return null;
+
+  const breakdown = [
+    { key: 'membership_fee', label: value.record_type === 'old' ? 'Membership Entry Fee' : 'Membership Fee', category: 'membership', amount: membershipFee },
+    { key: 'cbu', label: 'Initial CBU', category: 'cbu', amount: cbu },
+    { key: 'savings', label: 'Initial Savings', category: 'savings', amount: savings },
+    { key: 'wellife_vip', label: 'WELLife VIP Card', category: 'membership', amount: wellifeVip },
+    { key: 'other_fee', label: value.other_label?.trim() || 'Other Membership Fee', category: 'membership', amount: otherFee },
+  ].filter(item => item.amount > 0);
+
+  return {
+    enabled: true,
+    preset: value.preset || 'custom',
+    record_type: value.record_type || 'new',
+    membership_type: value.membership_type || 'regular',
+    membership_fee: membershipFee,
+    cbu,
+    savings,
+    wellife_vip: wellifeVip,
+    other_fee: otherFee,
+    other_label: value.other_label?.trim() || '',
+    total,
+    breakdown,
+  };
 }
 
 function titleCase(value) {
@@ -285,18 +413,13 @@ export default function LoanFormPage() {
     annual_dues: true,
     cbu_completion: true,
     petty_cash: true,
-    membership_regulatory_fee: false,
-    membership_initial_savings: false,
-    membership_vip_card: false,
   });
   const [otherCharges, setOtherCharges] = useState([]); // [{ id, label, amount, included }]
+  const [membershipDeduction, setMembershipDeduction] = useState(emptyMembershipDeduction);
 
   // Associate → Regular membership upgrade bundle: on = all three membership
   // charges (Regulatory Fee, Initial Savings, VIP Card) are included together.
-  const membershipUpgradeIncluded =
-    chargeIncluded.membership_regulatory_fee &&
-    chargeIncluded.membership_initial_savings &&
-    chargeIncluded.membership_vip_card;
+  const membershipUpgradeIncluded = false;
 
   function toggleMembershipUpgradeBundle() {
     const next = !membershipUpgradeIncluded;
@@ -347,6 +470,32 @@ export default function LoanFormPage() {
     setOtherCharges(prev => prev.filter(c => c.id !== id));
   }
 
+  function applyMembershipDeductionPreset(presetKey) {
+    const preset = MEMBERSHIP_DEDUCTION_PRESETS[presetKey];
+    if (!preset) {
+      setMembershipDeduction(prev => ({ ...prev, preset: 'custom' }));
+      return;
+    }
+
+    setMembershipDeduction(prev => ({
+      ...prev,
+      enabled: true,
+      preset: presetKey,
+      record_type: preset.record_type,
+      membership_type: preset.membership_type,
+      membership_fee: String(preset.membership_fee),
+      cbu: String(preset.cbu),
+      savings: String(preset.savings),
+      wellife_vip: preset.wellife_vip ? String(preset.wellife_vip) : '',
+      other_fee: preset.other_fee ? String(preset.other_fee) : '',
+      other_label: preset.other_label || '',
+    }));
+  }
+
+  function updateMembershipDeduction(patch) {
+    setMembershipDeduction(prev => ({ ...prev, preset: 'custom', ...patch }));
+  }
+
   const {
     register,
     handleSubmit,
@@ -365,6 +514,7 @@ export default function LoanFormPage() {
       term_months: '',
       monthly_amortization: '',
       release_date: '',
+      first_payment_due_date: '',
       status: 'draft',
       purpose: '',
       notes: '',
@@ -416,7 +566,8 @@ export default function LoanFormPage() {
   const watchedFrequency = useWatch({ control, name: 'repayment_frequency' });
   const watchedMethod = useWatch({ control, name: 'loan_method' });
   const watchedReleaseDate = useWatch({ control, name: 'release_date' });
-  const watchedStatus = useWatch({ control, name: 'status' });
+  const watchedFirstPaymentDueDate = useWatch({ control, name: 'first_payment_due_date' });
+  const previousAutoFirstDueDate = useRef('');
 
   const watchedProposal = useWatch({ control, name: 'loan_proposal' });
   const watchedServiceFeePercent = useWatch({ control, name: 'service_fee_percent' });
@@ -465,7 +616,7 @@ export default function LoanFormPage() {
   const coMakerRequired = coMakerOverride === null ? coMakerAutoRequired : coMakerOverride;
 
   const preview = useMemo(() => {
-    const amount = parseFloat(watchedProposal || 0);
+    const amount = parseMoneyInput(watchedProposal);
     const termMonths = parseInt(watchedTerm || 0, 10);
     const monthlyInterestRate = parseFloat(watchedRate || 0);
 
@@ -483,15 +634,17 @@ export default function LoanFormPage() {
     if (chargeIncluded.petty_cash && parseFloat(watchedPettyCash || 0) > 0) {
       extraDeductionItems.push({ label: 'Petty Cash', type: 'fixed', amount: parseFloat(watchedPettyCash) });
     }
-    if (chargeIncluded.membership_regulatory_fee && parseFloat(watchedMembershipRegulatoryFee || 0) > 0) {
-      extraDeductionItems.push({ label: 'Regulatory Fee (Membership)', type: 'fixed', amount: parseFloat(watchedMembershipRegulatoryFee) });
-    }
-    if (chargeIncluded.membership_initial_savings && parseFloat(watchedMembershipInitialSavings || 0) > 0) {
-      extraDeductionItems.push({ label: 'Initial Savings Deposit', type: 'fixed', amount: parseFloat(watchedMembershipInitialSavings) });
-    }
-    if (chargeIncluded.membership_vip_card && parseFloat(watchedMembershipVipCard || 0) > 0) {
-      extraDeductionItems.push({ label: 'WELLife VIP Card', type: 'fixed', amount: parseFloat(watchedMembershipVipCard) });
-    }
+    const membershipDeductionPreview = normalizeMembershipDeduction(membershipDeduction);
+    membershipDeductionPreview?.breakdown?.forEach(item => {
+      extraDeductionItems.push({
+        label: item.label,
+        type: 'fixed',
+        amount: item.amount,
+        category: item.category,
+        kind: item.key,
+        post_to_membership: true,
+      });
+    });
     otherCharges.forEach(c => {
       const amt = parseFloat(c.amount || 0) || 0;
       if (c.included && c.label.trim() && amt > 0) {
@@ -509,7 +662,7 @@ export default function LoanFormPage() {
       startDate: watchedReleaseDate || new Date(),
       cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
       savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
-      firstPaymentDaysAfterStart: String(watchedStatus || 'draft').toLowerCase() === 'draft' ? 7 : null,
+      firstPaymentDate: watchedFirstPaymentDueDate || null,
       serviceFeePercent: chargeIncluded.service_fee ? (parseFloat(watchedServiceFeePercent || 3.5) || 0) : 0,
       shareCapital: chargeIncluded.cbu_retention ? (parseFloat(watchedShareCapital || 0) || 0) : 0,
       regularSavings: chargeIncluded.regular_savings ? (parseFloat(watchedRegularSavings || 0) || 0) : 0,
@@ -525,7 +678,7 @@ export default function LoanFormPage() {
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
-    watchedStatus,
+    watchedFirstPaymentDueDate,
     watchedCbuPerPeriod,
     watchedSavingsPerPeriod,
     watchedServiceFeePercent,
@@ -537,14 +690,12 @@ export default function LoanFormPage() {
     watchedPenaltyDue,
     watchedCbuCompletion,
     watchedPettyCash,
-    watchedMembershipRegulatoryFee,
-    watchedMembershipInitialSavings,
-    watchedMembershipVipCard,
+    membershipDeduction,
     otherCharges,
     chargeIncluded,
   ]);
 
-  const proposalAmount = parseFloat(watchedProposal || 0) || 0;
+  const proposalAmount = parseMoneyInput(watchedProposal);
 
   const chargeRows = useMemo(() => {
     const rows = [
@@ -689,7 +840,7 @@ export default function LoanFormPage() {
         calcText: 'Fixed Amount',
       },
     ];
-    return rows;
+    return rows.filter(row => !String(row.key).startsWith('membership_'));
   }, [
     proposalAmount,
     watchedTerm,
@@ -715,9 +866,11 @@ export default function LoanFormPage() {
     watchedMembershipVipCard,
   ]);
 
+  const membershipDeductionPreview = normalizeMembershipDeduction(membershipDeduction);
   const totalCharges = round2(
     chargeRows.reduce((sum, r) => sum + (chargeIncluded[r.key] ? r.amount : 0), 0) +
-    otherCharges.reduce((sum, c) => sum + (c.included ? (parseFloat(c.amount || 0) || 0) : 0), 0)
+    otherCharges.reduce((sum, c) => sum + (c.included ? (parseFloat(c.amount || 0) || 0) : 0), 0) +
+    (membershipDeductionPreview?.total || 0)
   );
   const netLoanProceeds = round2(Math.max(0, proposalAmount - totalCharges));
 
@@ -756,7 +909,20 @@ export default function LoanFormPage() {
   }, [watchedLoanType, watchedFrequency, setValue]);
 
   useEffect(() => {
-    const proposal = parseFloat(watchedProposal || 0) || 0;
+    if (!watchedReleaseDate) return;
+    const nextAutoDueDate = addDaysToDateString(watchedReleaseDate, 7);
+    if (!nextAutoDueDate) return;
+
+    const currentDueDate = getValues('first_payment_due_date');
+    if (!currentDueDate || currentDueDate === previousAutoFirstDueDate.current) {
+      setValue('first_payment_due_date', nextAutoDueDate);
+      previousAutoFirstDueDate.current = nextAutoDueDate;
+      setPreviewReady(false);
+    }
+  }, [watchedReleaseDate, getValues, setValue]);
+
+  useEffect(() => {
+    const proposal = parseMoneyInput(watchedProposal);
     const serviceFee = proposal * ((parseFloat(watchedServiceFeePercent || 3.5) || 0) / 100);
     setValue('service_fee', serviceFee ? round2(serviceFee).toFixed(2) : '');
 
@@ -801,6 +967,7 @@ export default function LoanFormPage() {
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
+    watchedFirstPaymentDueDate,
     watchedCbuPerPeriod,
     watchedSavingsPerPeriod,
     watchedCbuRetentionPercent,
@@ -828,6 +995,10 @@ export default function LoanFormPage() {
   }, [preview, setValue]);
 
   useEffect(() => {
+    setPreviewReady(false);
+  }, [membershipDeduction]);
+
+  useEffect(() => {
     async function bootstrapCreate() {
       if (isEdit) return;
 
@@ -850,6 +1021,9 @@ export default function LoanFormPage() {
     async function bootstrapEdit() {
       try {
         const data = await getLoanById(id);
+        const firstPaymentDueDate = parseFirstScheduleDueDate(data.preview_schedule_json);
+        const savedDeductions = parseJSONSafe(data.preview_deductions_json, {});
+        const savedMembershipDeduction = savedDeductions.membership_deduction;
 
         reset({
           member_id: data.member_id,
@@ -859,6 +1033,7 @@ export default function LoanFormPage() {
           term_months: data.term_months || '',
           monthly_amortization: data.monthly_amortization || '',
           release_date: data.release_date?.split('T')[0] || '',
+          first_payment_due_date: firstPaymentDueDate,
           status: data.status || 'active',
           purpose: data.purpose || '',
           notes: data.notes || '',
@@ -908,6 +1083,21 @@ export default function LoanFormPage() {
           cbu_completion: parseFloat(data.cbu_completion_percent || 0) > 0 ? 'percent' : 'fixed',
           petty_cash: parseFloat(data.petty_cash_percent || 0) > 0 ? 'percent' : 'fixed',
         });
+
+        if (savedMembershipDeduction?.enabled) {
+          setMembershipDeduction({
+            enabled: true,
+            preset: savedMembershipDeduction.preset || 'custom',
+            record_type: savedMembershipDeduction.record_type || 'new',
+            membership_type: savedMembershipDeduction.membership_type || 'regular',
+            membership_fee: String(savedMembershipDeduction.membership_fee || ''),
+            cbu: String(savedMembershipDeduction.cbu || ''),
+            savings: String(savedMembershipDeduction.savings || ''),
+            wellife_vip: String(savedMembershipDeduction.wellife_vip || ''),
+            other_fee: String(savedMembershipDeduction.other_fee || ''),
+            other_label: savedMembershipDeduction.other_label || '',
+          });
+        }
 
         setChargeIncluded(prev => ({
           ...prev,
@@ -997,7 +1187,7 @@ export default function LoanFormPage() {
       return;
     }
 
-    const amount = parseFloat(values.loan_proposal || 0);
+    const amount = parseMoneyInput(values.loan_proposal);
     const termMonths = parseInt(values.term_months || 0, 10);
     const monthlyInterestRate = parseFloat(values.interest_rate || 0);
 
@@ -1071,6 +1261,7 @@ export default function LoanFormPage() {
           ${loanFormKvRow('Frequency', frequencyDisplayLabel(watchedFrequency))}
           ${loanFormKvRow('Method', titleCase(watchedMethod))}
           ${loanFormKvRow('Release Date', formatDate(values.release_date))}
+          ${loanFormKvRow('First Payment Due Date', formatDate(values.first_payment_due_date))}
         </div>
       </div>
 
@@ -1106,7 +1297,7 @@ export default function LoanFormPage() {
             <th style="text-align:left">No.</th>
             <th style="text-align:left">Principal</th>
             <th>Principal Amort.</th>
-            <th>Interest</th>
+            <th>Weekly Interest</th>
             <th>Due Date</th>
           </tr>
         </thead>
@@ -1182,13 +1373,14 @@ export default function LoanFormPage() {
         phone: memberProfile.phone,
       });
 
-      const principalAmount = parseFloat(values.loan_proposal || values.amount || 0);
+      const principalAmount = parseMoneyInput(values.loan_proposal || values.amount);
       const regularSavings = chargeIncluded.regular_savings ? (parseFloat(values.regular_savings || 0) || 0) : 0;
 
       const otherChargesIncluded = otherCharges
         .filter(c => c.included && c.label.trim() && parseFloat(c.amount || 0) > 0)
         .map(c => ({ label: c.label.trim(), amount: round2(parseFloat(c.amount) || 0) }));
       const otherChargesTotal = round2(otherChargesIncluded.reduce((s, c) => s + c.amount, 0));
+      const membershipDeductionPayload = normalizeMembershipDeduction(membershipDeduction);
 
       const payload = {
         ...values,
@@ -1202,7 +1394,7 @@ export default function LoanFormPage() {
         loan_insurance: chargeIncluded.insurance ? round2(preview.deductions?.items?.find(d =>
           d.label?.toLowerCase().includes('protection') || d.label?.toLowerCase().includes('clpp'))?.amount
           || preview.deductions?.insurance || 0) : 0,
-        loan_proposal: parseFloat(values.loan_proposal || principalAmount) || principalAmount,
+        loan_proposal: parseMoneyInput(values.loan_proposal || principalAmount) || principalAmount,
         repayment_frequency: values.repayment_frequency,
         loan_method: values.loan_method,
         service_fee_percent: parseFloat(values.service_fee_percent || 3.5) || 0,
@@ -1242,6 +1434,7 @@ export default function LoanFormPage() {
           charge_inclusion: chargeIncluded,
           other_charges: otherChargesIncluded,
           other_charges_total: otherChargesTotal,
+          membership_deduction: membershipDeductionPayload,
         }),
         preview_schedule_json: JSON.stringify(preview.schedule),
       };
@@ -1529,7 +1722,7 @@ export default function LoanFormPage() {
             </div>
           )}
 
-          {/* Row 2: Term (months) | Release Date | Payment Frequency */}
+          {/* Row 2: Term (months) | Release Date | First Payment Due Date */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <Input
@@ -1550,6 +1743,18 @@ export default function LoanFormPage() {
             </div>
 
             <div>
+              <Input
+                label="First Payment Due Date"
+                type="date"
+                {...register('first_payment_due_date')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Defaults to release date + 7 days; editable for special arrangements</p>
+            </div>
+          </div>
+
+          {/* Row 3: Payment Frequency | Loan Method | Purpose */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
               <Select
                 label="Payment Frequency"
                 options={frequencyOptions}
@@ -1561,10 +1766,7 @@ export default function LoanFormPage() {
                   : 'How often payments are made'}
               </p>
             </div>
-          </div>
 
-          {/* Row 3: Loan Method | Purpose | Preview Payment / Period */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <Select
                 label="Loan Method"
@@ -1582,7 +1784,10 @@ export default function LoanFormPage() {
               />
               <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Optional</p>
             </div>
+          </div>
 
+          {/* Row 4: Preview Payment / Period */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <Input
                 label="Loan Payment / Period"
@@ -1669,12 +1874,12 @@ export default function LoanFormPage() {
             <div className="flex items-center gap-2">
               <Button
                 type="button"
-                variant={membershipUpgradeIncluded ? 'primary' : 'outline'}
+                variant={membershipDeduction.enabled ? 'primary' : 'outline'}
                 size="sm"
-                onClick={toggleMembershipUpgradeBundle}
+                onClick={() => setMembershipDeduction(prev => ({ ...prev, enabled: !prev.enabled }))}
                 icon={<Check size={13} />}
               >
-                {membershipUpgradeIncluded ? 'Membership Upgrade Applied' : 'Apply Membership Upgrade'}
+                {membershipDeduction.enabled ? 'Membership Deduction Added' : 'Add Membership Deduction'}
               </Button>
               <Button
                 type="button"
@@ -1702,6 +1907,100 @@ export default function LoanFormPage() {
                 shortfall{cbuShortfall > 0 ? ` (currently ${formatCurrency(cbuShortfall)} short of the ${formatCurrency(beneficialTier?.requiredCbu || 0)} required for this tier)` : ''} —
                 this is the "Share Capital" line on the coop's printed worksheet.
               </p>
+            </div>
+          )}
+
+          {membershipDeduction.enabled && (
+            <div className="mb-4 border border-emerald-100 rounded-lg overflow-hidden">
+              <div className="bg-emerald-50 px-4 py-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-xs text-emerald-800 font-semibold">Membership Deduction From Loan Proceeds</p>
+                  <p className="text-[11px] text-emerald-700 mt-1">
+                    Choose a preset, then edit any amount needed for this member before saving the loan.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:w-[560px]">
+                  <Select
+                    label="Preset"
+                    value={membershipDeduction.preset}
+                    onChange={e => applyMembershipDeductionPreset(e.target.value)}
+                    options={[
+                      { value: 'old_associate', label: 'Old Associate' },
+                      { value: 'old_regular', label: 'Old Regular' },
+                      { value: 'new_associate', label: 'New Associate' },
+                      { value: 'new_regular', label: 'New Regular' },
+                      { value: 'custom', label: 'Custom' },
+                    ]}
+                  />
+                  <Select
+                    label="Record Type"
+                    value={membershipDeduction.record_type}
+                    onChange={e => updateMembershipDeduction({ record_type: e.target.value })}
+                    options={[
+                      { value: 'old', label: 'Old Membership' },
+                      { value: 'new', label: 'New Membership' },
+                    ]}
+                  />
+                  <Select
+                    label="Membership Type"
+                    value={membershipDeduction.membership_type}
+                    onChange={e => updateMembershipDeduction({ membership_type: e.target.value })}
+                    options={[
+                      { value: 'associate', label: 'Associate' },
+                      { value: 'regular', label: 'Regular' },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4">
+                <Input
+                  label={membershipDeduction.record_type === 'old' ? 'Membership Entry' : 'Membership Fee'}
+                  type="number"
+                  step="0.01"
+                  value={membershipDeduction.membership_fee}
+                  onChange={e => updateMembershipDeduction({ membership_fee: e.target.value })}
+                />
+                <Input
+                  label="Initial CBU"
+                  type="number"
+                  step="0.01"
+                  value={membershipDeduction.cbu}
+                  onChange={e => updateMembershipDeduction({ cbu: e.target.value })}
+                />
+                <Input
+                  label="Initial Savings"
+                  type="number"
+                  step="0.01"
+                  value={membershipDeduction.savings}
+                  onChange={e => updateMembershipDeduction({ savings: e.target.value })}
+                />
+                <Input
+                  label="WELLife VIP Card"
+                  type="number"
+                  step="0.01"
+                  value={membershipDeduction.wellife_vip}
+                  onChange={e => updateMembershipDeduction({ wellife_vip: e.target.value })}
+                />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Total Membership Deduction</label>
+                  <div className="h-10 flex items-center justify-end px-3 bg-emerald-50 border border-emerald-100 rounded-lg text-sm font-bold text-emerald-700">
+                    {formatCurrency(membershipDeductionPreview?.total || 0)}
+                  </div>
+                </div>
+                <Input
+                  label="Other Fee Label"
+                  value={membershipDeduction.other_label}
+                  onChange={e => updateMembershipDeduction({ other_label: e.target.value })}
+                  placeholder="Optional"
+                />
+                <Input
+                  label="Other Fee Amount"
+                  type="number"
+                  step="0.01"
+                  value={membershipDeduction.other_fee}
+                  onChange={e => updateMembershipDeduction({ other_fee: e.target.value })}
+                />
+              </div>
             </div>
           )}
 
@@ -1917,6 +2216,7 @@ export default function LoanFormPage() {
                   <PreviewGroup title="Terms">
                     <PreviewRow label="Method" value={watchedMethod === 'straight' ? 'Straight' : 'Diminishing'} />
                     <PreviewRow label="Frequency" value={frequencyDisplayLabel(watchedFrequency)} />
+                    <PreviewRow label="First Payment Due Date" value={formatDate(preview.summary.first_payment_due_date)} />
                     <PreviewRow label="No. of Payments" value={String(preview.summary.number_of_payments)} />
                     <PreviewRow label="Monthly Interest Rate" value={`${preview.summary.monthly_interest_rate ?? watchedRate ?? 0}%`} />
                     <PreviewRow label="Weekly Interest Rate" value={`${preview.summary.weekly_interest_rate ?? 0}%`} />
@@ -1960,6 +2260,13 @@ export default function LoanFormPage() {
                     {chargeIncluded.membership_vip_card && parseFloat(watchedMembershipVipCard || 0) > 0 && (
                       <PreviewRow label="WELLife VIP Card" value={formatCurrency(parseFloat(watchedMembershipVipCard))} />
                     )}
+                    {membershipDeductionPreview?.breakdown?.map(item => (
+                      <PreviewRow
+                        key={`membership-${item.key}`}
+                        label={`Membership - ${item.label}`}
+                        value={formatCurrency(item.amount)}
+                      />
+                    ))}
                   </PreviewGroup>
                 </div>
               </div>
@@ -1974,7 +2281,7 @@ export default function LoanFormPage() {
                           'No.',
                           'Principal',
                           'Principal Amort.',
-                          'Interest',
+                          'Weekly Interest',
                           'Due Date',
                         ].map(h => (
                           <th

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   TrendingUp, TrendingDown,  RefreshCw, ArrowUpRight, ArrowDownRight,
   LayoutDashboard, Plus, AlertTriangle, Calendar,
-  X, Printer, Download, FileSpreadsheet,
+  X, Printer, Download,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
@@ -41,6 +41,45 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 
 function txDisplayDate(tx) {
   return tx?.transaction_date || tx?.created_at || null;
+}
+
+function normalizeCategoryText(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isLoanReleaseCategory(category = '') {
+  const text = normalizeCategoryText(category);
+  return text === 'loan_release' || text === 'loan release' || text === 'capital';
+}
+
+function isWithdrawalCategory(category = '') {
+  const text = normalizeCategoryText(category);
+  return ['cbu_withdrawal', 'savings_withdrawal'].includes(text) ||
+    text.includes('withdrawal');
+}
+
+function isOtherExpenseCategory(category = '') {
+  const text = normalizeCategoryText(category);
+  return !text || text === 'others' || text === 'other expenses' ||
+    text === 'other withdrawal/expenses' || text === 'needs manual review';
+}
+
+function originalExpenseCategory(tx) {
+  const notes = String(tx?.description || tx?.notes || '');
+  const categoryMatch = notes.match(/Original expense category:\s*([^\n\r|]+)/i);
+  const detailMatch = notes.match(/Category detail:\s*([^\n\r|]+)/i);
+  const original = categoryMatch?.[1]?.trim();
+  if (original && !isOtherExpenseCategory(original)) return original;
+  return detailMatch?.[1]?.trim() || original || tx?.category || '';
+}
+
+function displayCategoryLabel(category = '') {
+  const fromMap = CATEGORY_LABEL[category];
+  if (fromMap) return fromMap;
+  return String(category || 'Other Expenses')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, char => char.toUpperCase());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1150,26 +1189,75 @@ export default function CoopMonitoringPage() {
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
   }, [dateFilteredTransactions]);
 
-  const importedExpenseTotal = useMemo(() => {
+  const loanReleaseTotal = useMemo(() => {
     return dateFilteredTransactions
-      .filter(tx => tx.source === 'imported' && tx.type === 'cash_out')
+      .filter(tx => tx.type === 'cash_out' && isLoanReleaseCategory(tx.category))
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  }, [dateFilteredTransactions]);
+
+  const totalExpenseAmount = useMemo(() => {
+    return dateFilteredTransactions
+      .filter(tx => (
+        tx.type === 'cash_out' &&
+        !isLoanReleaseCategory(tx.category) &&
+        !isWithdrawalCategory(tx.category)
+      ))
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
   }, [dateFilteredTransactions]);
 
   const expenseMonitoring = useMemo(() => {
     const cashOutRows = dateFilteredTransactions.filter(tx => tx.type === 'cash_out');
+    const expenseRows = cashOutRows.filter(tx => (
+      !isLoanReleaseCategory(tx.category) &&
+      !isWithdrawalCategory(tx.category)
+    ));
     const sumBy = predicate => cashOutRows
       .filter(predicate)
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const expenseSumBy = predicate => expenseRows
+      .filter(predicate)
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+    const groupedExpenseCards = Object.entries(
+      expenseRows
+        .filter(tx => !isOtherExpenseCategory(originalExpenseCategory(tx)))
+        .reduce((groups, tx) => {
+          const key = originalExpenseCategory(tx) || 'others';
+          groups[key] = (groups[key] || 0) + Number(tx.amount || 0);
+          return groups;
+        }, {})
+    )
+      .map(([category, value], index) => ({
+        label: displayCategoryLabel(category),
+        value: Math.round(value * 100) / 100,
+        color: [
+          'bg-rose-50 border-rose-100',
+          'bg-orange-50 border-orange-100',
+          'bg-amber-50 border-amber-100',
+          'bg-sky-50 border-sky-100',
+          'bg-violet-50 border-violet-100',
+          'bg-cyan-50 border-cyan-100',
+        ][index % 6],
+        text: [
+          'text-rose-700',
+          'text-orange-700',
+          'text-amber-700',
+          'text-sky-700',
+          'text-violet-700',
+          'text-cyan-700',
+        ][index % 6],
+        sub: 'Recorded expense category',
+      }))
+      .sort((a, b) => b.value - a.value);
 
     return {
-      total: sumBy(() => true),
-      imported: sumBy(tx => tx.source === 'imported'),
-      loanReleases: sumBy(tx => tx.category === 'loan_release'),
+      total: expenseSumBy(() => true),
+      loanReleases: sumBy(tx => isLoanReleaseCategory(tx.category)),
       withdrawals: sumBy(tx => ['cbu_withdrawal', 'savings_withdrawal'].includes(tx.category)),
-      pettyCash: sumBy(tx => tx.category === 'petty_cash'),
-      otherExpenses: sumBy(tx => !['loan_release', 'cbu_withdrawal', 'savings_withdrawal', 'petty_cash'].includes(tx.category)),
+      otherExpenses: expenseSumBy(tx => isOtherExpenseCategory(originalExpenseCategory(tx))),
+      cards: groupedExpenseCards,
       count: cashOutRows.length,
+      expenseCount: expenseRows.length,
     };
   }, [dateFilteredTransactions]);
 
@@ -1201,12 +1289,15 @@ export default function CoopMonitoringPage() {
     }).join('');
     const totalIn  = filtered.filter(t=>t.type==='cash_in').reduce((s,t)=>s+(t.amount||0),0);
     const totalOut = filtered.filter(t=>t.type==='cash_out').reduce((s,t)=>s+(t.amount||0),0);
+    const reportLoanRelease = filtered
+      .filter(t => t.type === 'cash_out' && isLoanReleaseCategory(t.category))
+      .reduce((s, t) => s + (t.amount || 0), 0);
     const html = `
       <h1 class="report-title">Cooperative Fund Monitoring</h1>
       <div class="report-meta">Fund transactions &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
       <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:5mm">
         <div class="stat-box"><div class="stat-label">Total Cash In</div><div class="stat-value" style="font-size:10pt;color:#065f46">${fmt(totalIn)}</div></div>
-        <div class="stat-box"><div class="stat-label">Total Cash Out</div><div class="stat-value" style="font-size:10pt;color:#b91c1c">${fmt(totalOut)}</div></div>
+        <div class="stat-box"><div class="stat-label">Loan Release</div><div class="stat-value" style="font-size:10pt;color:#b91c1c">${fmt(reportLoanRelease)}</div></div>
         <div class="stat-box"><div class="stat-label">Net</div><div class="stat-value" style="font-size:10pt">${fmt(totalIn-totalOut)}</div></div>
       </div>
       <table>
@@ -1317,18 +1408,18 @@ export default function CoopMonitoringPage() {
             />
             <StatCard
               icon={<TrendingDown size={22} className="text-red-500" />}
-              label="Total Cash Out"
-              value={formatCurrency(scopedFund.cash_out)}
-              sub="Approved vouchers"
+              label="Loan Release"
+              value={formatCurrency(loanReleaseTotal)}
+              sub="Released loan proceeds"
               bg="bg-red-50"
               textColor="text-red-600"
               accentColor="bg-red-400"
             />
             <StatCard
-              icon={<FileSpreadsheet size={22} className="text-slate-600" />}
-              label="Imported Expenses"
-              value={formatCurrency(importedExpenseTotal)}
-              sub="Historical cash-out from Excel"
+              icon={<ArrowDownRight size={22} className="text-slate-600" />}
+              label="Total Expense"
+              value={formatCurrency(totalExpenseAmount)}
+              sub="Recorded cooperative expenses"
               bg="bg-slate-50"
               textColor="text-slate-700"
               accentColor="bg-slate-400"
@@ -1461,20 +1552,20 @@ export default function CoopMonitoringPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
               <div>
                 <h2 className="text-sm font-bold text-gray-800">Expense Monitoring</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Breakdown by cash-out source — releases, withdrawals, imported expenses</p>
+                <p className="text-xs text-gray-400 mt-0.5">Breakdown by recorded expense category</p>
               </div>
               <div className="text-xs text-gray-400">
-                {expenseMonitoring.count} cash-out record{expenseMonitoring.count !== 1 ? 's' : ''}
+                {expenseMonitoring.expenseCount} expense record{expenseMonitoring.expenseCount !== 1 ? 's' : ''}
               </div>
             </div>
 
             <div className="p-5">
               <div className="mb-4 p-4 bg-gradient-to-r from-red-50 to-slate-50 rounded-xl border border-red-100 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wide">Total Expenses / Cash Out</p>
+                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wide">Total Expense</p>
                   <p className="text-2xl font-bold text-red-700 mt-0.5">{formatCurrency(expenseMonitoring.total)}</p>
                   <p className="text-xs text-red-500 mt-0.5">
-                    Imported historical expenses: {formatCurrency(expenseMonitoring.imported)}
+                    Expense categories only. Loan releases and member withdrawals are tracked separately.
                   </p>
                 </div>
                 <TrendingDown size={32} className="text-red-300" />
@@ -1482,11 +1573,8 @@ export default function CoopMonitoringPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {[
-                  { label: 'Imported Expenses', value: expenseMonitoring.imported, color: 'bg-slate-50 border-slate-100', text: 'text-slate-700', sub: 'Historical cash-out from Excel' },
-                  { label: 'Loan Releases', value: expenseMonitoring.loanReleases, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Released loan proceeds' },
-                  { label: 'CBU/Savings Withdrawals', value: expenseMonitoring.withdrawals, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Member withdrawal records' },
-                  { label: 'Petty Cash', value: expenseMonitoring.pettyCash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Office-use expenses' },
-                  { label: 'Other Expenses', value: expenseMonitoring.otherExpenses, color: 'bg-gray-50 border-gray-100', text: 'text-gray-700', sub: 'Other cash-out categories' },
+                  ...expenseMonitoring.cards,
+                  { label: 'Other Expenses', value: expenseMonitoring.otherExpenses, color: 'bg-gray-50 border-gray-100', text: 'text-gray-700', sub: 'Uncategorized or manual-review expenses' },
                 ].map(card => (
                   <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
                     <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
@@ -1702,3 +1790,4 @@ export default function CoopMonitoringPage() {
     </div>
   );
 }
+

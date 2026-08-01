@@ -195,6 +195,8 @@ const CASH_OUT_TX_TYPES = new Set([
   'cbu_withdrawal',
   'savings_withdrawal',
   'loan_release',
+  'expense',
+  'check_release',
 ]);
 
 /**

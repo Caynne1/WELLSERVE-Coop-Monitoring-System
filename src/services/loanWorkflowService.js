@@ -1,6 +1,13 @@
 import { supabase } from './supabase';
 import { createTransaction } from './transactionService';
 import { updateLoan } from './loanService';
+import { getAccountsByMemberId, createAccount, updateAccount } from './accountService';
+import {
+  createMembership,
+  getMembershipByMemberId,
+  patchMembershipFeeRequired,
+  recordMembershipPayment,
+} from './membershipService';
 
 function parseJSONSafe(value, fallback = {}) {
   try {
@@ -35,10 +42,11 @@ export function getLoanDeductionItems(loan) {
     .map(item => ({
       label: item.label || item.name || 'Loan Deduction',
       amount: round2(item.amount || 0),
-      category: deductionCategory(item.label || item.name),
-      kind: deductionKind(item.label || item.name),
+      category: item.category || deductionCategory(item.label || item.name),
+      kind: item.kind || deductionKind(item.label || item.name),
+      post_to_membership: Boolean(item.post_to_membership),
     }))
-    .filter(item => item.amount > 0);
+    .filter(item => item.amount > 0 && !item.post_to_membership);
 
   const extraItems = [
     ['Service Fee', loan?.service_fee, 'service_fee', 'service_fee'],
@@ -64,6 +72,208 @@ export function getLoanDeductionItems(loan) {
   });
 
   return [...byKey.values()];
+}
+
+function getLoanMembershipDeduction(loan) {
+  const deductions = parseJSONSafe(loan?.preview_deductions_json, {});
+  const structured = deductions.membership_deduction;
+  if (structured?.enabled && Number(structured.total || 0) > 0) {
+    return {
+      ...structured,
+      total: round2(structured.total),
+      membership_fee: round2(structured.membership_fee),
+      cbu: round2(structured.cbu),
+      savings: round2(structured.savings),
+      wellife_vip: round2(structured.wellife_vip),
+      other_fee: round2(structured.other_fee),
+      breakdown: Array.isArray(structured.breakdown) ? structured.breakdown : [],
+    };
+  }
+
+  const items = Array.isArray(deductions.items) ? deductions.items : [];
+  const membershipItems = items.filter(item => item.post_to_membership && Number(item.amount || 0) > 0);
+  if (!membershipItems.length) return null;
+
+  const amountByKind = Object.fromEntries(
+    membershipItems.map(item => [item.kind || deductionKind(item.label || item.name), round2(item.amount)])
+  );
+  const total = round2(Object.values(amountByKind).reduce((sum, amount) => sum + amount, 0));
+  if (total <= 0) return null;
+
+  return {
+    enabled: true,
+    preset: 'custom',
+    record_type: 'new',
+    membership_type: 'regular',
+    membership_fee: amountByKind.membership_fee || 0,
+    cbu: amountByKind.cbu || 0,
+    savings: amountByKind.savings || 0,
+    wellife_vip: amountByKind.wellife_vip || 0,
+    other_fee: amountByKind.other_fee || 0,
+    other_label: 'Other Membership Fee',
+    total,
+    breakdown: membershipItems.map(item => ({
+      key: item.kind || deductionKind(item.label || item.name),
+      label: item.label || item.name || 'Membership Deduction',
+      category: item.category || deductionCategory(item.label || item.name),
+      amount: round2(item.amount),
+    })),
+  };
+}
+
+function membershipPaymentNotes(loan, deduction) {
+  const parts = [
+    `Loan membership deduction from ${loan?.loan_no || loan?.id || 'loan'}`,
+    `Record type: ${deduction.record_type || 'new'}`,
+    `Membership type: ${deduction.membership_type || 'regular'}`,
+    `Membership: ${deduction.membership_fee || 0}`,
+    `CBU: ${deduction.cbu || 0}`,
+    `Savings: ${deduction.savings || 0}`,
+    `WELLife VIP Card: ${deduction.wellife_vip || 0}`,
+  ];
+  if (deduction.other_fee > 0) parts.push(`${deduction.other_label || 'Other Fee'}: ${deduction.other_fee}`);
+  return parts.join(' | ');
+}
+
+async function ensureMemberAccount(memberId, accountType, createdBy) {
+  const accounts = await getAccountsByMemberId(memberId);
+  const existing = accounts.find(account => String(account.account_type).toLowerCase() === accountType);
+  if (existing) return existing;
+
+  return createAccount({
+    member_id: memberId,
+    account_type: accountType,
+    balance: 0,
+    status: 'active',
+  });
+}
+
+async function incrementMemberAccount(memberId, accountType, amount, createdBy) {
+  const value = round2(amount);
+  if (value <= 0) return null;
+
+  const account = await ensureMemberAccount(memberId, accountType, createdBy);
+  const nextBalance = round2(Number(account.balance || 0) + value);
+  return updateAccount(account.id, { balance: nextBalance });
+}
+
+async function membershipTransactionExists(loanId) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('loan_id', loanId)
+    .ilike('notes', '%Loan membership deduction%')
+    .limit(1);
+
+  if (error) throw error;
+  return Boolean(data?.length);
+}
+
+async function postLoanMembershipDeduction(loan, userId, releaseDate) {
+  const deduction = getLoanMembershipDeduction(loan);
+  if (!deduction || !loan?.member_id) return;
+
+  if (await membershipTransactionExists(loan.id)) return;
+
+  const membershipTotal = round2(
+    Number(deduction.membership_fee || 0) +
+    Number(deduction.cbu || 0) +
+    Number(deduction.savings || 0) +
+    Number(deduction.wellife_vip || 0) +
+    Number(deduction.other_fee || 0)
+  );
+  if (membershipTotal <= 0) return;
+
+  let membership = await getMembershipByMemberId(loan.member_id);
+  if (!membership) {
+    membership = await createMembership({
+      member_id: loan.member_id,
+      membership_type: deduction.membership_type || 'regular',
+      fee_required: membershipTotal,
+      fee_paid_now: 0,
+      notes: `Created from loan membership deduction (${loan.loan_no || loan.id})`,
+      created_by: userId,
+      is_historical: false,
+    });
+  }
+
+  const currentPaid = Number(membership.fee_paid || 0);
+  const required = Number(membership.fee_required || 0);
+  const nextRequired = Math.max(required, round2(currentPaid + membershipTotal));
+  if (nextRequired > required) {
+    await patchMembershipFeeRequired(membership.id, nextRequired);
+  }
+
+  await recordMembershipPayment(
+    membership.id,
+    loan.member_id,
+    membershipTotal,
+    releaseDate,
+    membershipPaymentNotes(loan, deduction),
+    userId
+  );
+
+  const memberCategoryAmount = round2(
+    Number(deduction.membership_fee || 0) +
+    Number(deduction.other_fee || 0)
+  );
+  if (memberCategoryAmount > 0) {
+    await createTransaction({
+      member_id: loan.member_id,
+      loan_id: loan.id,
+      category: 'membership',
+      type: 'membership_payment',
+      amount: memberCategoryAmount,
+      reference: loan.loan_no,
+      notes: `Loan membership deduction | Membership fee${deduction.other_fee > 0 ? ` | ${deduction.other_label || 'Other Fee'}: ${deduction.other_fee}` : ''}`,
+      created_by: userId ?? null,
+      transaction_date: releaseDate,
+    });
+  }
+
+  if (deduction.wellife_vip > 0) {
+    await createTransaction({
+      member_id: loan.member_id,
+      loan_id: loan.id,
+      category: 'membership',
+      type: 'membership_payment',
+      amount: deduction.wellife_vip,
+      reference: loan.loan_no,
+      notes: 'Loan membership deduction | WELLife VIP Card',
+      created_by: userId ?? null,
+      transaction_date: releaseDate,
+    });
+  }
+
+  if (deduction.cbu > 0) {
+    await incrementMemberAccount(loan.member_id, 'cbu', deduction.cbu, userId);
+    await createTransaction({
+      member_id: loan.member_id,
+      loan_id: loan.id,
+      category: 'cbu',
+      type: 'deposit',
+      amount: deduction.cbu,
+      reference: loan.loan_no,
+      notes: 'Loan membership deduction | Initial CBU',
+      created_by: userId ?? null,
+      transaction_date: releaseDate,
+    });
+  }
+
+  if (deduction.savings > 0) {
+    await incrementMemberAccount(loan.member_id, 'savings', deduction.savings, userId);
+    await createTransaction({
+      member_id: loan.member_id,
+      loan_id: loan.id,
+      category: 'savings',
+      type: 'deposit',
+      amount: deduction.savings,
+      reference: loan.loan_no,
+      notes: 'Loan membership deduction | Initial Savings',
+      created_by: userId ?? null,
+      transaction_date: releaseDate,
+    });
+  }
 }
 
 function deductionCategory(label = '') {
@@ -184,6 +394,7 @@ export async function releaseLoanFromCheck(check, userId) {
   }
   if (loan.status === 'released') return loan;
 
+  const releaseDate = new Date().toISOString().split('T')[0];
   const { data: existingRelease, error: releaseLookupError } = await supabase
     .from('transactions')
     .select('id')
@@ -192,13 +403,13 @@ export async function releaseLoanFromCheck(check, userId) {
     .maybeSingle();
   if (releaseLookupError) throw releaseLookupError;
   if (existingRelease) {
+    await postLoanMembershipDeduction(loan, userId, releaseDate);
     return updateLoan(loan.id, {
       status: 'released',
-      release_date: new Date().toISOString().split('T')[0],
+      release_date: releaseDate,
     });
   }
 
-  const releaseDate = new Date().toISOString().split('T')[0];
   const netProceeds = getLoanNetProceeds(loan);
 
   await createTransaction({
@@ -226,6 +437,8 @@ export async function releaseLoanFromCheck(check, userId) {
       transaction_date: releaseDate,
     });
   }
+
+  await postLoanMembershipDeduction(loan, userId, releaseDate);
 
   return updateLoan(loan.id, {
     status: 'released',

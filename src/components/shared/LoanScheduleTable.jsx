@@ -81,9 +81,12 @@ export default function LoanScheduleTable({
     };
   });
 
-  const totalPrincipalAmort = displaySchedule.reduce((s, r) => s + (r.principal || 0), 0);
+  const rawTotalPrincipalAmort = displaySchedule.reduce((s, r) => s + (r.principal || 0), 0);
+  const totalPrincipalAmort = frequency === 'weekly' && Number(loanAmount || 0) > 0 && Math.abs(rawTotalPrincipalAmort - Number(loanAmount || 0)) <= 0.1
+    ? Number(loanAmount || 0)
+    : rawTotalPrincipalAmort;
   const totalInterest = displaySchedule.reduce((s, r) => s + (r.displayInterest || 0), 0);
-  const totalLoanPayment = displaySchedule.reduce((s, r) => s + ((r.payment || 0) || ((r.principal || 0) + (r.displayInterest || 0))), 0);
+  const totalLoanPayment = totalPrincipalAmort + totalInterest;
   const paidCount = schedule.filter(r => r.paid).length;
   const totalPaidAmount = schedule.reduce((s, r) => s + (r.paid_amount || 0), 0);
 

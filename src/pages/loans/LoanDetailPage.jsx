@@ -408,7 +408,10 @@ export default function LoanDetailPage() {
   });
 
   // ── Totals for footer row ──────────────────────────────────────────────────
-  const totalPrincipal = scheduleRows.reduce((s, r) => s + (r.principal_amount ?? r.principal ?? 0), 0);
+  const rawTotalPrincipal = scheduleRows.reduce((s, r) => s + (r.principal_amount ?? r.principal ?? 0), 0);
+  const totalPrincipal = (loan.repayment_frequency || 'monthly') === 'weekly' && Number(loan.amount || 0) > 0 && Math.abs(rawTotalPrincipal - Number(loan.amount || 0)) <= 0.1
+    ? Number(loan.amount || 0)
+    : rawTotalPrincipal;
   const totalInterest  = scheduleRows.reduce((s, r) => s + (r.interest_amount  ?? r.interest  ?? 0), 0);
   const deductionItems = Array.isArray(previewDeductions?.items) ? previewDeductions.items : [];
   const deductionAmount = (matcher, fallback = 0) => {

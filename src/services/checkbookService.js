@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { releaseLoanFromCheck } from './loanWorkflowService';
+import { createTransaction } from './transactionService';
 import { getImportedHistoricalRows, mapHistoricalCheck } from './historicalMigrationRecordService';
 
 // ── Column whitelist ──────────────────────────────────────────────────────────
@@ -72,6 +73,132 @@ export async function getCheckbookEntryById(id) {
   return data;
 }
 
+async function getLinkedVoucher(voucherId) {
+  if (!voucherId) return null;
+
+  const { data, error } = await supabase
+    .from('vouchers')
+    .select('*')
+    .eq('id', voucherId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getLinkedExpense(expenseId) {
+  if (!expenseId) return null;
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .eq('id', expenseId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+function hasLoanReference(value = '') {
+  const text = String(value || '');
+  return /Loan No\s*:|Loan ID\s*:|Loan net proceeds\s*-|\bLN[-_/ A-Za-z0-9]+\b/i.test(text);
+}
+
+function isLoanReleaseVoucher(voucher, expense) {
+  if (!voucher) return false;
+  if ((voucher.voucher_kind || 'expense') === 'member_withdrawal') return false;
+  if (expense?.category === 'loan_net_proceeds') return true;
+  if (voucher.member_id && hasLoanReference(voucher.reference || voucher.notes || voucher.purpose)) return true;
+  return [
+    voucher.reference,
+    voucher.purpose,
+    voucher.notes,
+    expense?.description,
+    expense?.notes,
+  ].some(hasLoanReference);
+}
+
+function expenseTransactionCategory(expense) {
+  return expense?.category || 'expense';
+}
+
+function buildExpenseReleaseNotes({ check, voucher, expense, category }) {
+  return [
+    `Check release for expense${voucher?.voucher_no ? ` | Voucher: ${voucher.voucher_no}` : ''}`,
+    `Original expense category: ${category}`,
+    expense?.category_other ? `Category detail: ${expense.category_other}` : null,
+    check.notes,
+    expense?.notes,
+  ].filter(Boolean).join('\n');
+}
+
+async function expenseReleaseAlreadyRecorded(check) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('reference', check.check_no)
+    .in('type', ['expense', 'withdrawal', 'check_release'])
+    .limit(1);
+
+  if (error) throw error;
+  return Boolean(data?.length);
+}
+
+async function recordExpenseCheckRelease(check, voucher, expense, userId) {
+  if (await expenseReleaseAlreadyRecorded(check)) return;
+
+  const releaseDate = new Date().toISOString().split('T')[0];
+  const category = expenseTransactionCategory(expense);
+  const notes = buildExpenseReleaseNotes({ check, voucher, expense, category });
+
+  const payload = {
+    member_id: voucher?.member_id || null,
+    category: 'others',
+    type: 'expense',
+    amount: Number(check.amount || voucher?.amount || expense?.amount || 0),
+    reference: check.check_no,
+    notes,
+    created_by: userId ?? null,
+    transaction_date: check.date || releaseDate,
+  };
+
+  try {
+    await createTransaction(payload);
+  } catch (err) {
+    const message = String(err.message || '');
+    if (message.includes('transactions_type_check')) {
+      try {
+        await createTransaction({ ...payload, type: 'withdrawal' });
+      } catch (retryErr) {
+        if (!String(retryErr.message || '').includes('transactions_category_check')) throw retryErr;
+        await createTransaction({
+          ...payload,
+          type: 'withdrawal',
+          category: 'others',
+          notes,
+        });
+      }
+      return;
+    }
+    if (!message.includes('transactions_category_check')) throw err;
+    try {
+      await createTransaction({
+        ...payload,
+        category: 'others',
+        notes,
+      });
+    } catch (retryErr) {
+      if (!String(retryErr.message || '').includes('transactions_type_check')) throw retryErr;
+      await createTransaction({
+        ...payload,
+        type: 'withdrawal',
+        category: 'others',
+        notes,
+      });
+    }
+  }
+}
+
 // ── Create ────────────────────────────────────────────────────────────────────
 // check_no is user-supplied — it comes from the physical bank checkbook.
 // The DB UNIQUE constraint is the guard against duplicates.
@@ -123,7 +250,14 @@ export async function clearCheck(id) {
 
 export async function releaseCheck(id, userId) {
   const check = await getCheckbookEntryById(id);
-  await releaseLoanFromCheck(check, userId);
+  const voucher = await getLinkedVoucher(check.voucher_id);
+  const expense = await getLinkedExpense(voucher?.expense_id);
+
+  if (isLoanReleaseVoucher(voucher, expense)) {
+    await releaseLoanFromCheck(check, userId);
+  } else {
+    await recordExpenseCheckRelease(check, voucher, expense, userId);
+  }
 
   const { data, error } = await supabase
     .from('checkbook')
