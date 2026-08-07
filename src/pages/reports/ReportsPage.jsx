@@ -19,12 +19,12 @@ import Spinner from '../../components/ui/Spinner';
 import { getMemberStats } from '../../services/memberService';
 import { getLoanStats, getLoanPortfolioAnalytics } from '../../services/loanService';
 import { getAccountStats } from '../../services/accountService';
-import { getTransactions } from '../../services/transactionService';
+import { computeCoopSummaryFromInvoices, getIncomeBreakdown } from '../../services/coopFundService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
-// ── Constants ──────────────────────────────────────────────────────────────
+// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PRESETS = [
   { id: 'weekly',    label: 'This Week' },
@@ -40,7 +40,92 @@ const CHART_COLORS = {
   cbu:     { stroke: '#059669' },
 };
 
-// ── Date helpers ───────────────────────────────────────────────────────────
+function ledgerDate(tx) {
+  return tx?.transaction_date || tx?.created_at || null;
+}
+
+function normalized(value) {
+  return String(value || '').toLowerCase();
+}
+
+function isCountedLedgerRow(tx) {
+  return !tx?.display_only && normalized(tx?.category) !== 'voucher';
+}
+
+function isLoanRelease(tx) {
+  return tx.type === 'cash_out' && normalized(tx.category) === 'loan_release';
+}
+
+function isLoanPayment(tx) {
+  return tx.type === 'cash_in' && (
+    normalized(tx.category) === 'loan_payment' ||
+    normalized(tx.raw_type) === 'loan_payment'
+  );
+}
+
+function isCbuDeposit(tx) {
+  return tx.type === 'cash_in' && normalized(tx.category) === 'cbu';
+}
+
+function isSavingsDeposit(tx) {
+  return tx.type === 'cash_in' && normalized(tx.category) === 'savings';
+}
+
+function isCbuWithdrawal(tx) {
+  return tx.type === 'cash_out' && normalized(tx.category) === 'cbu_withdrawal';
+}
+
+function isSavingsWithdrawal(tx) {
+  return tx.type === 'cash_out' && normalized(tx.category) === 'savings_withdrawal';
+}
+
+function isMembershipCollection(tx) {
+  const category = normalized(tx.category);
+  const rawType = normalized(tx.raw_type);
+  return tx.type === 'cash_in' && (
+    category === 'membership' ||
+    category === 'membership_fee' ||
+    category === 'vip_card' ||
+    rawType === 'membership_payment'
+  );
+}
+
+function isLoanDeduction(tx) {
+  const category = normalized(tx.category);
+  const rawType = normalized(tx.raw_type);
+  return tx.type === 'cash_in' && (
+    rawType === 'loan_deduction' ||
+    [
+      'service_fee',
+      'cbu_retention',
+      'legal_fees',
+      'insurance',
+      'clpi_insurance',
+      'regular_savings',
+      'penalty_due',
+      'annual_dues',
+      'cbu_completion',
+      'petty_cash',
+      'admin_regulatory_fees',
+    ].includes(category)
+  );
+}
+
+function isExpense(tx) {
+  return tx.type === 'cash_out' && !isLoanRelease(tx) && !normalized(tx.category).includes('withdrawal');
+}
+
+function displayLedgerType(type) {
+  if (type === 'cash_in') return 'Cash In';
+  if (type === 'cash_out') return 'Cash Out';
+  return String(type || '').replace(/_/g, ' ') || 'â€”';
+}
+
+function displayLedgerCategory(category) {
+  return String(category || 'â€”').replace(/_/g, ' ');
+}
+
+// â”€â”€ Date helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getPresetRange(preset) {
   const now = new Date();
@@ -81,7 +166,8 @@ function buildTimeSeries(transactions, from, to, preset) {
       : to;
 
     const inPeriod = transactions.filter(tx => {
-      const d = tx.transaction_date ? parseISO(tx.transaction_date) : (tx.created_at ? parseISO(tx.created_at) : null);
+      const dateValue = ledgerDate(tx);
+      const d = dateValue ? parseISO(dateValue) : null;
       if (!d || !isValid(d)) return false;
       return d >= periodStart && d <= (preset === 'weekly' ? periodStart : periodEnd);
     });
@@ -92,14 +178,14 @@ function buildTimeSeries(transactions, from, to, preset) {
         : preset === 'monthly'
           ? `W${i + 1}`
           : format(periodStart, preset === 'annual' ? 'MMM' : 'MMM yy'),
-      loans:   inPeriod.filter(t => t.type === 'loan_release').reduce((s, t) => s + (t.amount || 0), 0),
-      savings: inPeriod.filter(t => t.type === 'deposit' && t.category === 'savings').reduce((s, t) => s + (t.amount || 0), 0),
-      cbu:     inPeriod.filter(t => t.type === 'deposit' && t.category === 'cbu').reduce((s, t) => s + (t.amount || 0), 0),
+      loans:   inPeriod.filter(t => isCountedLedgerRow(t) && isLoanRelease(t)).reduce((s, t) => s + (t.amount || 0), 0),
+      savings: inPeriod.filter(isSavingsDeposit).reduce((s, t) => s + (t.amount || 0), 0),
+      cbu:     inPeriod.filter(isCbuDeposit).reduce((s, t) => s + (t.amount || 0), 0),
     };
   });
 }
 
-// ── SVG Trend Chart ────────────────────────────────────────────────────────
+// â”€â”€ SVG Trend Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TrendChart({ title, current, previous, color, showComparison, labels }) {
   const H = 130, W = 100;
@@ -191,7 +277,7 @@ function TrendChart({ title, current, previous, color, showComparison, labels })
   );
 }
 
-// ── Stat Card ──────────────────────────────────────────────────────────────
+// â”€â”€ Stat Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function StatCard({ icon, label, value, sub, iconBg, iconColor, trend, trendLabel }) {
   return (
@@ -219,7 +305,7 @@ function StatCard({ icon, label, value, sub, iconBg, iconColor, trend, trendLabe
   );
 }
 
-// ── Membership Breakdown Card ──────────────────────────────────────────────
+// â”€â”€ Membership Breakdown Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Renders a horizontal stacked bar showing the proportion of each member type
 // alongside per-type counts. Inactive members shown as a separate row.
 
@@ -276,7 +362,7 @@ function MembershipBreakdownCard({ memberStats }) {
           );
         })}
 
-        {/* Inactive — cross-cutting status, shown separately */}
+        {/* Inactive â€” cross-cutting status, shown separately */}
         <div className="rounded-xl p-3 bg-gray-50 border border-gray-100">
           <div className="flex items-center gap-1.5 mb-1">
             <span className="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0" />
@@ -318,7 +404,7 @@ function SectionTitle({ children }) {
   );
 }
 
-// ── Date Range Picker ──────────────────────────────────────────────────────
+// â”€â”€ Date Range Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DateRangePicker({ preset, customFrom, customTo, onPresetChange, onCustomChange }) {
   const [open, setOpen] = useState(false);
@@ -342,7 +428,7 @@ function DateRangePicker({ preset, customFrom, customTo, onPresetChange, onCusto
         <span>{activeLabel}</span>
         {preset === 'custom' && customFrom && customTo && (
           <span className="text-xs text-gray-400 ml-1">
-            {format(customFrom, 'MMM d')} – {format(customTo, 'MMM d, yyyy')}
+            {format(customFrom, 'MMM d')} â€“ {format(customTo, 'MMM d, yyyy')}
           </span>
         )}
         <ChevronDown size={13} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -408,7 +494,7 @@ function DateRangePicker({ preset, customFrom, customTo, onPresetChange, onCusto
   );
 }
 
-// ── Print helpers ──────────────────────────────────────────────────────────
+// â”€â”€ Print helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Build a self-contained HTML string for the report,
@@ -417,6 +503,8 @@ function DateRangePicker({ preset, customFrom, customTo, onPresetChange, onCusto
 function buildReportHtml({
   periodLabel, memberStats, loanStats, accountStats,
   totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
+  totalIncome, totalExpense, loanInterest, membershipCollections,
+  loanDeductions, totalCBUBalance, totalSavingsBalance,
   cbuDeposits, savingsDeposits, transactions,
 }) {
   const fmt = (n) =>
@@ -427,10 +515,10 @@ function buildReportHtml({
     + ' at ' + now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
 
   const txRows = transactions.slice(0, 100).map(tx => {
-    const name = [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—';
-    const date = tx.transaction_date || (tx.created_at ? tx.created_at.slice(0, 10) : '—');
-    const type = (tx.type || '').replace(/_/g, ' ');
-    const cat  = tx.category || '—';
+    const name = tx.member_name || [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—';
+    const date = tx.transaction_date || (tx.created_at ? tx.created_at.slice(0, 10) : 'â€”');
+    const type = displayLedgerType(tx.type);
+    const cat  = displayLedgerCategory(tx.category);
     const amt  = fmt(tx.amount);
     return `<tr><td>${date}</td><td style="text-transform:capitalize">${type}</td><td>${cat}</td><td>${name}</td><td style="text-align:right">${amt}</td></tr>`;
   }).join('');
@@ -444,7 +532,7 @@ function buildReportHtml({
     <div class="report-meta">
       <strong>Period:</strong> ${periodLabel} &nbsp;|&nbsp;
       <strong>Generated:</strong> ${generated} &nbsp;|&nbsp;
-      <span style="color:#b91c1c;font-weight:600">CONFIDENTIAL — AUTHORIZED USE ONLY</span>
+      <span style="color:#b91c1c;font-weight:600">CONFIDENTIAL â€” AUTHORIZED USE ONLY</span>
     </div>
 
     <div class="section-heading">Membership Overview</div>
@@ -455,6 +543,7 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Kiddy</div><div class="stat-value">${num(memberStats?.kiddy)}</div></div>
       <div class="stat-box"><div class="stat-label">Active</div><div class="stat-value">${num(memberStats?.active)}</div></div>
       <div class="stat-box"><div class="stat-label">Inactive</div><div class="stat-value">${num(memberStats?.inactive)}</div></div>
+      <div class="stat-box"><div class="stat-label">Membership Collections</div><div class="stat-value" style="font-size:10pt">${fmt(membershipCollections)}</div></div>
     </div>
 
     <div class="section-heading">Loan Portfolio</div>
@@ -463,14 +552,18 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Outstanding Balance</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.totalOutstanding)}</div></div>
       <div class="stat-box"><div class="stat-label">Released (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalReleased)}</div></div>
       <div class="stat-box"><div class="stat-label">Repaid (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalRepaid)}</div></div>
+      <div class="stat-box"><div class="stat-label">Interest Income</div><div class="stat-value" style="font-size:10pt">${fmt(loanInterest)}</div></div>
     </div>
 
-    <div class="section-heading">Savings & Deposits</div>
+    <div class="section-heading">Cash Flow & Savings</div>
     <div class="stats-grid">
-      <div class="stat-box"><div class="stat-label">Total CBU Balance</div><div class="stat-value" style="font-size:10pt">${fmt(accountStats?.totalCBU)}</div></div>
-      <div class="stat-box"><div class="stat-label">Total Savings Balance</div><div class="stat-value" style="font-size:10pt">${fmt(accountStats?.totalSavings)}</div></div>
-      <div class="stat-box"><div class="stat-label">Deposits (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalDeposited)}</div></div>
-      <div class="stat-box"><div class="stat-label">Withdrawals (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalWithdrawn)}</div></div>
+      <div class="stat-box"><div class="stat-label">Total CBU Balance</div><div class="stat-value" style="font-size:10pt">${fmt(totalCBUBalance)}</div></div>
+      <div class="stat-box"><div class="stat-label">Total Savings Balance</div><div class="stat-value" style="font-size:10pt">${fmt(totalSavingsBalance)}</div></div>
+      <div class="stat-box"><div class="stat-label">Cash In (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalDeposited)}</div></div>
+      <div class="stat-box"><div class="stat-label">Cash Out (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalWithdrawn)}</div></div>
+      <div class="stat-box"><div class="stat-label">Coop Income</div><div class="stat-value" style="font-size:10pt">${fmt(totalIncome)}</div></div>
+      <div class="stat-box"><div class="stat-label">Expenses</div><div class="stat-value" style="font-size:10pt">${fmt(totalExpense)}</div></div>
+      <div class="stat-box"><div class="stat-label">Loan Deductions</div><div class="stat-value" style="font-size:10pt">${fmt(loanDeductions)}</div></div>
       <div class="stat-box"><div class="stat-label">CBU Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(cbuDeposits)}</div></div>
       <div class="stat-box"><div class="stat-label">Savings Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(savingsDeposits)}</div></div>
     </div>
@@ -485,12 +578,12 @@ function buildReportHtml({
     ` : ''}
 
     <div class="confidential">
-      WELLSERVE Cooperative Monitoring System — This report is for authorized personnel only.
+      WELLSERVE Cooperative Monitoring System â€” This report is for authorized personnel only.
     </div>
   `;
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
+// â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ReportsPage() {
   const [memberStats, setMemberStats]       = useState(null);
@@ -498,6 +591,8 @@ export default function ReportsPage() {
   const [loanAnalytics, setLoanAnalytics]   = useState(null);
   const [accountStats, setAccountStats]     = useState(null);
   const [allTransactions, setAllTransactions] = useState([]);
+  const [incomeBreakdown, setIncomeBreakdown] = useState({ total_income: 0, loan_interest: 0 });
+  const [prevIncomeBreakdown, setPrevIncomeBreakdown] = useState({ total_income: 0, loan_interest: 0 });
   const [loading, setLoading]               = useState(true);
 
   const [preset, setPreset]             = useState('monthly');
@@ -516,18 +611,18 @@ export default function ReportsPage() {
   async function fetchAll() {
     setLoading(true);
     try {
-      const [ms, ls, la, as, txs] = await Promise.all([
+      const [ms, ls, la, as, fundSummary] = await Promise.all([
         getMemberStats(),
         getLoanStats(),
         getLoanPortfolioAnalytics().catch(() => null),
         getAccountStats(),
-        getTransactions(),
+        computeCoopSummaryFromInvoices(),
       ]);
       setMemberStats(ms);
       setLoanStats(ls);
       setLoanAnalytics(la);
       setAccountStats(as);
-      setAllTransactions(txs || []);
+      setAllTransactions(fundSummary?.transactions || []);
     } catch {
       toast.error(
         (t) => (
@@ -550,38 +645,73 @@ export default function ReportsPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  useEffect(() => {
+    let active = true;
+    async function fetchIncome() {
+      try {
+        const [current, previous] = await Promise.all([
+          getIncomeBreakdown({ from: format(from, 'yyyy-MM-dd'), to: format(to, 'yyyy-MM-dd') }),
+          getIncomeBreakdown({ from: format(prevRange.from, 'yyyy-MM-dd'), to: format(prevRange.to, 'yyyy-MM-dd') }),
+        ]);
+        if (!active) return;
+        setIncomeBreakdown(current || { total_income: 0, loan_interest: 0 });
+        setPrevIncomeBreakdown(previous || { total_income: 0, loan_interest: 0 });
+      } catch (error) {
+        console.warn('[ReportsPage] income breakdown failed:', error?.message || error);
+      }
+    }
+    fetchIncome();
+    return () => { active = false; };
+  }, [from, to, prevRange.from, prevRange.to]);
+
   // Filter by period
   const filterByRange = (txs, rangeFrom, rangeTo) => txs.filter(tx => {
-    const d = tx.transaction_date ? parseISO(tx.transaction_date) : (tx.created_at ? parseISO(tx.created_at) : null);
+    const dateValue = ledgerDate(tx);
+    const d = dateValue ? parseISO(dateValue) : null;
     if (!d || !isValid(d)) return false;
     return d >= rangeFrom && d <= rangeTo;
   });
 
   const transactions     = useMemo(() => filterByRange(allTransactions, from, to), [allTransactions, from, to]);
   const prevTransactions = useMemo(() => filterByRange(allTransactions, prevRange.from, prevRange.to), [allTransactions, prevRange]);
+  const countedTransactions = useMemo(() => transactions.filter(isCountedLedgerRow), [transactions]);
+  const countedPrevTransactions = useMemo(() => prevTransactions.filter(isCountedLedgerRow), [prevTransactions]);
 
   // Derived
   const sum = (arr, pred) => arr.filter(pred).reduce((s, t) => s + (t.amount || 0), 0);
   const pct = (curr, prev) => prev === 0 ? null : ((curr - prev) / prev) * 100;
 
-  const totalDeposited  = sum(transactions, t => t.type === 'deposit');
-  const totalWithdrawn  = sum(transactions, t => t.type === 'withdrawal');
-  const totalRepaid     = sum(transactions, t => t.type === 'loan_payment');
-  const totalReleased   = sum(transactions, t => t.type === 'loan_release');
-  const cbuDeposits     = sum(transactions, t => t.type === 'deposit' && t.category === 'cbu');
-  const savingsDeposits = sum(transactions, t => t.type === 'deposit' && t.category === 'savings');
+  const totalDeposited  = sum(countedTransactions, t => t.type === 'cash_in');
+  const totalWithdrawn  = sum(countedTransactions, t => t.type === 'cash_out');
+  const totalRepaid     = sum(countedTransactions, isLoanPayment);
+  const totalReleased   = sum(countedTransactions, isLoanRelease);
+  const totalExpense    = sum(countedTransactions, isExpense);
+  const totalIncome     = Number(incomeBreakdown?.total_income || 0);
+  const loanInterest    = Number(incomeBreakdown?.loan_interest || 0);
+  const membershipCollections = sum(countedTransactions, isMembershipCollection);
+  const loanDeductions = sum(countedTransactions, isLoanDeduction);
+  const cbuDeposits     = sum(transactions, isCbuDeposit);
+  const savingsDeposits = sum(transactions, isSavingsDeposit);
+  const totalCBUBalance = sum(allTransactions, isCbuDeposit) - sum(allTransactions, isCbuWithdrawal);
+  const totalSavingsBalance = sum(allTransactions, isSavingsDeposit) - sum(allTransactions, isSavingsWithdrawal);
 
-  const prevDeposited   = sum(prevTransactions, t => t.type === 'deposit');
-  const prevWithdrawn   = sum(prevTransactions, t => t.type === 'withdrawal');
-  const prevRepaid      = sum(prevTransactions, t => t.type === 'loan_payment');
-  const prevReleased    = sum(prevTransactions, t => t.type === 'loan_release');
-  const prevCbuDep      = sum(prevTransactions, t => t.type === 'deposit' && t.category === 'cbu');
-  const prevSavingsDep  = sum(prevTransactions, t => t.type === 'deposit' && t.category === 'savings');
+  const prevDeposited   = sum(countedPrevTransactions, t => t.type === 'cash_in');
+  const prevWithdrawn   = sum(countedPrevTransactions, t => t.type === 'cash_out');
+  const prevRepaid      = sum(countedPrevTransactions, isLoanPayment);
+  const prevReleased    = sum(countedPrevTransactions, isLoanRelease);
+  const prevExpense     = sum(countedPrevTransactions, isExpense);
+  const prevIncome      = Number(prevIncomeBreakdown?.total_income || 0);
+  const prevLoanInterest = Number(prevIncomeBreakdown?.loan_interest || 0);
+  const prevMembershipCollections = sum(countedPrevTransactions, isMembershipCollection);
+  const prevLoanDeductions = sum(countedPrevTransactions, isLoanDeduction);
+  const prevCbuDep      = sum(prevTransactions, isCbuDeposit);
+  const prevSavingsDep  = sum(prevTransactions, isSavingsDeposit);
 
-  const deposits     = transactions.filter(t => t.type === 'deposit');
-  const withdrawals  = transactions.filter(t => t.type === 'withdrawal');
-  const loanPayments = transactions.filter(t => t.type === 'loan_payment');
-  const loanReleases = transactions.filter(t => t.type === 'loan_release');
+  const deposits     = countedTransactions.filter(t => t.type === 'cash_in');
+  const withdrawals  = countedTransactions.filter(t => t.type === 'cash_out');
+  const loanPayments = countedTransactions.filter(isLoanPayment);
+  const loanReleases = countedTransactions.filter(isLoanRelease);
+  const expenses     = countedTransactions.filter(isExpense);
 
   // Time series
   const currSeries = useMemo(() => buildTimeSeries(transactions, from, to, preset), [transactions, from, to, preset]);
@@ -597,22 +727,27 @@ export default function ReportsPage() {
   // Exports
   function handleExportSummary() {
     const rows = [
-      { Metric: 'Report Period',                  Value: `${formatDate(from.toISOString())} – ${formatDate(to.toISOString())}` },
+      { Metric: 'Report Period',                  Value: `${formatDate(from.toISOString())} â€“ ${formatDate(to.toISOString())}` },
       { Metric: 'Total Members',                  Value: memberStats?.total ?? 0 },
       { Metric: 'Active Members',                 Value: memberStats?.active ?? 0 },
       { Metric: 'Inactive Members',               Value: memberStats?.inactive ?? 0 },
       { Metric: 'Regular Members',                Value: memberStats?.regular ?? 0 },
       { Metric: 'Associate Members',              Value: memberStats?.associate ?? 0 },
       { Metric: 'Kiddy Members',                  Value: memberStats?.kiddy ?? 0 },
-      { Metric: 'Total CBU Balance (PHP)',         Value: accountStats?.totalCBU ?? 0 },
-      { Metric: 'Total Savings Balance (PHP)',     Value: accountStats?.totalSavings ?? 0 },
+      { Metric: 'Total CBU Balance (PHP)',         Value: totalCBUBalance },
+      { Metric: 'Total Savings Balance (PHP)',     Value: totalSavingsBalance },
       { Metric: 'Total Loans',                    Value: loanStats?.total ?? 0 },
       { Metric: 'Active Loans',                   Value: loanStats?.active ?? 0 },
       { Metric: 'Outstanding Balance (PHP)',       Value: loanStats?.totalOutstanding ?? 0 },
       { Metric: 'Period: Loans Released (PHP)',   Value: totalReleased },
       { Metric: 'Period: Loan Repayments (PHP)',  Value: totalRepaid },
-      { Metric: 'Period: All Deposits (PHP)',     Value: totalDeposited },
-      { Metric: 'Period: All Withdrawals (PHP)',  Value: totalWithdrawn },
+      { Metric: 'Period: Cooperative Income (PHP)', Value: totalIncome },
+      { Metric: 'Period: Membership Collections (PHP)', Value: membershipCollections },
+      { Metric: 'Period: Loan Deductions (PHP)', Value: loanDeductions },
+      { Metric: 'Period: Loan Interest (PHP)',    Value: loanInterest },
+      { Metric: 'Period: Cash In (PHP)',          Value: totalDeposited },
+      { Metric: 'Period: Cash Out (PHP)',         Value: totalWithdrawn },
+      { Metric: 'Period: Expenses (PHP)',         Value: totalExpense },
       { Metric: 'Period: CBU Deposits (PHP)',     Value: cbuDeposits },
       { Metric: 'Period: Savings Deposits (PHP)', Value: savingsDeposits },
       { Metric: 'Report Generated',               Value: format(new Date(), 'MMM d, yyyy h:mm a') },
@@ -624,12 +759,14 @@ export default function ReportsPage() {
   function handleExportTransactions() {
     if (transactions.length === 0) return toast.error('No transactions in this period.');
     const rows = transactions.map(tx => ({
-      type: tx.type || '',
-      category: tx.category || '',
-      member_name: `${tx.members?.first_name || ''} ${tx.members?.last_name || ''}`.trim(),
+      type: displayLedgerType(tx.type),
+      category: displayLedgerCategory(tx.category),
+      member_name: tx.member_name || `${tx.members?.first_name || ''} ${tx.members?.last_name || ''}`.trim(),
       member_no: tx.members?.member_no || '',
       amount: tx.amount ?? 0,
-      reference: tx.reference || '',
+      reference: tx.ref_no || tx.reference || '',
+      description: tx.description || '',
+      created_by: tx.created_by || '',
       date: tx.transaction_date || (tx.created_at ? formatDate(tx.created_at) : ''),
     }));
     exportToCSV(`transactions_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`, rows);
@@ -646,13 +783,20 @@ export default function ReportsPage() {
       totalWithdrawn,
       totalRepaid,
       totalReleased,
+      totalIncome,
+      totalExpense,
+      loanInterest,
+      membershipCollections,
+      loanDeductions,
+      totalCBUBalance,
+      totalSavingsBalance,
       cbuDeposits,
       savingsDeposits,
       transactions,
     });
 
     const fullHtml = wrapWithLetterhead(contentHtml, {
-      title: `WELLSERVE Report — ${periodLabel}`,
+      title: `WELLSERVE Report â€” ${periodLabel}`,
     });
 
     const win = printHtmlDocument(fullHtml, {
@@ -667,8 +811,8 @@ export default function ReportsPage() {
   }
 
   const periodLabel = preset !== 'custom'
-    ? `${PRESETS.find(p => p.id === preset)?.label} — ${format(from, 'MMM d')} to ${format(to, 'MMM d, yyyy')}`
-    : `${format(from, 'MMM d, yyyy')} – ${format(to, 'MMM d, yyyy')}`;
+    ? `${PRESETS.find(p => p.id === preset)?.label} â€” ${format(from, 'MMM d')} to ${format(to, 'MMM d, yyyy')}`
+    : `${format(from, 'MMM d, yyyy')} â€“ ${format(to, 'MMM d, yyyy')}`;
 
   const auditRows = [
     { label: 'Total Members',            curr: memberStats?.total ?? 0,           prev: memberStats?.total ?? 0,          fmt: v => v },
@@ -677,15 +821,20 @@ export default function ReportsPage() {
     { label: 'Regular Members',          curr: memberStats?.regular ?? 0,         prev: memberStats?.regular ?? 0,        fmt: v => v },
     { label: 'Associate Members',        curr: memberStats?.associate ?? 0,       prev: memberStats?.associate ?? 0,      fmt: v => v },
     { label: 'Kiddy Members',            curr: memberStats?.kiddy ?? 0,           prev: memberStats?.kiddy ?? 0,          fmt: v => v },
-    { label: 'Total CBU Balance',        curr: accountStats?.totalCBU ?? 0,       prev: accountStats?.totalCBU ?? 0,      fmt: formatCurrency },
-    { label: 'Total Savings Balance',    curr: accountStats?.totalSavings ?? 0,   prev: accountStats?.totalSavings ?? 0,  fmt: formatCurrency },
+    { label: 'Total CBU Balance',        curr: totalCBUBalance,                   prev: totalCBUBalance,                  fmt: formatCurrency },
+    { label: 'Total Savings Balance',    curr: totalSavingsBalance,               prev: totalSavingsBalance,              fmt: formatCurrency },
     { label: 'Outstanding Loan Balance', curr: loanStats?.totalOutstanding ?? 0,  prev: loanStats?.totalOutstanding ?? 0, fmt: formatCurrency },
+    { label: 'Cooperative Income (Period)', curr: totalIncome,                    prev: prevIncome,                       fmt: formatCurrency },
+    { label: 'Membership Collections (Period)', curr: membershipCollections,       prev: prevMembershipCollections,        fmt: formatCurrency },
+    { label: 'Loan Deductions (Period)', curr: loanDeductions,                    prev: prevLoanDeductions,               fmt: formatCurrency },
+    { label: 'Loan Interest (Period)',   curr: loanInterest,                      prev: prevLoanInterest,                 fmt: formatCurrency },
     { label: 'Loans Released (Period)',  curr: totalReleased,                      prev: prevReleased,                     fmt: formatCurrency },
     { label: 'Loan Repayments (Period)', curr: totalRepaid,                        prev: prevRepaid,                       fmt: formatCurrency },
-    { label: 'Deposits (Period)',        curr: totalDeposited,                     prev: prevDeposited,                    fmt: formatCurrency },
-    { label: 'Withdrawals (Period)',     curr: totalWithdrawn,                     prev: prevWithdrawn,                    fmt: formatCurrency },
-    { label: 'CBU Deposits (Period)',    curr: cbuDeposits,                        prev: prevCbuDep,                       fmt: formatCurrency },
-    { label: 'Savings Deposits (Period)',curr: savingsDeposits,                    prev: prevSavingsDep,                   fmt: formatCurrency },
+    { label: 'Cash In (Period)',         curr: totalDeposited,                     prev: prevDeposited,                    fmt: formatCurrency },
+    { label: 'Cash Out (Period)',        curr: totalWithdrawn,                     prev: prevWithdrawn,                    fmt: formatCurrency },
+    { label: 'Expenses (Period)',        curr: totalExpense,                       prev: prevExpense,                      fmt: formatCurrency },
+    { label: 'CBU Cash In (Period)',    curr: cbuDeposits,                        prev: prevCbuDep,                       fmt: formatCurrency },
+    { label: 'Savings Cash In (Period)',curr: savingsDeposits,                    prev: prevSavingsDep,                   fmt: formatCurrency },
   ];
 
   return (
@@ -735,7 +884,7 @@ export default function ReportsPage() {
               </span>
               {showComparison && (
                 <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 text-xs text-gray-500">
-                  vs. {format(prevRange.from, 'MMM d')} – {format(prevRange.to, 'MMM d, yyyy')}
+                  vs. {format(prevRange.from, 'MMM d')} â€“ {format(prevRange.to, 'MMM d, yyyy')}
                 </span>
               )}
             </div>
@@ -744,11 +893,11 @@ export default function ReportsPage() {
             </p>
           </div>
 
-          {/* ── Membership ─────────────────────────────────────────────────── */}
+          {/* â”€â”€ Membership â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <SectionTitle>Membership</SectionTitle>
 
           {/* Top-line summary cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 mb-4">
             <StatCard
               icon={<Users size={20} />}
               label="Total Members"
@@ -780,6 +929,16 @@ export default function ReportsPage() {
               iconBg="bg-teal-50"
               iconColor="#0D9488"
             />
+            <StatCard
+              icon={<PiggyBank size={20} />}
+              label="Membership Collections"
+              value={formatCurrency(membershipCollections)}
+              sub="Membership + WELLife VIP"
+              iconBg="bg-purple-50"
+              iconColor="#7C3AED"
+              trend={showComparison ? pct(membershipCollections, prevMembershipCollections) : undefined}
+              trendLabel="vs prev"
+            />
           </div>
 
           {/* Detailed breakdown with stacked bar */}
@@ -787,7 +946,7 @@ export default function ReportsPage() {
             <MembershipBreakdownCard memberStats={memberStats} />
           </div>
 
-          {/* ── Loans ──────────────────────────────────────────────────────── */}
+          {/* â”€â”€ Loans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <SectionTitle>Loans</SectionTitle>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard icon={<CreditCard size={20} />} label="Total Loans"  value={loanStats?.total ?? 0}  iconBg="bg-orange-50" iconColor="#EA580C" />
@@ -873,8 +1032,8 @@ export default function ReportsPage() {
                   <div className="space-y-3">
                     {[
                       { key: 'current',      label: 'Current (not overdue)', color: 'bg-emerald-400' },
-                      { key: 'days_30',      label: '1–30 days overdue',     color: 'bg-yellow-400' },
-                      { key: 'days_60',      label: '31–60 days overdue',    color: 'bg-orange-400' },
+                      { key: 'days_30',      label: '1â€“30 days overdue',     color: 'bg-yellow-400' },
+                      { key: 'days_60',      label: '31â€“60 days overdue',    color: 'bg-orange-400' },
                       { key: 'days_90_plus', label: '60+ days overdue',      color: 'bg-red-500' },
                     ].map(({ key, label, color }) => {
                       const count = loanAnalytics.aging[key] ?? 0;
@@ -904,21 +1063,27 @@ export default function ReportsPage() {
           {/* CBU & Savings */}
           <SectionTitle>CBU & Savings</SectionTitle>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard icon={<PiggyBank size={20} />} label="Total CBU Balance"     value={formatCurrency(accountStats?.totalCBU ?? 0)}    sub={`${accountStats?.cbuCount ?? 0} accounts`}    iconBg="bg-emerald-50" iconColor="#059669" />
-            <StatCard icon={<Wallet size={20} />}    label="Total Savings Balance"  value={formatCurrency(accountStats?.totalSavings ?? 0)} sub={`${accountStats?.savingsCount ?? 0} accounts`} iconBg="bg-blue-50"    iconColor="#2563EB" />
-            <StatCard icon={<TrendingUp size={20} />} label="CBU Deposits (Period)"     value={formatCurrency(cbuDeposits)}     iconBg="bg-emerald-50" iconColor="#059669"
+            <StatCard icon={<PiggyBank size={20} />} label="Total CBU Balance"     value={formatCurrency(totalCBUBalance)}    sub={`${accountStats?.cbuCount ?? 0} accounts`}    iconBg="bg-emerald-50" iconColor="#059669" />
+            <StatCard icon={<Wallet size={20} />}    label="Total Savings Balance"  value={formatCurrency(totalSavingsBalance)} sub={`${accountStats?.savingsCount ?? 0} accounts`} iconBg="bg-blue-50"    iconColor="#2563EB" />
+            <StatCard icon={<TrendingUp size={20} />} label="CBU Cash In (Period)"     value={formatCurrency(cbuDeposits)}     iconBg="bg-emerald-50" iconColor="#059669"
               trend={showComparison ? pct(cbuDeposits, prevCbuDep) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingUp size={20} />} label="Savings Deposits (Period)" value={formatCurrency(savingsDeposits)} iconBg="bg-blue-50"    iconColor="#2563EB"
+            <StatCard icon={<TrendingUp size={20} />} label="Savings Cash In (Period)" value={formatCurrency(savingsDeposits)} iconBg="bg-blue-50"    iconColor="#2563EB"
               trend={showComparison ? pct(savingsDeposits, prevSavingsDep) : undefined} trendLabel="vs prev" />
           </div>
 
           {/* Transaction totals */}
-          <SectionTitle>Transaction Totals — Period</SectionTitle>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard icon={<TrendingUp size={20} />}   label="All Deposits"    value={formatCurrency(totalDeposited)} sub={`${deposits.length} transactions`}    iconBg="bg-green-50"  iconColor="#16A34A"
+          <SectionTitle>Transaction Totals â€” Period</SectionTitle>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-4">
+            <StatCard icon={<TrendingUp size={20} />} label="Coop Income" value={formatCurrency(totalIncome)} sub="Matches Fund Monitoring income" iconBg="bg-emerald-50" iconColor="#059669"
+              trend={showComparison ? pct(totalIncome, prevIncome) : undefined} trendLabel="vs prev" />
+            <StatCard icon={<TrendingUp size={20} />}   label="Cash In"    value={formatCurrency(totalDeposited)} sub={`${deposits.length} transactions`}    iconBg="bg-green-50"  iconColor="#16A34A"
               trend={showComparison ? pct(totalDeposited, prevDeposited) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingDown size={20} />} label="All Withdrawals" value={formatCurrency(totalWithdrawn)} sub={`${withdrawals.length} transactions`} iconBg="bg-red-50"    iconColor="#DC2626"
+            <StatCard icon={<TrendingDown size={20} />} label="Cash Out" value={formatCurrency(totalWithdrawn)} sub={`${withdrawals.length} transactions`} iconBg="bg-red-50"    iconColor="#DC2626"
               trend={showComparison ? pct(totalWithdrawn, prevWithdrawn) : undefined} trendLabel="vs prev" />
+            <StatCard icon={<TrendingDown size={20} />} label="Expenses" value={formatCurrency(totalExpense)} sub={`${expenses.length} expense records`} iconBg="bg-rose-50" iconColor="#E11D48"
+              trend={showComparison ? pct(totalExpense, prevExpense) : undefined} trendLabel="vs prev" />
+            <StatCard icon={<PiggyBank size={20} />} label="Loan Deductions" value={formatCurrency(loanDeductions)} sub="Release-time deductions" iconBg="bg-purple-50" iconColor="#7C3AED"
+              trend={showComparison ? pct(loanDeductions, prevLoanDeductions) : undefined} trendLabel="vs prev" />
             <StatCard icon={<CreditCard size={20} />} label="Loan Repayments" value={formatCurrency(totalRepaid)}   sub={`${loanPayments.length} payments`}   iconBg="bg-orange-50" iconColor="#EA580C"
               trend={showComparison ? pct(totalRepaid, prevRepaid) : undefined} trendLabel="vs prev" />
             <StatCard icon={<CreditCard size={20} />} label="Loans Released"  value={formatCurrency(totalReleased)} sub={`${loanReleases.length} releases`}   iconBg="bg-violet-50" iconColor="#7C3AED"
@@ -958,7 +1123,7 @@ export default function ReportsPage() {
                       {showComparison && (
                         <td className="px-4 py-3 text-right">
                           {change === null ? (
-                            <span className="text-gray-400 text-xs">—</span>
+                            <span className="text-gray-400 text-xs">â€”</span>
                           ) : (
                             <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${
                               change > 0 ? 'text-emerald-600' : change < 0 ? 'text-red-500' : 'text-gray-400'
@@ -979,7 +1144,7 @@ export default function ReportsPage() {
           {/* Transactions Table */}
           <div className="flex items-center justify-between mt-8 mb-3">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
-              Transactions — Period ({transactions.length})
+              Transactions â€” Period ({transactions.length})
             </h2>
             <Button variant="outline" size="sm" icon={<Download size={13} />} onClick={handleExportTransactions} className="no-print">
               Export CSV
@@ -1003,17 +1168,17 @@ export default function ReportsPage() {
                     </tr>
                   ) : transactions.slice(0, 30).map(tx => (
                     <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 capitalize text-gray-700">{tx.type?.replace(/_/g, ' ') || '—'}</td>
+                      <td className="px-4 py-3 capitalize text-gray-700">{displayLedgerType(tx.type)}</td>
                       <td className="px-4 py-3">
-                        <span className="capitalize text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">{tx.category || '—'}</span>
+                        <span className="capitalize text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">{displayLedgerCategory(tx.category)}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{tx.members?.first_name} {tx.members?.last_name}</p>
+                        <p className="font-medium text-gray-900">{tx.member_name || [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—'}</p>
                         {tx.members?.member_no && <p className="text-xs text-gray-400 font-mono">{tx.members.member_no}</p>}
                       </td>
                       <td className="px-4 py-3 font-semibold text-gray-800 tabular-nums">{formatCurrency(tx.amount)}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">
-                        {tx.transaction_date ? formatDate(tx.transaction_date) : (tx.created_at ? formatDate(tx.created_at) : '—')}
+                        {tx.transaction_date ? formatDate(tx.transaction_date) : (tx.created_at ? formatDate(tx.created_at) : 'â€”')}
                       </td>
                     </tr>
                   ))}
@@ -1035,3 +1200,6 @@ export default function ReportsPage() {
     </div>
   );
 }
+
+
+

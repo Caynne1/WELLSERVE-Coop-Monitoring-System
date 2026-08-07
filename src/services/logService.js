@@ -12,12 +12,10 @@ export async function getLogs({ limit = 200, search = '', dateFrom = null, dateT
 
   // Date range filter — uses the btree index on created_at
   if (dateFrom) {
-    query = query.gte('created_at', new Date(dateFrom).toISOString());
+    query = query.gte('created_at', `${dateFrom}T00:00:00`);
   }
   if (dateTo) {
-    const end = new Date(dateTo);
-    end.setHours(23, 59, 59, 999);
-    query = query.lte('created_at', end.toISOString());
+    query = query.lte('created_at', `${dateTo}T23:59:59.999`);
   }
 
   const { data, error } = await query;
@@ -61,7 +59,9 @@ export async function getLogs({ limit = 200, search = '', dateFrom = null, dateT
       (log.action      || '').toLowerCase().includes(q) ||
       (log.module      || '').toLowerCase().includes(q) ||
       (log.description || '').toLowerCase().includes(q) ||
-      (log.user_name   || '').toLowerCase().includes(q)
+      (log.user_name   || '').toLowerCase().includes(q) ||
+      (log.user_id     || '').toLowerCase().includes(q) ||
+      (log.record_id   || '').toLowerCase().includes(q)
     );
   }
 

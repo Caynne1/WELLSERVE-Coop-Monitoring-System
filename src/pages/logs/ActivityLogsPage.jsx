@@ -70,12 +70,13 @@ function uniqueOptions(rows, key) {
 }
 
 function exportLogsToCSV(logs) {
-  const headers = ['Date & Time', 'User Name', 'Module', 'Action Performed', 'Description'];
+  const headers = ['Date & Time', 'User Name', 'Module', 'Action Performed', 'Record ID', 'Description'];
   const rows = logs.map(log => [
     formatDateTime(log.created_at),
     displayUser(log),
     log.module || '',
     displayText(log.action),
+    log.record_id || '',
     (log.description || '').replace(/,/g, ';'),
   ]);
 
@@ -130,7 +131,7 @@ export default function ActivityLogsPage() {
     try {
       if (!quiet) setLoading(true);
       const data = await getLogs({
-        limit: 500,
+        limit: 2000,
         search: appliedSearch,
         dateFrom: dateFrom || null,
         dateTo: dateTo || null,
@@ -197,7 +198,7 @@ export default function ActivityLogsPage() {
     setExporting(true);
     try {
       const data = await getLogs({
-        limit: 5000,
+        limit: 10000,
         search: appliedSearch,
         dateFrom: dateFrom || null,
         dateTo: dateTo || null,
@@ -230,13 +231,14 @@ export default function ActivityLogsPage() {
       <td>${displayUser(log)}</td>
       <td style="text-transform:capitalize">${displayText(log.module)}</td>
       <td style="text-transform:capitalize">${displayText(log.action)}</td>
+      <td style="font-family:monospace;font-size:8pt">${log.record_id || '-'}</td>
       <td style="max-width:240px">${log.description || '-'}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Activity Logs</h1>
       <div class="report-meta">System audit trail | ${filteredLogs.length} records | Generated: ${new Date().toLocaleString('en-PH')}</div>
       <table>
-        <thead><tr><th>Date &amp; Time</th><th>User Name</th><th>Module</th><th>Action Performed</th><th>Description</th></tr></thead>
+        <thead><tr><th>Date &amp; Time</th><th>User Name</th><th>Module</th><th>Action Performed</th><th>Record ID</th><th>Description</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
@@ -249,7 +251,7 @@ export default function ActivityLogsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Activity Logs" subtitle="Live system audit trail" />
+      <PageHeader title="Activity Logs" subtitle="Audit trail of who did what, where, and when" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
         <StatCard
@@ -291,7 +293,7 @@ export default function ActivityLogsPage() {
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder="Search action, module, user..."
+              placeholder="Search action, module, user, record..."
               className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000066]/30 focus:border-[#000066]/60"
             />
             {searchInput && (
@@ -416,7 +418,7 @@ export default function ActivityLogsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Date & Time', 'User Name', 'Module', 'Action Performed', 'Description'].map(header => (
+                  {['Date & Time', 'User Name', 'Module', 'Action Performed', 'Record ID', 'Description'].map(header => (
                     <th key={header} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {header}
                     </th>
@@ -426,7 +428,7 @@ export default function ActivityLogsPage() {
               <tbody className="divide-y divide-gray-50">
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-16 text-gray-400">
+                    <td colSpan={6} className="text-center py-16 text-gray-400">
                       <FileText size={32} className="mx-auto mb-2 text-gray-200" />
                       {hasActiveFilters ? 'No logs match your filters.' : 'No activity logs found.'}
                     </td>
@@ -437,12 +439,9 @@ export default function ActivityLogsPage() {
                       {formatDateTime(log.created_at)}
                     </td>
                     <td className="px-4 py-3">
-                      {log.user_name ? (
-                        <span className="text-gray-700 font-medium">{log.user_name}</span>
-                      ) : log.user_id ? (
-                        <span className="text-gray-400 text-xs font-mono">{log.user_id.slice(0, 8)}...</span>
-                      ) : (
-                        <span className="text-gray-500 font-medium">System</span>
+                      <span className="text-gray-700 font-medium">{displayUser(log)}</span>
+                      {!log.user_name && log.user_id && (
+                        <p className="text-[10px] text-gray-400 font-mono">{log.user_id.slice(0, 8)}...</p>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -456,6 +455,9 @@ export default function ActivityLogsPage() {
                       <span className={`text-xs px-2 py-0.5 rounded-md font-medium capitalize ${actionBadgeClass(log.action)}`}>
                         {displayText(log.action)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs font-mono">
+                      {log.record_id ? String(log.record_id).slice(0, 12) : '-'}
                     </td>
                     <td className="px-4 py-3 text-gray-500 max-w-md truncate" title={log.description}>
                       {log.description || '-'}
