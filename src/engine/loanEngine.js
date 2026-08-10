@@ -298,7 +298,6 @@ export function computeSchedule({
   // divisor is simply the (integer) number of payments, and interest is
   // still computed normally.
   const isOldWeeklyFrequency = frequency === 'weekly';
-  const isOldNoInterestFrequency = frequency === 'monthly_old' || frequency === 'semi_monthly_old';
   const weeklyTotalExact = safeNum(termMonths) * 30 / 7; // full precision, not pre-rounded
   const principalDivisor = (isOldWeeklyFrequency && numPaymentsOverride == null)
     ? Math.max(weeklyTotalExact, 0.0001)
@@ -330,11 +329,9 @@ export function computeSchedule({
     // worksheet formula, where the per-period payment is simply Loan Amount
     // ÷ Number of Payments with no separate interest line added on top —
     // so interest is not charged per period here.
-    const interest = isOldNoInterestFrequency
-      ? 0
-      : method === 'straight'
-        ? round2(principal * ratePerPeriod)
-        : round2(beginBalance * ratePerPeriod);
+    const interest = method === 'straight'
+      ? round2(principal * ratePerPeriod)
+      : round2(beginBalance * ratePerPeriod);
 
     const loanTotal = round2(principalAmort + interest);
     const totalDue = round2(loanTotal + cbu + savings);

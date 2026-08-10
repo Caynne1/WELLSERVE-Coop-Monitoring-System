@@ -176,7 +176,8 @@ export function generateLoanPreview({
   const totalRoiPercent = computeTotalRoiPercent(totalLoanPayable, deductions.net_proceeds);
   const weeklyInterestRate = round4(getRatePerPeriod(monthlyInterestRate, 'weekly_fixed4') * 100);
   const firstScheduleRow = scheduleResult.schedule[0] || {};
-  const loanPaymentPerPeriod = paymentFrequency === 'weekly'
+  const usesOldPrincipalPayment = ['weekly', 'monthly_old', 'semi_monthly_old'].includes(paymentFrequency);
+  const loanPaymentPerPeriod = usesOldPrincipalPayment
     ? firstScheduleRow.principal || 0
     : firstScheduleRow.payment || 0;
 
