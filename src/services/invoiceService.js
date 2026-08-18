@@ -161,6 +161,7 @@ export async function createInvoice(payload) {
 
 function buildPaymentInvoicePayload({
   invoice_no,
+  allow_blank_invoice_no = false,
   payment_type,
   member_id,
   member_name,
@@ -174,7 +175,7 @@ function buildPaymentInvoicePayload({
   payment_mode = null,
   payment_mode_note = null,
 }) {
-  if (!invoice_no || !String(invoice_no).trim()) {
+  if (!allow_blank_invoice_no && (!invoice_no || !String(invoice_no).trim())) {
     throw new Error('SI# is required for invoice creation.');
   }
   if (!payment_type) throw new Error('payment_type is required for invoice creation.');
@@ -185,7 +186,7 @@ function buildPaymentInvoicePayload({
   if (!amount || Number(amount) <= 0) throw new Error('amount must be greater than zero.');
 
   return sanitizeInvoicePayload({
-    invoice_no: String(invoice_no).trim(),
+    invoice_no: String(invoice_no || '').trim(),
     date: date || new Date().toISOString().split('T')[0],
     payee: member_name,
     purpose: purpose || payment_type,
@@ -373,6 +374,7 @@ export async function getMemberPaymentSummary(memberId) {
  */
 export async function createMultiCategoryInvoice({
   invoice_no,
+  is_old_transaction = false,
   member,
   date,
   payment_date = null,
@@ -382,7 +384,7 @@ export async function createMultiCategoryInvoice({
   notes = null,
   created_by = null,
 }) {
-  if (!invoice_no || !String(invoice_no).trim()) {
+  if (!is_old_transaction && (!invoice_no || !String(invoice_no).trim())) {
     throw new Error('Invoice Number (SI#) is required.');
   }
   if (!member?.id) throw new Error('A member must be selected.');
@@ -391,10 +393,12 @@ export async function createMultiCategoryInvoice({
   }
   if (!date) throw new Error('Invoice date is required.');
 
-  const siNo = String(invoice_no).trim();
-  const duplicate = await checkInvoiceNoExists(siNo);
-  if (duplicate) {
-    throw new Error(`Invoice Number "${siNo}" is already in use. Please enter a different SI#.`);
+  const siNo = String(invoice_no || '').trim();
+  if (siNo) {
+    const duplicate = await checkInvoiceNoExists(siNo);
+    if (duplicate) {
+      throw new Error(`Invoice Number "${siNo}" is already in use. Please enter a different SI#.`);
+    }
   }
 
   const effectivePaymentDate = payment_date || date;
@@ -521,6 +525,7 @@ export async function createMultiCategoryInvoice({
 
     const invoicePayload = buildPaymentInvoicePayload({
       invoice_no: siNo,
+      allow_blank_invoice_no: is_old_transaction,
       payment_type: previewPaymentType,
       member_id: member.id,
       member_name: memberName,
@@ -528,7 +533,11 @@ export async function createMultiCategoryInvoice({
       purpose: previewPurpose,
       ref_id: previewRefId,
       account_id: previewAccountId,
-      notes: [previewBreakdown, notes].filter(Boolean).join(' | '),
+      notes: [
+        previewBreakdown,
+        is_old_transaction ? 'Old transaction: original SI# not available.' : null,
+        notes,
+      ].filter(Boolean).join(' | '),
       created_by,
       date,
       payment_mode,
@@ -553,8 +562,25 @@ export async function createMultiCategoryInvoice({
       if (entry.category === 'membership') {
         if (!entry.membership) throw new Error('Membership record not found for this member.');
         const priorFeePaid = parseFloat(entry.membership.fee_paid) || 0;
+        const breakdown = entry.membership_breakdown || {};
+        const entryAmount = Object.prototype.hasOwnProperty.call(breakdown, 'entry')
+          ? Number(breakdown.entry || 0)
+          : amount;
+        const cbuAmount = Number(breakdown.cbu || 0) || 0;
+        const savingsAmount = Number(breakdown.savings || 0) || 0;
+        const breakdownNotes = JSON.stringify({
+          entry: entryAmount,
+          cbu: cbuAmount,
+          savings: savingsAmount,
+          ...(notes ? { text: notes } : {}),
+        });
+        const membershipRequired = parseFloat(entry.membership.fee_required) || 0;
+        const membershipRemaining = Math.max(0, membershipRequired - priorFeePaid);
+        if (amount > membershipRemaining) {
+          throw new Error(`Membership payment exceeds remaining balance of ${membershipRemaining}.`);
+        }
         const result = await recordMembershipPayment(
-          entry.membership.id, member.id, amount, effectivePaymentDate, notes, created_by
+          entry.membership.id, member.id, amount, effectivePaymentDate, breakdownNotes, created_by
         );
         rollbacks.push(async () => {
           if (result?._paymentId) {
@@ -562,6 +588,66 @@ export async function createMultiCategoryInvoice({
           }
           await supabase.from('member_memberships').update({ fee_paid: priorFeePaid }).eq('id', entry.membership.id);
         });
+        const membershipTx = await createTransaction({
+          member_id: member.id,
+          category: 'membership',
+          type: 'membership_payment',
+          amount,
+          reference: siNo || null,
+          notes: [entry.purpose || 'Membership Fee Payment', 'Membership breakdown', notes].filter(Boolean).join(' - '),
+          created_by,
+          transaction_date: effectivePaymentDate,
+          payment_mode,
+          payment_mode_note,
+        });
+        rollbacks.push(async () => {
+          await supabase.from('transactions').delete().eq('id', membershipTx.id);
+        });
+
+        const membershipDeposits = [
+          { key: 'cbu', amount: cbuAmount, account: entry.cbuAccount, label: 'Initial CBU' },
+          { key: 'savings', amount: savingsAmount, account: entry.savingsAccount, label: 'Initial Savings' },
+        ];
+
+        for (const deposit of membershipDeposits) {
+          if (deposit.amount <= 0) continue;
+          if (!deposit.account) {
+            throw new Error(`No ${deposit.key.toUpperCase()} account found for this member.`);
+          }
+
+          const depositTx = await createTransaction({
+            member_id: member.id,
+            account_id: deposit.account.id,
+            category: deposit.key,
+            type: 'deposit',
+            amount: deposit.amount,
+            reference: siNo || deposit.account.account_no || null,
+            notes: [deposit.label, 'Membership breakdown', notes].filter(Boolean).join(' - '),
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', depositTx.id);
+          });
+
+          const priorBalance = deposit.account.balance || 0;
+          const priorTotalDeposits = deposit.account.total_deposits || 0;
+          await updateAccount(deposit.account.id, {
+            balance: priorBalance + deposit.amount,
+            total_deposits: priorTotalDeposits + deposit.amount,
+            updated_at: new Date().toISOString(),
+          });
+          deposit.account.balance = priorBalance + deposit.amount;
+          deposit.account.total_deposits = priorTotalDeposits + deposit.amount;
+          rollbacks.push(async () => {
+            await supabase.from('accounts').update({
+              balance: priorBalance,
+              total_deposits: priorTotalDeposits,
+            }).eq('id', deposit.account.id);
+          });
+        }
         ref_id = entry.membership.id;
         purpose = purpose || 'Membership Fee Payment';
         invoiceLines.push({ label: purpose, amount, payment_type: 'membership', ref_id, account_id });

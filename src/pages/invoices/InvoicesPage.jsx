@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Receipt, Search, Plus, Pencil, Ban, Eye,
   CheckCircle, Clock, X, Printer, Download,
@@ -329,6 +329,7 @@ export default function InvoicesPage() {
   }
 
   function getInvoiceGroup(invoice) {
+    if (!invoice.invoice_no) return [invoice];
     return invoices.filter(inv => inv.invoice_no === invoice.invoice_no);
   }
 
@@ -1149,6 +1150,19 @@ const CATEGORY_LABEL = {
   savings_booster: 'Savings Booster',
 };
 
+const OLD_MEMBERSHIP_BREAKDOWN = {
+  associate: [
+    ['Membership Entry', 300, 'membership'],
+    ['Initial CBU', 1000, 'membership_initial_cbu'],
+    ['Initial Savings', 500, 'membership_initial_savings'],
+  ],
+  regular: [
+    ['Membership Entry', 1800, 'membership'],
+    ['Initial CBU', 4000, 'membership_initial_cbu'],
+    ['Initial Savings', 1000, 'membership_initial_savings'],
+  ],
+};
+
 function parseInvoiceJSONSafe(value, fallback = {}) {
   try {
     if (value == null) return fallback;
@@ -1165,6 +1179,22 @@ function getLoanInterestDue(loan) {
     || schedule.find(row => !row.paid)
     || null;
   return Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) || 0;
+}
+
+function getOldMembershipBreakdown(member, membershipInfo) {
+  const membership = membershipInfo?.record || null;
+  const type = membership?.membership_type || member?.membership_type || '';
+  const required = Number(membership?.fee_required || 0);
+  const isOldMembership =
+    member?.record_type === 'old_member' ||
+    (type === 'associate' && required === 1800) ||
+    (type === 'regular' && required === 6800);
+
+  if (!isOldMembership || !OLD_MEMBERSHIP_BREAKDOWN[type]) return null;
+
+  const rows = OLD_MEMBERSHIP_BREAKDOWN[type];
+  const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
+  return { rows, total };
 }
 
 function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
@@ -1184,6 +1214,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [invoiceNo, setInvoiceNo] = useState('');
+  const [isOldTransaction, setIsOldTransaction] = useState(false);
   const [paymentMode, setPaymentMode] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -1204,6 +1235,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setDate(new Date().toISOString().split('T')[0]);
     setPaymentDate(new Date().toISOString().split('T')[0]);
     setInvoiceNo('');
+    setIsOldTransaction(false);
     setPaymentMode('');
     setPaymentReference('');
     setNotes('');
@@ -1218,6 +1250,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
 
   async function handlePickMember(m) {
     setMember(m);
+    setAmounts({});
     setLoadingSummary(true);
     try {
       const data = await getMemberPaymentSummary(m.id);
@@ -1238,8 +1271,15 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setAmounts(a => ({ ...a, [category]: value }));
   }
 
+  function showSaveError(message) {
+    setErrorMsg(message);
+    toast.error(message);
+  }
+
   const totalAmount = useMemo(() => {
-    return CATEGORY_ORDER.reduce((s, c) => s + (parseFloat(amounts[c]) || 0), 0);
+    return CATEGORY_ORDER.reduce((s, c) => s + (parseFloat(amounts[c]) || 0), 0)
+      + (parseFloat(amounts.membership_initial_cbu) || 0)
+      + (parseFloat(amounts.membership_initial_savings) || 0);
   }, [amounts]);
 
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
@@ -1248,30 +1288,30 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setErrorMsg('');
     setInvoiceNoInvalid(false);
 
-    if (!invoiceNo.trim()) {
-      setErrorMsg('Invoice Number (SI#) is required.');
+    if (!isOldTransaction && !invoiceNo.trim()) {
+      showSaveError('Invoice Number (SI#) is required.');
       setInvoiceNoInvalid(true);
       invoiceNoRef.current?.focus();
       return;
     }
     if (!date) {
-      setErrorMsg('Invoice date is required.');
+      showSaveError('Invoice date is required.');
       return;
     }
     if (!paymentDate) {
-      setErrorMsg('Payment date is required.');
+      showSaveError('Payment date is required.');
       return;
     }
     if (!paymentMode) {
-      setErrorMsg('Mode of payment is required.');
+      showSaveError('Mode of payment is required.');
       return;
     }
     if (referenceRequired && !paymentReference.trim()) {
-      setErrorMsg('Reference / Account / Check No. is required for the selected payment mode.');
+      showSaveError('Reference / Account / Check No. is required for the selected payment mode.');
       return;
     }
     if (totalAmount <= 0) {
-      setErrorMsg('Enter at least one payment amount greater than zero.');
+      showSaveError('Enter at least one payment amount greater than zero.');
       return;
     }
 
@@ -1280,8 +1320,35 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     const selectedBooster = summary.savings_booster.records?.find(b => b.id === selectedBoosterId) || null;
 
     const entries = [];
-    if (parseFloat(amounts.membership) > 0) {
-      entries.push({ category: 'membership', amount: parseFloat(amounts.membership), membership: summary.membership.record });
+    const membershipEntryAmount = parseFloat(amounts.membership) || 0;
+    const membershipInitialCbuAmount = parseFloat(amounts.membership_initial_cbu) || 0;
+    const membershipInitialSavingsAmount = parseFloat(amounts.membership_initial_savings) || 0;
+    const membershipTotalAmount = membershipEntryAmount + membershipInitialCbuAmount + membershipInitialSavingsAmount;
+    if (membershipTotalAmount > 0) {
+      if (!summary.membership.record) {
+        showSaveError('Membership record not found for this member.');
+        return;
+      }
+      if (membershipInitialCbuAmount > 0 && !summary.cbu.record) {
+        showSaveError('No CBU account found for this member.');
+        return;
+      }
+      if (membershipInitialSavingsAmount > 0 && !summary.savings.record) {
+        showSaveError('No Savings account found for this member.');
+        return;
+      }
+      entries.push({
+        category: 'membership',
+        amount: membershipTotalAmount,
+        membership: summary.membership.record,
+        membership_breakdown: {
+          entry: membershipEntryAmount,
+          cbu: membershipInitialCbuAmount,
+          savings: membershipInitialSavingsAmount,
+        },
+        cbuAccount: summary.cbu.record,
+        savingsAccount: summary.savings.record,
+      });
     }
     const loanAmount = parseFloat(amounts.loan) || 0;
     const interestAmount = parseFloat(amounts.loan_interest) || 0;
@@ -1297,9 +1364,17 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       });
     }
     if (parseFloat(amounts.cbu) > 0) {
+      if (!summary.cbu.record) {
+        showSaveError('No CBU account found for this member.');
+        return;
+      }
       entries.push({ category: 'cbu', amount: parseFloat(amounts.cbu), account: summary.cbu.record });
     }
     if (parseFloat(amounts.savings) > 0) {
+      if (!summary.savings.record) {
+        showSaveError('No Savings account found for this member.');
+        return;
+      }
       entries.push({
         category: 'savings',
         amount: parseFloat(amounts.savings),
@@ -1320,6 +1395,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     try {
       await createMultiCategoryInvoice({
         invoice_no: invoiceNo.trim(),
+        is_old_transaction: isOldTransaction,
         member,
         date,
         payment_date: paymentDate,
@@ -1329,12 +1405,14 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
         notes: notes.trim() || null,
         created_by: userId ?? null,
       });
-      toast.success(`Invoice ${invoiceNo.trim()} saved with ${entries.length} payment categor${entries.length > 1 ? 'ies' : 'y'}.`);
+      const savedLabel = invoiceNo.trim() ? `Invoice ${invoiceNo.trim()}` : 'Old transaction';
+      toast.success(`${savedLabel} saved with ${entries.length} payment categor${entries.length > 1 ? 'ies' : 'y'}.`);
       onSuccess();
       reset();
     } catch (err) {
       const message = err.message || 'Failed to save invoice.';
       setErrorMsg(message);
+      toast.error(message);
       if (/invoice number|SI#/i.test(message)) {
         setInvoiceNoInvalid(true);
         invoiceNoRef.current?.focus();
@@ -1419,6 +1497,66 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                     : info.valueType === 'optional'
                       ? valueLabel
                       : `${valueLabel}: ${formatCurrency(info.value)}`;
+                  const oldMembershipBreakdown = cat === 'membership'
+                    ? getOldMembershipBreakdown(member, info)
+                    : null;
+
+                  if (oldMembershipBreakdown) {
+                    const paidNowTotal = oldMembershipBreakdown.rows.reduce(
+                      (sum, [, , key]) => sum + (parseFloat(amounts[key]) || 0),
+                      0
+                    );
+
+                    return (
+                      <Fragment key={cat}>
+                        <tr>
+                          <td className="px-4 py-3 font-medium text-gray-800">{CATEGORY_LABEL[cat]}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs font-medium ${info.hasRecord ? 'text-amber-700' : 'text-gray-400'}`}>
+                              {statusText}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="text-xs font-semibold text-amber-700">
+                              {formatCurrency(paidNowTotal)}
+                            </span>
+                          </td>
+                        </tr>
+                        <tr className="bg-amber-50/40">
+                          <td colSpan={3} className="px-4 py-3">
+                            <div className="rounded-lg border border-amber-100 bg-white overflow-hidden">
+                              <div className="grid grid-cols-[1fr_140px_160px] gap-3 bg-amber-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                                <span>Payment Breakdown</span>
+                                <span className="text-right">Required</span>
+                                <span className="text-right">Amount Paid Now</span>
+                              </div>
+                              <div className="divide-y divide-gray-100">
+                                {oldMembershipBreakdown.rows.map(([label, target, key]) => (
+                                  <div key={key} className="grid grid-cols-[1fr_140px_160px] gap-3 items-center px-3 py-2">
+                                    <span className="text-sm text-gray-700">{label}</span>
+                                    <span className="text-sm text-right font-medium text-gray-700">{formatCurrency(target)}</span>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      placeholder="0.00"
+                                      value={formatAmountInput(amounts[key] || '')}
+                                      onChange={e => setAmount(key, cleanAmountInput(e.target.value))}
+                                      className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="grid grid-cols-[1fr_140px_160px] gap-3 items-center bg-gray-50 px-3 py-2 text-sm font-semibold">
+                                <span className="text-gray-800">Total</span>
+                                <span className="text-right text-gray-800">{formatCurrency(oldMembershipBreakdown.total)}</span>
+                                <span className="text-right text-emerald-700">{formatCurrency(paidNowTotal)}</span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  }
 
                   return (
                     <tr key={cat}>
@@ -1517,7 +1655,9 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className={fieldClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number (SI#)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Invoice Number (SI#) {!isOldTransaction && <span className="text-red-500">*</span>}
+              </label>
               <input
                 ref={invoiceNoRef}
                 type="text"
@@ -1527,12 +1667,36 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                   if (invoiceNoInvalid) setInvoiceNoInvalid(false);
                   if (errorMsg) setErrorMsg('');
                 }}
-                placeholder="e.g. SI-000123"
+                placeholder={isOldTransaction ? 'Leave blank if no SI# exists' : 'e.g. SI-000123'}
                 className={`${fieldClass} font-mono ${invoiceNoInvalid ? 'border-red-400 ring-2 ring-red-200 focus:ring-red-300' : ''}`}
               />
               {invoiceNoInvalid && errorMsg && (
                 <p className="text-xs text-red-600 mt-1">{errorMsg}</p>
               )}
+            </div>
+            <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <label className="flex items-start gap-3 text-sm text-amber-900">
+                <input
+                  type="checkbox"
+                  checked={isOldTransaction}
+                  onChange={e => {
+                    setIsOldTransaction(e.target.checked);
+                    if (e.target.checked) {
+                      setInvoiceNoInvalid(false);
+                      if (/invoice number|SI#/i.test(errorMsg)) setErrorMsg('');
+                    }
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span>
+                  <span className="font-semibold">Old transaction / no SI# available</span>
+                  <span className="block text-xs text-amber-700 mt-1">
+                    Use this only for old payments or deposits where the original SI# cannot be traced.
+                    The payment will still follow the same posting flow and update the member records,
+                    Transactions, and Fund Monitoring.
+                  </span>
+                </span>
+              </label>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Mode of Payment</label>

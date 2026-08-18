@@ -2659,12 +2659,14 @@ function MembershipTab({
         Object.entries(data).forEach(([key, val]) => {
           if (key !== 'text') acc[key] = (acc[key] || 0) + Number(val || 0);
         });
-      } catch { /* plain text notes - skip */ }
+      } catch { /* plain text notes - counted as unallocated payment below */ }
       return acc;
     }, {});
+    const actualComponentTotal = Object.values(actualComponents).reduce((sum, amount) => sum + Number(amount || 0), 0);
+    const unallocatedActualTotal = Math.max(0, actualPaymentTotal - actualComponentTotal);
     const entryTarget = membershipFees?.entry || feePaid;
     const entryPaid = Math.min(feePaid, entryTarget);
-    const storedEntryRemainder = Math.max(0, entryPaid - (actualComponents.entry || 0));
+    const storedEntryRemainder = Math.max(0, entryPaid - (actualComponents.entry || 0) - unallocatedActualTotal);
     const expectedImportedTotal =
       entryPaid +
       (adjustedImportedComponentTotals.cbu || 0) +
@@ -2821,11 +2823,11 @@ function MembershipTab({
         member_id: memberId,
         membership_type: setupType,
         fee_required: setupFees.total,
-        fee_paid_now: isSetupNewMember ? 0 : setupFees.total,
-        is_historical: !isSetupNewMember,
+        fee_paid_now: 0,
+        is_historical: false,
         notes: isSetupNewMember
           ? null
-          : `Historical record — membership fully paid before system. Breakdown: Entry ${formatCurrency(setupFees.entry)}, CBU ${formatCurrency(setupFees.cbu)}, Savings ${formatCurrency(setupFees.savings)}`,
+          : `Old membership fee structure created without payment. Breakdown: Entry ${formatCurrency(setupFees.entry)}, CBU ${formatCurrency(setupFees.cbu)}, Savings ${formatCurrency(setupFees.savings)}`,
         created_by: userId,
       });
       trackActivity({
@@ -3117,7 +3119,7 @@ function MembershipTab({
               <p className="text-[11px] text-gray-400">
                 {isSetupNewMember
                   ? 'Ledger starts unpaid — use "Record Payment" to log onboarding payments.'
-                  : 'Marked fully paid immediately using the previous fee structure — no payment record needed.'}
+                  : 'Ledger starts unpaid using the previous fee structure - record payments through the Invoice page.'}
               </p>
             </div>
 
@@ -3159,7 +3161,7 @@ function MembershipTab({
             <p className="text-xs text-gray-400">
               {isSetupNewMember
                 ? 'Use "Record Payment" after setup to log partial or full payments.'
-                : 'Old records are recorded as fully paid at setup — no further payment needed.'}
+                : 'Use the Invoice page to record old membership payments when payment records are available.'}
             </p>
           </div>
 
@@ -3890,3 +3892,4 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
     </div>
   );
 }
+
