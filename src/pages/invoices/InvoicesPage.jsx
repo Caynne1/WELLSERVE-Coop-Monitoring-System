@@ -1428,9 +1428,9 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]';
 
   return (
-    <Modal open={open} onClose={handleClose} title="Add Invoice" size="lg">
+    <Modal open={open} onClose={handleClose} title="Add Invoice" size="xl">
       {step === 1 && (
-        <div className="space-y-3">
+        <div className="min-h-[420px] space-y-4">
           <p className="text-sm text-gray-600">Select the member to invoice.</p>
           <MemberSearchInput onChange={handlePickMember} placeholder="Search member by name or member no..." />
           {loadingSummary && (
