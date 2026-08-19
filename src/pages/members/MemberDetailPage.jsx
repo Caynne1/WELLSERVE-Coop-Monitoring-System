@@ -624,7 +624,7 @@ export default function MemberDetailPage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Tab navigation */}
         <div className="overflow-x-auto border-b border-gray-100 scrollbar-thin scrollbar-thumb-gray-200 bg-gray-50/50">
-          <div className="flex min-w-max px-2">
+          <div className="flex min-w-max">
             {TABS.filter(tab => {
               if (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(tab.id)) return false;
               if (tab.id === 'time_deposit') return memberTimeDeposits.length > 0;
@@ -639,10 +639,8 @@ export default function MemberDetailPage() {
                   onClick={() => setSearchParams({ tab: tab.id })}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-all duration-200 flex-shrink-0
                     ${isActive
-                      ? member.membership_type === 'kiddy'
-                        ? 'border-teal-500 text-teal-700 bg-teal-50/30'
-                        : 'border-emerald-500 text-emerald-700 bg-emerald-50/30'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                      ? 'border-[#07A04E] text-[#047857] bg-emerald-50/30'
+                      : 'border-transparent text-gray-500 hover:text-[#047857] hover:bg-emerald-50/20'
                     }`}
                 >
                   <tab.icon size={14} />
@@ -716,6 +714,7 @@ export default function MemberDetailPage() {
               wellifeVipTransactions={wellifeVipTransactions}
               onRefresh={refreshEverything}
               memberRecordType={member?.record_type}
+              memberMembershipType={member?.membership_type}
             />
           )}
 
@@ -2585,15 +2584,20 @@ function MembershipTab({
   wellifeVipTransactions = [],
   onRefresh,
   memberRecordType,
+  memberMembershipType,
 }) {
   const { hasPermission } = useAuth();
   const canEditMember = hasPermission('members', 'edit');
   const [setupOpen, setSetupOpen] = useState(false);
-  const [setupType, setSetupType] = useState('associate');
+  const normalizedMemberType = String(memberMembershipType || '').toLowerCase().includes('associate')
+    ? 'associate'
+    : 'regular';
+  const [setupType, setSetupType] = useState(normalizedMemberType);
   const [setupRecordType, setSetupRecordType] = useState(
     memberRecordType === 'old_member' ? 'old_member' : 'new_member'
   );
   const [setupSaving, setSetupSaving] = useState(false);
+  const [autoSetupAttempted, setAutoSetupAttempted] = useState(false);
 
   const [payOpen, setPayOpen] = useState(false);
   const [payTotalAmount, setPayTotalAmount] = useState('');
@@ -2620,6 +2624,10 @@ function MembershipTab({
   const storedFeeRequired = parseFloat(membership?.fee_required) || 0;
   const feePaid = parseFloat(membership?.fee_paid) || 0;
   const importedComponentTotals = useMemo(() => {
+    if (memberRecordType === 'old_member') {
+      return { cbu: 0, savings: 0, vip_card: 0 };
+    }
+
     const isDeposit = tx => !String(tx.type || '').toLowerCase().includes('withdraw');
     const isImportedMembershipTx = tx => {
       const text = `${tx.notes || ''} ${tx.reference || ''}`.toLowerCase();
@@ -2638,7 +2646,7 @@ function MembershipTab({
         return sum + (parseFloat(tx.amount) || 0);
       }, 0),
     };
-  }, [cbuTransactions, savingsTransactions, wellifeVipTransactions]);
+  }, [memberRecordType, cbuTransactions, savingsTransactions, wellifeVipTransactions]);
   const adjustedImportedComponentTotals = useMemo(() => {
     const savings = importedComponentTotals.savings || 0;
     const vipCard = importedComponentTotals.vip_card || 0;
@@ -2729,6 +2737,80 @@ function MembershipTab({
   const isSetupNewMember = setupRecordType === 'new_member';
   const setupFeeKey = isSetupNewMember ? `new_${setupType}` : setupType;
   const setupFees = MEMBERSHIP_FEES[setupFeeKey] || MEMBERSHIP_FEES.associate;
+
+  useEffect(() => {
+    if (!membership) {
+      setSetupType(normalizedMemberType);
+      setSetupRecordType(memberRecordType === 'old_member' ? 'old_member' : 'new_member');
+    }
+  }, [membership, normalizedMemberType, memberRecordType]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      membership ||
+      autoSetupAttempted ||
+      !memberId ||
+      !memberMembershipType ||
+      !userId ||
+      !canEditMember
+    ) {
+      return;
+    }
+
+    const recordType = memberRecordType === 'old_member' ? 'old_member' : 'new_member';
+    const membershipType = normalizedMemberType;
+    const feeKey = recordType === 'new_member' ? `new_${membershipType}` : membershipType;
+    const fees = MEMBERSHIP_FEES[feeKey] || MEMBERSHIP_FEES.associate;
+
+    async function autoSetupMembership() {
+      setAutoSetupAttempted(true);
+      setSetupSaving(true);
+      try {
+        await createMembership({
+          member_id: memberId,
+          membership_type: membershipType,
+          fee_required: fees.total,
+          fee_paid_now: 0,
+          is_historical: false,
+          notes: recordType === 'new_member'
+            ? 'Membership setup created automatically from member record. Payment must be recorded through invoice.'
+            : `Old membership setup created automatically from member record. Payment must be recorded through invoice. Breakdown: Entry ${formatCurrency(fees.entry)}, CBU ${formatCurrency(fees.cbu)}, Savings ${formatCurrency(fees.savings)}`,
+          created_by: userId,
+        });
+        trackActivity({
+          userId,
+          module: 'member',
+          action: 'create',
+          description: `Auto-set up ${recordType === 'new_member' ? 'new' : 'old'} ${membershipType} membership for member (${memberName}), total fee: ${formatCurrency(fees.total)}`,
+        });
+        await onRefresh();
+      } catch (err) {
+        const message = String(err?.message || '').toLowerCase();
+        if (err?.code === '23505' || message.includes('member_memberships_member_id_unique')) {
+          await onRefresh();
+          return;
+        }
+        toast.error(err.message || 'Failed to auto-create membership setup.');
+      } finally {
+        setSetupSaving(false);
+      }
+    }
+
+    autoSetupMembership();
+  }, [
+    loading,
+    membership,
+    autoSetupAttempted,
+    memberId,
+    memberMembershipType,
+    userId,
+    canEditMember,
+    memberRecordType,
+    normalizedMemberType,
+    memberName,
+    onRefresh,
+  ]);
 
   const perComponentTotals = useMemo(() => {
     return displayPayments.reduce((acc, p) => {

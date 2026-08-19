@@ -1015,10 +1015,10 @@ export function MemberFormContent({
           member_id: newMemberId,
           membership_type: values.membership_type,
           fee_required: effectiveTotal,
-          fee_paid_now: effectiveTotal,
-          notes: `Historical record — membership fully paid before system. Breakdown: Entry ₱${effectiveMF.toLocaleString()}, CBU ₱${effectiveCBU.toLocaleString()}, Savings ₱${effectiveSav.toLocaleString()}`,
+          fee_paid_now: 0,
+          notes: `Old membership setup only. Payment must be recorded through invoice. Breakdown: Entry ₱${effectiveMF.toLocaleString()}, CBU ₱${effectiveCBU.toLocaleString()}, Savings ₱${effectiveSav.toLocaleString()}`,
           created_by: user.id,
-          is_historical: true,
+          is_historical: false,
         });
 
         if (values.has_time_deposit) {
@@ -1513,7 +1513,7 @@ export function MemberFormContent({
                 />
                 <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
                   {isOldMember
-                    ? 'Encoded from pre-system records — marked fully paid using the previous fee structure.'
+                    ? 'Uses the previous fee structure. Payment still needs to be recorded through invoice.'
                     : 'Registered going forward — uses the current fee structure with live onboarding payments.'}
                 </p>
               </>
@@ -1598,7 +1598,7 @@ export function MemberFormContent({
                   </h4>
                   {isOldMember && (
                     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                      <CheckCircle size={11} /> Fully Paid — Historical
+                      Setup Only
                     </span>
                   )}
                 </div>
@@ -1607,25 +1607,18 @@ export function MemberFormContent({
                   <div className="space-y-3 text-sm">
                     <p className="text-xs text-amber-600 mb-3">
                       Old structure defaults are pre-filled. Associate total is ₱1,800; Regular total is ₱6,800.
-                      Leave a field blank to use the default, or type a new value to override.
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-amber-100 bg-white/70 divide-y divide-amber-100">
                       {[
-                        { field: 'old_manual_membership_fee', label: 'Membership Entry/Regulatory Fee', def: oldDefaults.membership_fee },
-                        { field: 'old_manual_cbu',            label: 'Initial CBU',      def: oldDefaults.cbu            },
-                        { field: 'old_manual_savings',        label: 'Initial Savings',  def: oldDefaults.savings        },
-                      ].map(({ field, label, def }) => (
-                        <div key={field}>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                        { label: 'Membership Entry/Regulatory Fee', amount: oldDefaults.membership_fee },
+                        { label: 'Initial CBU', amount: oldDefaults.cbu },
+                        { label: 'Initial Savings', amount: oldDefaults.savings },
+                      ].map(({ label, amount }) => (
+                        <div key={label} className="flex items-center justify-between gap-4 px-3 py-2.5">
+                          <span className="text-gray-600">
                             {label}
-                            <span className="ml-1 text-amber-500 font-normal">(default ₱{def.toLocaleString()})</span>
-                          </label>
-                          <input
-                            type="text" inputMode="decimal"
-                            placeholder={String(def)}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
-                            {...registerAmount(field)}
-                          />
+                          </span>
+                          <span className="font-semibold text-gray-900">₱{amount.toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
@@ -1635,7 +1628,7 @@ export function MemberFormContent({
                       <span>₱{oldEffectiveTotal.toLocaleString()}</span>
                     </div>
                     <p className="text-xs text-amber-500 mt-0.5">
-                      This total is recorded as the old membership amount — marked fully paid automatically.
+                      This total is set as the required old membership amount. Record payment through the Invoice page.
                     </p>
                   </div>
                 )}
