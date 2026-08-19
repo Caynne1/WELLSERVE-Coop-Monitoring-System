@@ -56,15 +56,13 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 const TABS = [
   { id: 'overview',        label: 'Overview',       icon: User },
-  { id: 'loan',            label: 'Loans',          icon: CreditCard },
+  { id: 'credit_profile',  label: 'Credit Profile', icon: TrendingUp },
+  { id: 'membership',      label: 'Membership',     icon: Shield },
+  { id: 'loan',            label: 'Loan',           icon: CreditCard },
   { id: 'cbu',             label: 'CBU',            icon: PiggyBank },
   { id: 'savings',         label: 'Savings',        icon: Wallet },
   { id: 'time_deposit',    label: 'Time Deposit',   icon: Clock },
   { id: 'savings_booster', label: 'Savings Booster', icon: Sprout },
-  { id: 'membership',      label: 'Membership',     icon: Shield },
-  { id: 'wellife_vip',     label: 'WELLife VIP Card', icon: CreditCard },
-  { id: 'penalty',         label: 'Penalty',        icon: BadgeAlert },
-  { id: 'credit_profile',  label: 'Credit Profile', icon: TrendingUp },
 ];
 
 // Tabs that don't apply to Kiddy & Youth Savings members
@@ -115,7 +113,19 @@ function formatMemberNo(value) {
   return /^\d+$/.test(text) ? text.padStart(4, '0') : text;
 }
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+const memberStatusPillClass = {
+  active: 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm shadow-emerald-100/50',
+  inactive: 'bg-amber-50 text-amber-700 border border-amber-200 shadow-sm shadow-amber-100/50',
+  closed: 'bg-slate-100 text-slate-700 border border-slate-200 shadow-sm shadow-slate-100/50',
+};
+
+const memberTypePillClass = {
+  regular: 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm shadow-emerald-100/50',
+  associate: 'bg-sky-50 text-sky-700 border border-sky-200 shadow-sm shadow-sky-100/50',
+  kiddy: 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm shadow-teal-100/50',
+};
+
+// â”€â”€â”€ MAIN COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function MemberDetailPage() {
   const { id } = useParams();
@@ -224,7 +234,7 @@ export default function MemberDetailPage() {
       const data = await getTimeDepositsByMemberId(id);
       setMemberTimeDeposits(data || []);
     } catch {
-      // silently fail — member_id column may not exist yet
+      // silently fail â€” member_id column may not exist yet
     } finally {
       setTimeDepositLoading(false);
     }
@@ -402,11 +412,11 @@ export default function MemberDetailPage() {
     const savAcc = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
     const activeLoans = loans.filter(isCurrentLoan);
     const loanRows = activeLoans.map(l => `<tr>
-      <td>${l.loan_no||'—'}</td>
+      <td>${l.loan_no||'â€”'}</td>
       <td style="text-transform:capitalize">${(l.loan_type||'').replace(/_/g,' ')}</td>
       <td style="text-align:right;font-weight:600">${fmt(l.principal_amount)}</td>
       <td style="text-align:right;color:#b91c1c">${fmt(l.outstanding_balance)}</td>
-      <td style="text-align:center">${l.status||'—'}</td>
+      <td style="text-align:center">${l.status||'â€”'}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Member Record</h1>
@@ -414,11 +424,11 @@ export default function MemberDetailPage() {
       <div class="section-heading">Personal Information</div>
       <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
         <div class="stat-box"><div class="stat-label">Full Name</div><div class="stat-value" style="font-size:12pt">${member?.first_name||''} ${member?.last_name||''}</div></div>
-        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${formatMemberNo(member?.member_no)||'—'}</div></div>
-        <div class="stat-box"><div class="stat-label">Type</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.membership_type||'—'}</div></div>
-        <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.status||'—'}</div></div>
-        <div class="stat-box"><div class="stat-label">Contact</div><div class="stat-value" style="font-size:11pt">${member?.contact_no||'—'}</div></div>
-        <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${member?.date_joined||member?.created_at?.slice(0,10)||'—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${formatMemberNo(member?.member_no)||'â€”'}</div></div>
+        <div class="stat-box"><div class="stat-label">Type</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.membership_type||'â€”'}</div></div>
+        <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.status||'â€”'}</div></div>
+        <div class="stat-box"><div class="stat-label">Contact</div><div class="stat-value" style="font-size:11pt">${member?.contact_no||'â€”'}</div></div>
+        <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${member?.date_joined||member?.created_at?.slice(0,10)||'â€”'}</div></div>
       </div>
       <div class="section-heading">Account Balances</div>
       <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
@@ -431,9 +441,9 @@ export default function MemberDetailPage() {
         <thead><tr><th>Loan No.</th><th>Type</th><th style="text-align:right">Principal</th><th style="text-align:right">Outstanding</th><th style="text-align:center">Status</th></tr></thead>
         <tbody>${loanRows}</tbody>
       </table>` : ''}
-      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System â€” Authorized personnel only.</div>
     `;
-    const win = printHtmlDocument(wrapWithLetterhead(html, {title:`Member — ${member?.first_name||''} ${member?.last_name||''}`}), {
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:`Member â€” ${member?.first_name||''} ${member?.last_name||''}`}), {
       onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
     });
     if (win) toast.success('Print dialog opened.');
@@ -478,16 +488,15 @@ export default function MemberDetailPage() {
         Back to Members
       </button>
 
-      {/* ── Profile Header Card ── */}
+      {/* â”€â”€ Profile Header Card â”€â”€ */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
         <div className="relative">
-          {/* Gradient banner */}
-          <div className={`h-20 ${member.membership_type === 'kiddy' ? 'bg-gradient-to-r from-teal-500 to-emerald-400' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'}`} />
+          <div className="h-3 bg-[#07A04E]" />
           
-          <div className="px-6 pb-6">
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 -mt-10">
-              <div className="flex items-end gap-4">
-                <div className={`relative w-20 h-20 rounded-2xl border-4 border-white shadow-lg flex items-center justify-center text-2xl font-bold
+          <div className="px-6 py-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`relative w-20 h-20 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-center text-2xl font-bold
                   ${member.membership_type === 'kiddy' ? 'bg-teal-100 text-teal-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {(member.first_name?.[0] || '') + (member.last_name?.[0] || '')}
                   <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center
@@ -495,23 +504,23 @@ export default function MemberDetailPage() {
                     <div className={`w-2 h-2 rounded-full ${member.status === 'active' ? 'bg-white' : 'bg-white/70'}`} />
                   </div>
                 </div>
-                <div className="pb-1">
+                <div className="min-w-0">
                   <h1 className="text-2xl font-bold text-gray-900">
                     {member.first_name} {member.last_name}
                   </h1>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     {member.member_no && (
-                      <span className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded-lg">
+                      <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs font-semibold text-gray-700">
                         {formatMemberNo(member.member_no)}
                       </span>
                     )}
-                    <Badge variant={member.status === 'active' ? 'success' : member.status === 'closed' ? 'dark' : 'warning'} dot>
+                    <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold ${memberStatusPillClass[member.status] || memberStatusPillClass.active}`}>
                       {member.status === 'closed' ? 'Closed Account' : (member.status || 'Active')}
-                    </Badge>
+                    </span>
                     {displayMembershipType && (
-                      <Badge variant={displayMembershipType === 'regular' ? 'info' : displayMembershipType === 'kiddy' ? 'success' : 'default'}>
+                      <span className={`inline-flex min-w-[88px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${memberTypePillClass[displayMembershipType] || 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
                         {displayMembershipType === 'kiddy' ? 'Kiddy' : displayMembershipType}
-                      </Badge>
+                      </span>
                     )}
                   </div>
                 </div>
@@ -546,9 +555,9 @@ export default function MemberDetailPage() {
             </div>
 
             {/* Quick stats */}
-            <div className={`grid grid-cols-2 ${member.membership_type === 'kiddy' ? 'sm:grid-cols-2' : 'sm:grid-cols-4'} gap-3 mt-5 pt-4 border-t border-gray-100`}>
+            <div className={`grid grid-cols-1 ${member.membership_type === 'kiddy' ? 'sm:grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-4'} gap-3 mt-5 pt-4 border-t border-gray-100`}>
               {member.membership_type !== 'kiddy' && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/60 border border-amber-100/50">
+                <div className="flex items-center gap-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-4 shadow-sm">
                   <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
                     <PesoSign size={15} className="text-amber-600" />
                   </div>
@@ -561,7 +570,7 @@ export default function MemberDetailPage() {
                 </div>
               )}
               {member.membership_type !== 'kiddy' && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-orange-50/60 border border-orange-100/50">
+                <div className="flex items-center gap-3 rounded-2xl border border-orange-100 bg-orange-50/70 p-4 shadow-sm">
                   <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
                     <CreditCard size={15} className="text-orange-600" />
                   </div>
@@ -574,7 +583,7 @@ export default function MemberDetailPage() {
                 </div>
               )}
               {member.membership_type !== 'kiddy' && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-50/60 border border-green-100/50">
+                <div className="flex items-center gap-3 rounded-2xl border border-green-100 bg-green-50/70 p-4 shadow-sm">
                   <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
                     <PiggyBank size={15} className="text-green-600" />
                   </div>
@@ -584,7 +593,7 @@ export default function MemberDetailPage() {
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50/60 border border-blue-100/50">
+              <div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 shadow-sm">
                 <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
                   <Wallet size={15} className="text-blue-600" />
                 </div>
@@ -594,7 +603,7 @@ export default function MemberDetailPage() {
                 </div>
               </div>
               {memberTimeDeposits.length > 0 && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100/50">
+                <div className="flex items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm">
                   <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                     <Clock size={15} className="text-indigo-600" />
                   </div>
@@ -605,7 +614,7 @@ export default function MemberDetailPage() {
                 </div>
               )}
               {memberBoosterSlots.length > 0 && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-teal-50/60 border border-teal-100/50">
+                <div className="flex items-center gap-3 rounded-2xl border border-teal-100 bg-teal-50/70 p-4 shadow-sm">
                   <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
                     <Sprout size={15} className="text-teal-600" />
                   </div>
@@ -620,7 +629,7 @@ export default function MemberDetailPage() {
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* â”€â”€ Tabs â”€â”€ */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Tab navigation */}
         <div className="overflow-x-auto border-b border-gray-100 scrollbar-thin scrollbar-thumb-gray-200 bg-gray-50/50">
@@ -758,7 +767,7 @@ export default function MemberDetailPage() {
         </div>
       </div>
 
-      {/* ── Modals ── */}
+      {/* â”€â”€ Modals â”€â”€ */}
       <PaymentModal
         open={payModal.open}
         onClose={() => setPayModal({ open: false, loan: null })}
@@ -820,7 +829,7 @@ export default function MemberDetailPage() {
   );
 }
 
-// ─── OVERVIEW TAB ────────────────────────────────────────────────────────────
+// â”€â”€â”€ OVERVIEW TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function QuickStat({ label, value, icon, color }) {
   return (
@@ -840,54 +849,60 @@ function InfoRow({ icon: Icon, label, value }) {
       <Icon size={15} className="text-gray-400 mt-0.5 flex-shrink-0" />
       <div className="min-w-0">
         <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-        <p className="text-sm text-gray-800 break-words">{value || '—'}</p>
+        <p className="text-sm text-gray-800 break-words">{value || 'â€”'}</p>
       </div>
     </div>
   );
 }
 
 function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount }) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Personal Information</h3>
-        <div className="space-y-0.5">
-          <InfoRow icon={User} label="Full Name" value={`${member.first_name || ''} ${member.middle_initial ? `${member.middle_initial}. ` : ''}${member.last_name || ''}`.trim()} />
-          <InfoRow icon={Hash} label="Member Number" value={formatMemberNo(member.member_no)} />
-          <InfoRow icon={Mail} label="Email" value={member.email} />
-          <InfoRow icon={Phone} label="Mobile No." value={member.phone} />
-          <InfoRow icon={Phone} label="Res. Tel. No." value={member.res_tel_no} />
-          <InfoRow icon={MapPin} label="Address" value={member.address} />
-        </div>
-      </div>
+  const fullName = `${member.first_name || ''} ${member.middle_initial ? `${member.middle_initial}. ` : ''}${member.last_name || ''}`.trim();
+  const membershipLabel = displayMembershipType
+    ? displayMembershipType.charAt(0).toUpperCase() + displayMembershipType.slice(1)
+    : 'â€”';
 
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Member Details</h3>
-        <div className="space-y-0.5">
-          <InfoRow icon={Calendar} label="Date Joined" value={member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : '—')} />
+  return (
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+            <User size={16} />
+          </div>
+          <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">Personal Information</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <InfoRow icon={User} label="Full Name" value={fullName} />
           <InfoRow icon={Calendar} label="Date of Birth" value={member.date_of_birth ? formatDate(member.date_of_birth) : '—'} />
           <InfoRow icon={User} label="Civil Status" value={member.civil_status} />
           <InfoRow icon={User} label="Sex" value={member.sex} />
+          <InfoRow icon={Mail} label="Email Address" value={member.email} />
+          <InfoRow icon={Phone} label="Mobile Number" value={member.phone} />
+          <InfoRow icon={Phone} label="Res. Tel. No." value={member.res_tel_no} />
+          <InfoRow icon={MapPin} label="Address" value={member.address} />
           <InfoRow icon={User} label="Occupation" value={member.occupation} />
-          <InfoRow icon={Shield} label="Membership Type" value={displayMembershipType ? displayMembershipType.charAt(0).toUpperCase() + displayMembershipType.slice(1) : '—'} />
-          {member.membership_type === 'kiddy' ? (
-            <InfoRow icon={User} label="Guardian Name" value={member.guardian_name || '—'} />
-          ) : (
-            <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
-          )}
-          {member.membership_type !== 'kiddy' && (
-            <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
-          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+            <Shield size={16} />
+          </div>
+          <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">Member Details</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <InfoRow icon={Calendar} label="Date Joined" value={member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : 'â€”')} />
+          <InfoRow icon={Shield} label="Membership Type" value={membershipLabel} />
+          <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
+          <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
           <InfoRow icon={Wallet} label="Savings Account No." value={savingsAccount?.account_no || '—'} />
-          <InfoRow icon={User} label="Status" value={member.status === 'closed' ? 'Closed Account' : (member.status || 'active')} />
-          {member.notes && <InfoRow icon={User} label="Notes" value={member.notes} />}
         </div>
       </div>
     </div>
   );
 }
 
-// ─── LOAN TAB ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ LOAN TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, userId, navigate, onPayLoan, paymentHistoryRows, onRefresh }) {
   const { hasPermission } = useAuth();
@@ -977,7 +992,7 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
         <div>
           <p className="text-sm font-medium text-gray-800">{formatCurrency(loan.amount || 0)}</p>
           <p className="text-xs text-gray-400 mt-0.5">
-            Released: {loan.release_date ? formatDate(loan.release_date) : '—'}
+            Released: {loan.release_date ? formatDate(loan.release_date) : 'â€”'}
           </p>
           <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
 
@@ -987,7 +1002,7 @@ function LoanCard({ loan, navigate, onPay, paymentCount }) {
 
           {nextDue && (
             <p className="text-xs text-orange-600 mt-0.5">
-              Next Due: {formatDate(nextDue.due_date)} · {formatCurrency(nextDue.remaining_due || nextDue.total_due || nextDue.payment || 0)}
+              Next Due: {formatDate(nextDue.due_date)} Â· {formatCurrency(nextDue.remaining_due || nextDue.total_due || nextDue.payment || 0)}
             </p>
           )}
         </div>
@@ -1055,10 +1070,10 @@ function LoanPaymentHistoryTable({ rows }) {
                 {formatDateTime(row.latest_created_at || row.created_at)}
               </td>
               <td className="px-4 py-3 font-medium">
-                {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : '—'}
+                {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : 'â€”'}
               </td>
               <td className="px-4 py-3 text-gray-500">
-                {row.payment_mode || '—'}
+                {row.payment_mode || 'â€”'}
               </td>
               <td className="px-4 py-3 text-gray-500">
                 {row.created_by_name || row.created_by || 'System'}
@@ -1071,7 +1086,7 @@ function LoanPaymentHistoryTable({ rows }) {
   );
 }
 
-// ─── CBU TAB ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ CBU TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit, onWithdraw }) {
   const { hasPermission } = useAuth();
@@ -1104,8 +1119,8 @@ function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
-        <AccountInfoCell label="Account No." value={account.account_no || '—'} mono />
-        <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : '—'} />
+        <AccountInfoCell label="Account No." value={account.account_no || 'â€”'} mono />
+        <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : 'â€”'} />
         <AccountInfoCell label="Total Deposits" value={formatCurrency(account.total_deposits ?? 0)} />
         <AccountInfoCell label="Total Withdrawals" value={formatCurrency(account.total_withdrawals ?? 0)} />
       </div>
@@ -1120,7 +1135,7 @@ function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit
   );
 }
 
-// ─── SAVINGS TAB ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ SAVINGS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SavingsTab({ account, transactions, displayBalance, paymentCount, onDeposit, onWithdraw }) {
   const { hasPermission } = useAuth();
@@ -1153,8 +1168,8 @@ function SavingsTab({ account, transactions, displayBalance, paymentCount, onDep
       </div>
 
       <div className="grid grid-cols-2 gap-4 text-sm">
-        <AccountInfoCell label="Account No." value={account.account_no || '—'} mono />
-        <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : '—'} />
+        <AccountInfoCell label="Account No." value={account.account_no || 'â€”'} mono />
+        <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : 'â€”'} />
         <AccountInfoCell label="Total Deposits" value={formatCurrency(account.total_deposits ?? 0)} />
         <AccountInfoCell label="Total Withdrawals" value={formatCurrency(account.total_withdrawals ?? 0)} />
       </div>
@@ -1169,7 +1184,7 @@ function SavingsTab({ account, transactions, displayBalance, paymentCount, onDep
   );
 }
 
-// ─── SAVINGS BOOSTER TAB ─────────────────────────────────────────────────────
+// â”€â”€â”€ SAVINGS BOOSTER TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SavingsBoosterSlotCard({ slot }) {
   const statusStyle = {
@@ -1184,14 +1199,14 @@ function SavingsBoosterSlotCard({ slot }) {
   return (
     <div className="rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || '—'}</p>
+        <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || 'â€”'}</p>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${statusStyle}`}>
           {slot.status || 'active'}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : '—'} />
-        <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '—'} />
+        <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : 'â€”'} />
+        <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : 'â€”'} />
         <AccountInfoCell label="Total Deposited" value={formatCurrency(slot.total_deposited || 0)} />
         <AccountInfoCell label="Interest Earned" value={formatCurrency(slot.interest_earned || 0)} />
         <AccountInfoCell label="Weeks Deposited" value={`${slot.weeks_deposited || 0} wk(s)`} />
@@ -1244,7 +1259,7 @@ function MemberSavingsBoosterTab({ slots, transactions, loading }) {
   );
 }
 
-// ─── TRANSACTIONS TAB ────────────────────────────────────────────────────────
+// â”€â”€â”€ TRANSACTIONS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function WellifeVipTab({ transactions }) {
   const total = transactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
@@ -1274,9 +1289,9 @@ function WellifeVipTab({ transactions }) {
                 <div>
                   <p className="text-sm font-medium text-gray-800">WELLife VIP Card</p>
                   <p className="text-xs text-gray-400">
-                    {tx.payment_mode && <span>{tx.payment_mode} Â· </span>}
-                    {tx.created_by_name && <span>By: {tx.created_by_name} Â· </span>}
-                    {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : 'â€”'}
+                    {tx.payment_mode && <span>{tx.payment_mode} Ã‚Â· </span>}
+                    {tx.created_by_name && <span>By: {tx.created_by_name} Ã‚Â· </span>}
+                    {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : 'Ã¢â‚¬â€'}
                   </p>
                 </div>
               </div>
@@ -1321,10 +1336,10 @@ function TransactionsTab({ transactions }) {
                       {tx.type?.replace(/_/g, ' ') || 'Transaction'}
                     </p>
                     <p className="text-xs text-gray-400">
-                      {tx.category && <span className="capitalize mr-1">{tx.category} ·</span>}
-                      {tx.payment_mode && <span>{tx.payment_mode} · </span>}
-                      {tx.created_by_name && <span>By: {tx.created_by_name} · </span>}
-                      {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : '—'}
+                      {tx.category && <span className="capitalize mr-1">{tx.category} Â·</span>}
+                      {tx.payment_mode && <span>{tx.payment_mode} Â· </span>}
+                      {tx.created_by_name && <span>By: {tx.created_by_name} Â· </span>}
+                      {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : 'â€”'}
                     </p>
                   </div>
                 </div>
@@ -1340,7 +1355,7 @@ function TransactionsTab({ transactions }) {
   );
 }
 
-// ─── PENALTY TAB ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ PENALTY TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefresh }) {
   const { hasPermission } = useAuth();
@@ -1442,7 +1457,7 @@ function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefres
                 <tr key={p.id}>
                   <td className="px-4 py-3">{formatDate(p.penalty_date)}</td>
                   <td className="px-4 py-3 font-semibold text-red-600">{formatCurrency(p.amount)}</td>
-                  <td className="px-4 py-3 text-gray-500">{p.description || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{p.description || 'â€”'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs">{formatDateTime(p.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <button
@@ -1496,7 +1511,7 @@ function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefres
   );
 }
 
-// ─── CREDIT PROFILE TAB ─────────────────────────────────────────────────────
+// â”€â”€â”€ CREDIT PROFILE TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function computeCreditProfile(loans) {
   const total        = loans.length;
@@ -1665,14 +1680,14 @@ function CreditProfileTab({ loans, memberName }) {
               <tbody className="divide-y divide-gray-50">
                 {loans.map(loan => (
                   <tr key={loan.id} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{loan.loan_no || '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{loan.loan_no || 'â€”'}</td>
                     <td className="px-4 py-3 font-semibold tabular-nums">{formatCurrency(loan.amount)}</td>
                     <td className="px-4 py-3 tabular-nums">
                       <span className={(loan.balance || 0) > 0 ? 'text-orange-600 font-semibold' : 'text-emerald-600'}>
                         {formatCurrency(loan.balance ?? loan.amount)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{loan.term_months ? `${loan.term_months} mo.` : '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{loan.term_months ? `${loan.term_months} mo.` : 'â€”'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
                         ${loan.status === 'paid' ? 'bg-emerald-50 text-emerald-700' :
@@ -1695,7 +1710,7 @@ function CreditProfileTab({ loans, memberName }) {
   );
 }
 
-// ─── HELPER COMPONENTS ─────────────────────────────────────────────────────
+// â”€â”€â”€ HELPER COMPONENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AccountInfoCell({ label, value, mono }) {
   return (
@@ -1723,12 +1738,12 @@ function HistoryTable({ rows }) {
           {rows.map(row => (
             <tr key={row.id}>
               <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.created_at || row.transaction_date || row.payment_date)}</td>
-              <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || '—'}</td>
+              <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || 'â€”'}</td>
               <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
                 {formatCurrency(row.amount || 0)}
               </td>
-              <td className="px-4 py-3 text-gray-500">{row.payment_mode || '—'}</td>
-              <td className="px-4 py-3 text-gray-500">{row.created_by_name || '—'}</td>
+              <td className="px-4 py-3 text-gray-500">{row.payment_mode || 'â€”'}</td>
+              <td className="px-4 py-3 text-gray-500">{row.created_by_name || 'â€”'}</td>
             </tr>
           ))}
         </tbody>
@@ -1746,7 +1761,7 @@ function EmptyState({ icon: Icon, message }) {
   );
 }
 
-// ─── PAYMENT MODAL ───────────────────────────────────────────────────────────
+// â”€â”€â”€ PAYMENT MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function createInvoiceStrict(args, label) {
   try {
@@ -2113,7 +2128,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
   );
 }
 
-// ─── DEPOSIT MODAL ───────────────────────────────────────────────────────────
+// â”€â”€â”€ DEPOSIT MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DepositModal({ open, onClose, accountType, label, account, memberId, memberName, userId, onSuccess }) {
   const { hasPermission } = useAuth();
@@ -2314,7 +2329,7 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
   );
 }
 
-// ─── WITHDRAWAL VOUCHER MODAL ──────────────────────────────────────────────
+// â”€â”€â”€ WITHDRAWAL VOUCHER MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function WithdrawalVoucherModal({ open, onClose, accountType, label, account, memberId, userId, onSuccess }) {
   const { hasPermission } = useAuth();
@@ -2461,7 +2476,7 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
               <option value="">Select approved voucher</option>
               {withdrawVouchers.map(voucher => (
                 <option key={voucher.id} value={voucher.id}>
-                  {voucher.voucher_no} · {formatCurrency(voucher.amount)} · {voucher.purpose}
+                  {voucher.voucher_no} Â· {formatCurrency(voucher.amount)} Â· {voucher.purpose}
                 </option>
               ))}
             </select>
@@ -2471,14 +2486,14 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
             <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
               <p className="text-xs text-gray-400 mb-1">Amount</p>
               <p className="text-sm font-semibold text-gray-900">
-                {amount ? formatCurrency(parseFloat(amount) || 0) : '—'}
+                {amount ? formatCurrency(parseFloat(amount) || 0) : 'â€”'}
               </p>
             </div>
 
             <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
               <p className="text-xs text-gray-400 mb-1">Date</p>
               <p className="text-sm font-semibold text-gray-900">
-                {paymentDate ? formatDate(paymentDate) : '—'}
+                {paymentDate ? formatDate(paymentDate) : 'â€”'}
               </p>
             </div>
           </div>
@@ -2486,21 +2501,21 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
             <p className="text-xs text-gray-400 mb-1">Mode of Payment</p>
             <p className="text-sm font-semibold text-gray-900">
-              {paymentMode || '—'}
+              {paymentMode || 'â€”'}
             </p>
           </div>
 
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
             <p className="text-xs text-gray-400 mb-1">Reference</p>
             <p className="text-sm font-semibold text-gray-900 break-all">
-              {paymentReference || '—'}
+              {paymentReference || 'â€”'}
             </p>
           </div>
 
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
             <p className="text-xs text-gray-400 mb-1">Notes</p>
             <p className="text-sm text-gray-900 whitespace-pre-wrap">
-              {paymentNotes || '—'}
+              {paymentNotes || 'â€”'}
             </p>
           </div>
         </div>
@@ -2522,7 +2537,7 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
   );
 }
 
-// ─── MEMBERSHIP TAB ─────────────────────────────────────────────────────────
+// â”€â”€â”€ MEMBERSHIP TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const MEMBERSHIP_TYPE_OPTS = [
   { value: 'associate', label: 'Associate' },
@@ -2826,7 +2841,7 @@ function MembershipTab({
             if (key !== 'text') acc[key] = (acc[key] || 0) + Number(val || 0);
           });
         }
-      } catch { /* plain text notes — skip */ }
+      } catch { /* plain text notes â€” skip */ }
       return acc;
     }, {});
   }, [displayPayments]);
@@ -2879,20 +2894,20 @@ function MembershipTab({
   function parsePaymentNotes(notes) {
     try {
       const data = JSON.parse(notes || '{}');
-      if (typeof data !== 'object' || data === null) return notes || '—';
+      if (typeof data !== 'object' || data === null) return notes || 'â€”';
       if ('entry' in data) {
         const parts = [];
-        if (data.entry   > 0) parts.push(`Entry ₱${Number(data.entry).toLocaleString()}`);
-        if (data.cbu     > 0) parts.push(`CBU ₱${Number(data.cbu).toLocaleString()}`);
-        if (data.savings > 0) parts.push(`Savings ₱${Number(data.savings).toLocaleString()}`);
-        return [parts.join(' · '), data.text].filter(Boolean).join(' | ') || '—';
+        if (data.entry   > 0) parts.push(`Entry â‚±${Number(data.entry).toLocaleString()}`);
+        if (data.cbu     > 0) parts.push(`CBU â‚±${Number(data.cbu).toLocaleString()}`);
+        if (data.savings > 0) parts.push(`Savings â‚±${Number(data.savings).toLocaleString()}`);
+        return [parts.join(' Â· '), data.text].filter(Boolean).join(' | ') || 'â€”';
       }
       const parts = Object.entries(data)
         .filter(([key, val]) => key !== 'text' && Number(val) > 0)
-        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ')}: ₱${Number(val).toLocaleString()}`);
-      return [parts.join(' · '), data.text].filter(Boolean).join(' | ') || '—';
+        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ')}: â‚±${Number(val).toLocaleString()}`);
+      return [parts.join(' Â· '), data.text].filter(Boolean).join(' | ') || 'â€”';
     } catch {
-      return notes || '—';
+      return notes || 'â€”';
     }
   }
 
@@ -3033,7 +3048,7 @@ function MembershipTab({
           category: 'membership',
           type: 'membership_payment',
           amount: item.amount,
-          notes: [item.label, payNotes.trim()].filter(Boolean).join(' — '),
+          notes: [item.label, payNotes.trim()].filter(Boolean).join(' â€” '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -3049,7 +3064,7 @@ function MembershipTab({
           type: 'deposit',
           amount: cbuAmt,
           reference: cbuAccount.account_no || null,
-          notes: [cbuParts.join(' · ') || 'Initial CBU (Membership)', payNotes.trim()].filter(Boolean).join(' — '),
+          notes: [cbuParts.join(' Â· ') || 'Initial CBU (Membership)', payNotes.trim()].filter(Boolean).join(' â€” '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -3065,7 +3080,7 @@ function MembershipTab({
           type: 'deposit',
           amount: savingsAmt,
           reference: savingsAccount.account_no || null,
-          notes: [savingsParts.join(' · ') || 'Initial Savings (Membership)', payNotes.trim()].filter(Boolean).join(' — '),
+          notes: [savingsParts.join(' Â· ') || 'Initial Savings (Membership)', payNotes.trim()].filter(Boolean).join(' â€” '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -3195,12 +3210,12 @@ function MembershipTab({
                 onChange={e => setSetupRecordType(e.target.value)}
                 className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
               >
-                <option value="new_member">New Membership — current fee structure</option>
-                <option value="old_member">Old Membership — previous fee structure</option>
+                <option value="new_member">New Membership â€” current fee structure</option>
+                <option value="old_member">Old Membership â€” previous fee structure</option>
               </select>
               <p className="text-[11px] text-gray-400">
                 {isSetupNewMember
-                  ? 'Ledger starts unpaid — use "Record Payment" to log onboarding payments.'
+                  ? 'Ledger starts unpaid â€” use "Record Payment" to log onboarding payments.'
                   : 'Ledger starts unpaid using the previous fee structure - record payments through the Invoice page.'}
               </p>
             </div>
@@ -3293,7 +3308,7 @@ function MembershipTab({
       {membershipFees && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2.5 border-b border-gray-100">
-            Payment Breakdown — {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
+            Payment Breakdown: {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
           </p>
           <div className="divide-y divide-gray-50">
             {membershipBreakdownRows.map(([label, target, componentKey]) => {
@@ -3413,7 +3428,7 @@ function MembershipTab({
                     <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDateTime(log.upgraded_at)}</td>
                     <td className="px-4 py-3 capitalize text-gray-600">{log.from_type}</td>
                     <td className="px-4 py-3 capitalize text-blue-700 font-medium">{log.to_type}</td>
-                    <td className="px-4 py-3 text-gray-500">{log.notes || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500">{log.notes || 'â€”'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3428,7 +3443,7 @@ function MembershipTab({
             Outstanding: <span className="font-bold">{formatCurrency(feeBalance)}</span>
             {membershipFees?.rows && (
               <span className="text-amber-600 ml-2">
-                ({membershipFees.rows.map(([label, amount]) => `${label} ₱${amount.toLocaleString()}`).join(' · ')})
+                ({membershipFees.rows.map(([label, amount]) => `${label} â‚±${amount.toLocaleString()}`).join(' Â· ')})
               </span>
             )}
           </p>
@@ -3451,14 +3466,14 @@ function MembershipTab({
                         <div key={key} className="flex justify-between text-xs">
                           <span className="text-gray-600">
                             {label}
-                            <span className="text-gray-400 ml-1">(₱{itemAmount.toLocaleString()})</span>
+                            <span className="text-gray-400 ml-1">(â‚±{itemAmount.toLocaleString()})</span>
                           </span>
                           <span className={
                             isComplete ? 'text-green-600 font-medium'
                             : allocate > 0 ? 'text-blue-700 font-semibold'
                             : 'text-gray-400'
                           }>
-                            {isComplete ? '✓ Fully paid' : allocate > 0 ? `+${formatCurrency(allocate)}` : '—'}
+                            {isComplete ? 'âœ“ Fully paid' : allocate > 0 ? `+${formatCurrency(allocate)}` : 'â€”'}
                           </span>
                         </div>
                       );
@@ -3478,7 +3493,7 @@ function MembershipTab({
                   Membership Entry <span className="text-gray-400">(optional)</span>
                 </label>
                 <input type="text" inputMode="decimal"
-                  placeholder={membershipFees ? `e.g. ₱${membershipFees.entry.toLocaleString()}` : '0.00'}
+                  placeholder={membershipFees ? `e.g. â‚±${membershipFees.entry.toLocaleString()}` : '0.00'}
                   value={formatAmountInput(payEntry)} onChange={e => setPayEntry(cleanAmountInput(e.target.value))} className={fieldClass} />
               </div>
               <div>
@@ -3486,7 +3501,7 @@ function MembershipTab({
                   CBU <span className="text-gray-400">(optional)</span>
                 </label>
                 <input type="text" inputMode="decimal"
-                  placeholder={membershipFees ? `e.g. ₱${membershipFees.cbu.toLocaleString()}` : '0.00'}
+                  placeholder={membershipFees ? `e.g. â‚±${membershipFees.cbu.toLocaleString()}` : '0.00'}
                   value={formatAmountInput(payCbu)} onChange={e => setPayCbu(cleanAmountInput(e.target.value))} className={fieldClass} />
               </div>
               <div>
@@ -3494,7 +3509,7 @@ function MembershipTab({
                   Savings <span className="text-gray-400">(optional)</span>
                 </label>
                 <input type="text" inputMode="decimal"
-                  placeholder={membershipFees ? `e.g. ₱${membershipFees.savings.toLocaleString()}` : '0.00'}
+                  placeholder={membershipFees ? `e.g. â‚±${membershipFees.savings.toLocaleString()}` : '0.00'}
                   value={formatAmountInput(paySavings)} onChange={e => setPaySavings(cleanAmountInput(e.target.value))} className={fieldClass} />
               </div>
               <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 flex justify-between text-sm">
@@ -3529,7 +3544,7 @@ function MembershipTab({
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              SI# <span className="text-gray-400">(optional — recorded in Invoice)</span>
+              SI# <span className="text-gray-400">(optional â€” recorded in Invoice)</span>
             </label>
             <input type="text" placeholder="Enter SI# manually"
               value={paySiNo} onChange={e => setPaySiNo(e.target.value)} className={fieldClass} />
@@ -3547,7 +3562,7 @@ function MembershipTab({
 
       <Modal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} title="Upgrade to Regular Member" size="sm">
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 text-sm">
-          <p className="font-medium text-blue-800">Upgrading from Associate → Regular</p>
+          <p className="font-medium text-blue-800">Upgrading from Associate â†’ Regular</p>
           <p className="text-xs text-blue-600 mt-0.5">
             This will update the membership type and log the upgrade. This action cannot be undone.
           </p>
@@ -3568,7 +3583,7 @@ function MembershipTab({
   );
 }
 
-// ─── TIME DEPOSIT TAB ──────────────────────────────────────────────────────
+// â”€â”€â”€ TIME DEPOSIT TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TD_PAYMENT_MODES = ['Cash', 'GCash', 'Bank Transfer', 'Check', 'Others'];
 
@@ -3650,7 +3665,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         invoice_no:   tdForm.si_number.trim(),
         date:         tdForm.date_applied,
         payee:        memberName || 'Member',
-        purpose:      `New Time Deposit — ${memberName || 'Member'}`,
+        purpose:      `New Time Deposit â€” ${memberName || 'Member'}`,
         amount:       amt,
         status:       'paid',
         payment_type: 'time_deposit',
@@ -3669,7 +3684,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         transaction_date: tdForm.date_applied,
         created_by:       userId ?? null,
         reference:        tdForm.si_number.trim(),
-        notes:            `New Time Deposit — ${memberName || 'Member'}`,
+        notes:            `New Time Deposit â€” ${memberName || 'Member'}`,
         payment_mode:     tdForm.payment_mode || null,
         member_id:        memberId,
       });
@@ -3678,7 +3693,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         userId,
         module: 'time_deposit',
         action: 'create',
-        description: `New time deposit for ${memberName} — SI# ${tdForm.si_number.trim()}, ${formatCurrency(amt)}`,
+        description: `New time deposit for ${memberName} â€” SI# ${tdForm.si_number.trim()}, ${formatCurrency(amt)}`,
       });
 
       toast.success('Time Deposit added.');
@@ -3720,7 +3735,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         invoice_no:   paySiNo.trim(),
         date:         payDate,
         payee:        memberName || payTarget.name,
-        purpose:      `Time Deposit Payment — ${memberName || payTarget.name}`,
+        purpose:      `Time Deposit Payment â€” ${memberName || payTarget.name}`,
         amount:       value,
         status:       'paid',
         payment_type: 'time_deposit',
@@ -3739,7 +3754,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         transaction_date: payDate,
         created_by:       userId ?? null,
         reference:        paySiNo.trim(),
-        notes:            `Time Deposit Payment — ${memberName || payTarget.name}`,
+        notes:            `Time Deposit Payment â€” ${memberName || payTarget.name}`,
         payment_mode:     payMode,
         member_id:        memberId,
       });
@@ -3748,7 +3763,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         userId,
         module: 'time_deposit',
         action: 'create',
-        description: `Time deposit payment for ${memberName} — SI# ${paySiNo.trim()}, ${formatCurrency(value)}`,
+        description: `Time deposit payment for ${memberName} â€” SI# ${paySiNo.trim()}, ${formatCurrency(value)}`,
       });
 
       toast.success(`Payment recorded. SI# ${paySiNo.trim()}`);
@@ -3794,7 +3809,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                 d.setMonth(d.getMonth() + (td.terms || 0));
                 return formatDate(d.toISOString().slice(0, 10));
               })()
-            : '—';
+            : 'â€”';
 
           return (
             <div key={td.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
@@ -3843,7 +3858,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                     <tbody className="divide-y divide-gray-50">
                       {td.time_deposit_payments.map(p => (
                         <tr key={p.id}>
-                          <td className="px-4 py-2 text-gray-500">{p.si_number || '—'}</td>
+                          <td className="px-4 py-2 text-gray-500">{p.si_number || 'â€”'}</td>
                           <td className="px-4 py-2 text-gray-500">{formatDate(p.payment_date)}</td>
                           <td className="px-4 py-2 font-medium text-gray-800">{formatCurrency(p.amount || 0)}</td>
                         </tr>
@@ -3876,7 +3891,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
               className={tdFieldClass} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₱) <span className="text-red-400">*</span></label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Amount (â‚±) <span className="text-red-400">*</span></label>
             <input type="text" inputMode="decimal" placeholder="0.00" value={formatAmountInput(tdForm.amount)}
               onChange={e => setTdForm(f => ({ ...f, amount: cleanAmountInput(e.target.value) }))}
               className={tdFieldClass} />
@@ -3934,7 +3949,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
             <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100 text-sm">
               <p className="font-semibold text-indigo-800">{payTarget.name}</p>
               <p className="text-xs text-indigo-600 mt-0.5">
-                {formatCurrency(payTarget.amount)} · {payTarget.terms} months · {parseFloat(payTarget.interest_rate || 0).toFixed(2)}% interest
+                {formatCurrency(payTarget.amount)} Â· {payTarget.terms} months Â· {parseFloat(payTarget.interest_rate || 0).toFixed(2)}% interest
               </p>
             </div>
             <div className="space-y-3">
@@ -3944,7 +3959,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                   onChange={e => setPaySiNo(e.target.value)} className={tdFieldClass} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (₱) <span className="text-red-400">*</span></label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (â‚±) <span className="text-red-400">*</span></label>
                 <input type="text" inputMode="decimal" placeholder="0.00" value={formatAmountInput(payAmount)}
                   onChange={e => setPayAmount(cleanAmountInput(e.target.value))} className={tdFieldClass} />
               </div>

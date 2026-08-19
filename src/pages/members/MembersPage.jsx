@@ -4,15 +4,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload, Eye, Search, UserPlus, Pencil, Trash2, Users, Printer,
-  Download, Filter, RotateCcw, CheckSquare, Square, MinusSquare,
+  Download, Filter, RotateCcw, CheckSquare,
   X, UserCheck, UserX, ChevronDown, CalendarDays, Baby,
-  Sparkles, LayoutGrid, List, FileSpreadsheet,
+  LayoutGrid, List, FileSpreadsheet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
-import Badge from '../../components/ui/Badge';
 import Pagination from '../../components/ui/Pagination';
 import usePagination from '../../hooks/usePagination';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
@@ -51,8 +50,12 @@ const kiddyAvatarColors = [
   'bg-cyan-100 text-cyan-700',
 ];
 
-const statusVariant = { active: 'success', inactive: 'warning', closed: 'dark' };
 const statusLabel = { active: 'Active', inactive: 'Inactive', closed: 'Closed Account' };
+const statusPillClass = {
+  active: 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm shadow-emerald-100/50',
+  inactive: 'bg-amber-50 text-amber-700 border border-amber-200 shadow-sm shadow-amber-100/50',
+  closed: 'bg-slate-100 text-slate-700 border border-slate-200 shadow-sm shadow-slate-100/50',
+};
 
 function formatMemberNo(value) {
   const text = String(value || '').trim();
@@ -61,9 +64,9 @@ function formatMemberNo(value) {
 }
 
 const membershipTypeClass = {
-  regular:   'bg-blue-50 text-blue-700 border border-blue-200',
-  associate: 'bg-purple-50 text-purple-700 border border-purple-200',
-  kiddy:     'bg-teal-50 text-teal-700 border border-teal-200',
+  regular:   'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm shadow-emerald-100/50',
+  associate: 'bg-sky-50 text-sky-700 border border-sky-200 shadow-sm shadow-sky-100/50',
+  kiddy:     'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm shadow-teal-100/50',
 };
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -579,7 +582,6 @@ export default function MembersPage() {
                     variant="outline" 
                     onClick={() => setMigrationImportOpen(true)} 
                     icon={<FileSpreadsheet size={16} />}
-                    className="border-amber-200 text-amber-700 hover:border-amber-300 hover:bg-amber-50"
                   >
                     Migration Import
                   </Button>
@@ -589,7 +591,6 @@ export default function MembersPage() {
               <Button 
                 onClick={() => setAddMemberOpen(true)} 
                 icon={<UserPlus size={16} />}
-                className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 shadow-lg shadow-emerald-200/50"
               >
                 Add Member
               </Button>
@@ -609,25 +610,17 @@ export default function MembersPage() {
             <button
               key={view.id}
               onClick={() => setMemberView(view.id)}
-              className={`
-                group flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200
-                ${isActive
-                  ? view.id === 'kiddy'
-                    ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-200/50'
-                    : 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-200/50'
-                  : 'bg-white text-gray-600 hover:bg-gray-50 hover:shadow-sm border border-gray-100'
-                }
-              `}
+              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                isActive
+                  ? 'border-[#07A04E] bg-[#07A04E] text-white shadow-sm shadow-emerald-200'
+                  : 'border-gray-100 bg-white text-gray-600 shadow-sm hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700'
+              }`}
             >
               <Icon size={16} />
               {view.label}
-              <span className={`
-                text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center transition-all
-                ${isActive
-                  ? 'bg-white/20 text-white'
-                  : 'bg-gray-100 text-gray-500'
-                }
-              `}>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+              }`}>
                 {count}
               </span>
             </button>
@@ -636,30 +629,6 @@ export default function MembersPage() {
       </div>
 
       {/* ── Status Tabs ── */}
-      <div className="mt-3 flex gap-2 print:hidden">
-        {['active', 'inactive', 'closed'].map(tab => {
-          const isActive = statusTab === tab;
-          const icon = tab === 'active' ? <Sparkles size={12} /> : tab === 'inactive' ? <UserX size={12} /> : <UserX size={12} />;
-          return (
-            <button
-              key={tab}
-              onClick={() => setStatusTab(tab)}
-              className={`
-                flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium capitalize transition-all duration-200
-                ${isActive
-                  ? isKiddyView
-                    ? 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
-                  : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50 hover:border-gray-200'
-                }
-              `}
-            >
-              {icon}
-              {statusLabel[tab]}
-            </button>
-          );
-        })}
-      </div>
 
       {/* ── Kiddy Info Banner ── */}
       {isKiddyView && (
@@ -759,14 +728,14 @@ export default function MembersPage() {
 
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-3.5 py-2.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
             >
               <Printer size={15} />
               <span className="hidden sm:inline">Print</span>
             </button>
             <button
               onClick={handleExportCSV}
-              className="flex items-center gap-2 px-3.5 py-2.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
             >
               <Download size={15} />
               <span className="hidden sm:inline">Export All</span>
@@ -814,37 +783,28 @@ export default function MembersPage() {
           <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden print:shadow-none print:rounded-none transition-shadow
             ${isKiddyView ? 'border-teal-100/60' : 'border-gray-100'}`}>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[9%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
                 <thead>
                   <tr className={`border-b ${isKiddyView ? 'bg-gradient-to-r from-teal-50/80 to-teal-50/40 border-teal-100' : 'bg-gradient-to-r from-gray-50/80 to-gray-50/40 border-gray-100'}`}>
-                    <th className="pl-4 pr-2 py-3.5 w-10 print:hidden">
-                      <button
-                        type="button"
-                        onClick={toggleAll}
-                        className="text-gray-400 hover:text-emerald-600 transition-colors"
-                        title={allFilteredSelected ? 'Deselect all' : 'Select all'}
-                      >
-                        {allFilteredSelected
-                          ? <CheckSquare size={16} className="text-emerald-600" />
-                          : someFilteredSelected
-                            ? <MinusSquare size={16} className="text-emerald-600" />
-                            : <Square size={16} />}
-                      </button>
-                    </th>
-
                     {(isKiddyView
-                      ? ['Member', 'Member No.', 'Savings Type', 'Guardian', 'Contact', 'Date of Birth', 'Status', 'Actions']
-                      : ['Member', 'Member No.', 'Contact', 'Referrer', 'Joined', 'Status', 'Actions']
+                      ? ['Member No.', 'Member Name', 'Savings Type', 'Guardian', 'Contact Number', 'Date of Birth', 'Status', 'Actions']
+                      : ['Member No.', 'Member Name', 'Type', 'Contact Number', 'Referrer', 'Joined', 'Status', 'Actions']
                     ).map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3.5 text-[11px] font-semibold uppercase tracking-wider ${
                           isKiddyView ? 'text-teal-600' : 'text-gray-500'
-                        } ${
-                          ['Member No.', 'Joined', 'Status', 'Actions', 'Date of Birth'].includes(h)
-                            ? 'text-center'
-                            : 'text-left'
-                        } ${h === 'Actions' ? 'print:hidden' : ''}`}
+                        } ${h === 'Member Name' ? 'text-left' : 'text-center'} ${h === 'Actions' ? 'print:hidden' : ''}`}
                       >
                         {h}
                       </th>
@@ -855,7 +815,7 @@ export default function MembersPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-20 text-center">
+                      <td colSpan={8} className="py-20 text-center">
                         <div className="flex flex-col items-center gap-3 text-gray-400">
                           <div className={`p-4 rounded-full ${isKiddyView ? 'bg-teal-50' : 'bg-gray-50'}`}>
                             {isKiddyView
@@ -907,55 +867,44 @@ export default function MembersPage() {
                           }`}
                           onClick={() => navigate(`/members/${member.id}`)}
                         >
-                          <td
-                            className="pl-4 pr-2 py-3.5 w-10 print:hidden"
-                            onClick={e => { e.stopPropagation(); toggleOne(member.id); }}
-                          >
-                            <button type="button" className="text-gray-400 hover:text-emerald-600 transition-colors">
-                              {isSelected
-                                ? <CheckSquare size={16} className="text-emerald-600" />
-                                : <Square size={16} />}
-                            </button>
-                          </td>
-
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 text-xs font-bold transition-transform group-hover:scale-105 ${colors[colorIndex]}`}>
-                                {(member.first_name?.[0] || '') + (member.last_name?.[0] || '')}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-teal-700' : 'group-hover:text-emerald-700'}`}>
-                                    {member.first_name} {member.last_name}
-                                  </p>
-                                  {member.membership_type && (
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${membershipTypeClass[member.membership_type] || 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
-                                      {member.membership_type}
-                                    </span>
-                                  )}
-                                </div>
-                                {member.email && (
-                                  <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[150px]">{member.email}</p>
-                                )}
-                                {isKiddyView && member.occupation && (
-                                  <p className="text-xs text-sky-600 mt-0.5">{member.occupation}</p>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
                           <td className="px-4 py-3.5 text-center">
                             <span className={`font-mono text-xs px-2.5 py-1 rounded-xl ring-1 ${
                               isKiddyView
                                 ? 'bg-teal-50 text-teal-700 ring-teal-200/60'
                                 : 'bg-gray-50 text-gray-700 ring-gray-200/60'
                             }`}>
-                              {formatMemberNo(member.member_no) || '—'}
+                              {formatMemberNo(member.member_no) || 'â€”'}
                             </span>
                           </td>
 
-                          {isKiddyView && (
-                            <td className="px-4 py-3.5 text-left">
+                          <td className="px-4 py-3.5 text-left">
+                            <div className="flex items-center justify-start gap-3">
+                              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 text-xs font-bold transition-transform group-hover:scale-105 ${colors[colorIndex]}`}>
+                                {(member.first_name?.[0] || '') + (member.last_name?.[0] || '')}
+                              </div>
+                              <div className="min-w-0 flex-1 text-left">
+                                <div className="flex items-center justify-start gap-2 flex-wrap">
+                                  <p className={`font-semibold text-gray-900 leading-tight transition-colors ${isKiddyView ? 'group-hover:text-teal-700' : 'group-hover:text-emerald-700'}`}>
+                                    {member.first_name} {member.last_name}
+                                  </p>
+                                  {isKiddyView && member.membership_type && (
+                                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${membershipTypeClass[member.membership_type] || 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
+                                      {member.membership_type}
+                                    </span>
+                                  )}
+                                </div>
+                                {member.email && (
+                                  <p className="mt-0.5 max-w-[170px] truncate text-left text-xs text-gray-400">{member.email}</p>
+                                )}
+                                {isKiddyView && member.occupation && (
+                                  <p className="mt-0.5 text-left text-xs text-sky-600">{member.occupation}</p>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {isKiddyView ? (
+                            <td className="px-4 py-3.5 text-center">
                               <span className={`text-[10px] px-2.5 py-1 rounded-full font-medium ${
                                 member.kiddy_savings_type === 'educational_savings'
                                   ? 'bg-amber-100 text-amber-700 border border-amber-200'
@@ -966,23 +915,31 @@ export default function MembersPage() {
                                   : 'Regular Savings'}
                               </span>
                             </td>
+                          ) : (
+                            <td className="px-4 py-3.5 text-center">
+                              <span className={`inline-flex min-w-[88px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${
+                                membershipTypeClass[member.membership_type] || 'bg-gray-100 text-gray-700 border border-gray-200'
+                              }`}>
+                                {member.membership_type || '—'}
+                              </span>
+                            </td>
                           )}
 
                           {isKiddyView ? (
-                            <td className="px-4 py-3.5 text-gray-600 text-sm">
+                            <td className="px-4 py-3.5 text-center text-sm text-gray-600">
                               {member.guardian_name
                                 ? <span>{member.guardian_name} <span className="text-xs text-gray-400">({member.guardian_relationship || 'Guardian'})</span></span>
                                 : <span className="text-gray-400">—</span>
                               }
                             </td>
                           ) : (
-                            <td className="px-4 py-3.5 text-gray-600 text-sm">{member.phone || '—'}</td>
+                            <td className="px-4 py-3.5 text-center text-sm text-gray-600">{member.phone || '—'}</td>
                           )}
 
                           {isKiddyView ? (
-                            <td className="px-4 py-3.5 text-gray-600 text-sm">{member.phone || '—'}</td>
+                            <td className="px-4 py-3.5 text-center text-sm text-gray-600">{member.phone || '—'}</td>
                           ) : (
-                            <td className="px-4 py-3.5 text-gray-600 text-sm">{member.recruiter_name || 'Self'}</td>
+                            <td className="px-4 py-3.5 text-center text-sm text-gray-600">{member.recruiter_name || 'Self'}</td>
                           )}
 
                           <td className="px-4 py-3.5 text-gray-500 text-xs text-center">
@@ -993,9 +950,11 @@ export default function MembersPage() {
                           </td>
 
                           <td className="px-4 py-3.5 text-center">
-                            <Badge variant={statusVariant[member.status] || 'default'} dot>
+                            <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold ${
+                              statusPillClass[member.status] || statusPillClass.active
+                            }`}>
                               {statusLabel[member.status] || 'Active'}
-                            </Badge>
+                            </span>
                           </td>
 
                           <td className="px-4 py-3.5 print:hidden" onClick={e => e.stopPropagation()}>
