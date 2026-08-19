@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, User, CreditCard, PiggyBank, Wallet, ArrowLeftRight,
-  Edit, Phone, Mail, MapPin, Calendar, Hash, Plus, TrendingUp,
+  Edit, Phone, Mail, MapPin, Calendar, Plus, TrendingUp,
   TrendingDown, Clock, AlertCircle, Shield, Download, BadgeAlert,
   Printer, Upload, Sprout,
 } from 'lucide-react';
@@ -165,20 +165,14 @@ export default function MemberDetailPage() {
     try {
       setLoading(true);
 
-      const [memberData, initialAccounts, loansData, txData] = await Promise.all([
+      const [memberData, loansData, txData] = await Promise.all([
         getMemberById(id),
-        getAccountsByMemberId(id),
         getLoansByMemberId(id),
         getTransactionsByMemberId(id),
       ]);
 
-      let finalAccounts = initialAccounts || [];
-      const accountTypes = finalAccounts.map(a => String(a.account_type).toLowerCase());
-
-      if (!accountTypes.includes('cbu') || !accountTypes.includes('savings')) {
-        await initializeMemberAccounts(id);
-        finalAccounts = await getAccountsByMemberId(id);
-      }
+      await initializeMemberAccounts(id);
+      const finalAccounts = await getAccountsByMemberId(id);
 
       setMember(memberData);
       setAccounts(finalAccounts || []);
@@ -3308,7 +3302,7 @@ function MembershipTab({
       {membershipFees && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2.5 border-b border-gray-100">
-            Payment Breakdown: {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
+            Payment Breakdown â€” {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
           </p>
           <div className="divide-y divide-gray-50">
             {membershipBreakdownRows.map(([label, target, componentKey]) => {

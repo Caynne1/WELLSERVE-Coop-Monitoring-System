@@ -205,22 +205,76 @@ export async function deleteMember(id) {
   return await hardDeleteMember(id);
 }
 
+export function getGeneratedMemberAccountNos(memberNo) {
+  const digits = String(memberNo || '').replace(/\D/g, '');
+  if (!digits) {
+    return { cbu: '', savings: '' };
+  }
+
+  const sequence = Number(digits);
+  if (!Number.isFinite(sequence) || sequence <= 0) {
+    return { cbu: '', savings: '' };
+  }
+
+  return {
+    cbu: String(1223000000 + sequence),
+    savings: String(6259000000 + sequence),
+  };
+}
+
 export async function initializeMemberAccounts(memberId) {
+  const member = await getMemberById(memberId);
+  const generatedAccountNos = getGeneratedMemberAccountNos(member?.member_no);
+
   const { data: existing, error: existingError } = await supabase
     .from('accounts')
-    .select('account_type')
+    .select('id, account_type, account_no')
     .eq('member_id', memberId);
 
   if (existingError) throw existingError;
 
-  const existingTypes = (existing || []).map(a => a.account_type);
+  const existingAccounts = existing || [];
+  const existingTypes = existingAccounts.map(a => a.account_type);
   const toCreate = [];
+  const toUpdate = [];
 
   if (!existingTypes.includes('cbu')) {
-    toCreate.push({ member_id: memberId, account_type: 'cbu', balance: 0, status: 'active' });
+    toCreate.push({
+      member_id: memberId,
+      account_type: 'cbu',
+      account_no: generatedAccountNos.cbu || null,
+      balance: 0,
+      status: 'active',
+    });
+  } else {
+    const cbu = existingAccounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
+    if (generatedAccountNos.cbu && cbu?.account_no !== generatedAccountNos.cbu) {
+      toUpdate.push({ id: cbu.id, account_no: generatedAccountNos.cbu });
+    }
   }
+
   if (!existingTypes.includes('savings')) {
-    toCreate.push({ member_id: memberId, account_type: 'savings', balance: 0, status: 'active' });
+    toCreate.push({
+      member_id: memberId,
+      account_type: 'savings',
+      account_no: generatedAccountNos.savings || null,
+      balance: 0,
+      status: 'active',
+    });
+  } else {
+    const savings = existingAccounts.find(a => String(a.account_type).toLowerCase() === 'savings');
+    if (generatedAccountNos.savings && savings?.account_no !== generatedAccountNos.savings) {
+      toUpdate.push({ id: savings.id, account_no: generatedAccountNos.savings });
+    }
+  }
+
+  for (const account of toUpdate) {
+    const { error } = await supabase
+      .from('accounts')
+      .update({ account_no: account.account_no })
+      .eq('id', account.id);
+
+    if (error) throw error;
   }
 
   if (toCreate.length === 0) return [];
@@ -239,7 +293,7 @@ export async function searchMembers(query) {
 
   const { data, error } = await supabase
     .from('members')
-    .select('id, first_name, last_name, middle_initial, member_no, email, phone, membership_type, status, recruiter_name')
+    .select('id, first_name, last_name, middle_initial, member_no, email, phone, membership_type, status, recruiter_name, record_type')
     .or(
       `first_name.ilike.%${sanitized}%,last_name.ilike.%${sanitized}%,member_no.ilike.%${sanitized}%,recruiter_name.ilike.%${sanitized}%`
     )

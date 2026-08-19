@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Search, Printer, Download, RefreshCw, Calendar, ArrowDownLeft, ArrowUpRight,
-  Wallet, Filter, X,
+  Search, Printer, Download, Calendar, ArrowDownLeft, ArrowUpRight,
+  Wallet, Filter, X, Eye,
 } from 'lucide-react';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
+import Modal from '../../components/ui/Modal';
 import Pagination from '../../components/ui/Pagination';
 import usePagination from '../../hooks/usePagination';
 import { getTransactions, subscribeToTransactions } from '../../services/transactionService';
@@ -36,6 +37,7 @@ function memberName(tx) {
 }
 
 function txLabel(value) {
+  if (String(value || '').toLowerCase() === 'membership_payment') return 'membership';
   return String(value || '-').replace(/_/g, ' ');
 }
 
@@ -80,18 +82,17 @@ function StatCard({ icon, label, value, sub, tone = 'gray' }) {
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [directionFilter, setDirectionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [detailTarget, setDetailTarget] = useState(null);
 
   const fetchTransactions = useCallback(async ({ quiet = false } = {}) => {
     try {
       if (!quiet) setLoading(true);
-      setRefreshing(true);
       const data = await getTransactions({
         from: dateFrom || undefined,
         to: dateTo || undefined,
@@ -101,7 +102,6 @@ export default function TransactionsPage() {
       toast.error('Failed to load transactions');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [dateFrom, dateTo]);
 
@@ -115,7 +115,14 @@ export default function TransactionsPage() {
   }, [fetchTransactions]);
 
   const typeOptions = useMemo(() => uniqueOptions(transactions, 'type'), [transactions]);
-  const categoryOptions = useMemo(() => uniqueOptions(transactions, 'category'), [transactions]);
+  const categoryOptions = useMemo(() => {
+    const options = uniqueOptions(transactions, 'category');
+    if (!options.includes('others')) {
+      const otherIndex = options.findIndex(category => String(category).toLowerCase() === 'other');
+      options.splice(otherIndex >= 0 ? otherIndex + 1 : options.length, 0, 'others');
+    }
+    return options;
+  }, [transactions]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -177,7 +184,7 @@ export default function TransactionsPage() {
     const rows = filtered.map(tx => {
       const direction = isCashIn(tx) ? 'IN' : 'OUT';
       return `<tr>
-        <td style="white-space:nowrap">${tx.transaction_date ? formatDate(tx.transaction_date) : '-'}</td>
+        <td style="white-space:nowrap">${tx.transaction_date ? formatDateTime(tx.transaction_date) : '-'}</td>
         <td>${direction}</td>
         <td style="text-transform:capitalize">${txLabel(tx.type)}</td>
         <td>${tx.category || '-'}</td>
@@ -186,14 +193,13 @@ export default function TransactionsPage() {
         <td>${tx.payment_mode || '-'}</td>
         <td>${tx.created_by_name || '-'}</td>
         <td style="max-width:180px;overflow:hidden">${tx.notes || tx.payment_mode_note || '-'}</td>
-        <td style="white-space:nowrap">${tx.created_at ? formatDateTime(tx.created_at) : '-'}</td>
       </tr>`;
     }).join('');
     const html = `
       <h1 class="report-title">Transactions</h1>
       <div class="report-meta">Financial transaction ledger | ${filtered.length} records | Cash In: ${fmt(totals.cashIn)} | Cash Out: ${fmt(totals.cashOut)} | Net: ${fmt(totals.net)}</div>
       <table>
-        <thead><tr><th>Transaction Date</th><th>Direction</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Recorded By</th><th>Notes</th><th>Recorded At</th></tr></thead>
+        <thead><tr><th>Date &amp; Time</th><th>Direction</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Recorded By</th><th>Notes</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
@@ -208,7 +214,7 @@ export default function TransactionsPage() {
     try {
       if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
       const rows = filtered.map(tx => ({
-        transaction_date: tx.transaction_date ? formatDate(tx.transaction_date) : '',
+        date_time: tx.transaction_date ? formatDateTime(tx.transaction_date) : '',
         direction: isCashIn(tx) ? 'IN' : 'OUT',
         type: txLabel(tx.type),
         category: tx.category || '',
@@ -219,7 +225,6 @@ export default function TransactionsPage() {
         reference: tx.reference || '',
         notes: tx.notes || tx.payment_mode_note || '',
         recorded_by: tx.created_by_name || '',
-        recorded_at: formatDateTime(tx.created_at),
       }));
       exportToCSV('transactions_report.csv', rows);
       toast.success('CSV exported successfully');
@@ -287,7 +292,7 @@ export default function TransactionsPage() {
         <select
           value={typeFilter}
           onChange={e => setTypeFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-32 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All Types</option>
           {typeOptions.map(type => <option key={type} value={type}>{txLabel(type)}</option>)}
@@ -331,13 +336,6 @@ export default function TransactionsPage() {
         )}
 
         <button
-          onClick={() => fetchTransactions({ quiet: true })}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
-        >
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-        <button
           onClick={handlePrint}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
         >
@@ -364,7 +362,7 @@ export default function TransactionsPage() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   {[
-                    'Transaction Date',
+                    'Date & Time',
                     'Direction',
                     'Type',
                     'Category',
@@ -373,7 +371,6 @@ export default function TransactionsPage() {
                     'Mode',
                     'Reference',
                     'Recorded By',
-                    'Recorded At',
                     'Notes',
                   ].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -386,7 +383,7 @@ export default function TransactionsPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-12 text-gray-400">
+                    <td colSpan={10} className="text-center py-12 text-gray-400">
                       {hasFilters ? 'No transactions match your filters.' : 'No transactions yet.'}
                     </td>
                   </tr>
@@ -396,7 +393,7 @@ export default function TransactionsPage() {
                     return (
                       <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                          {tx.transaction_date ? formatDate(tx.transaction_date) : '-'}
+                          {tx.transaction_date ? formatDateTime(tx.transaction_date) : '-'}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cashIn ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
@@ -429,13 +426,14 @@ export default function TransactionsPage() {
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                           {tx.created_by_name || '-'}
                         </td>
-                        <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                          {formatDateTime(tx.created_at)}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 max-w-[280px]">
-                          <div className="truncate" title={tx.notes || tx.payment_mode_note || ''}>
-                            {tx.notes || tx.payment_mode_note || '-'}
-                          </div>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => setDetailTarget(tx)}
+                            title="View transaction details"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <Eye size={15} />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -467,6 +465,45 @@ export default function TransactionsPage() {
           />
         </div>
       )}
+
+      <Modal
+        open={!!detailTarget}
+        onClose={() => setDetailTarget(null)}
+        title="Transaction Details"
+        size="md"
+      >
+        {detailTarget && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <DetailItem label="Date & Time" value={detailTarget.transaction_date ? formatDateTime(detailTarget.transaction_date) : '-'} />
+              <DetailItem label="Direction" value={isCashIn(detailTarget) ? 'IN' : 'OUT'} />
+              <DetailItem label="Type" value={txLabel(detailTarget.type)} />
+              <DetailItem label="Category" value={detailTarget.category || '-'} />
+              <DetailItem label="Member" value={memberName(detailTarget)} />
+              <DetailItem label="Amount" value={formatCurrency(detailTarget.amount)} />
+              <DetailItem label="Mode" value={detailTarget.payment_mode || '-'} />
+              <DetailItem label="Reference" value={detailTarget.reference || '-'} />
+              <DetailItem label="Recorded By" value={detailTarget.created_by_name || '-'} />
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Notes</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
+                {detailTarget.notes || detailTarget.payment_mode_note || 'No notes recorded.'}
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-1 text-sm font-medium text-gray-800 break-words">{value}</p>
     </div>
   );
 }

@@ -7,7 +7,6 @@ import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
-import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -31,20 +30,20 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_BADGE = {
-  issued:  'warning',
-  waiting_release: 'info',
-  released: 'success',
-  cleared: 'success',
-  voided:  'danger',
-};
-
 const STATUS_LABEL = {
   issued:  'For Check Approval',
   waiting_release: 'Waiting for Release',
   released: 'Released',
   cleared: 'Released',
   voided:  'Voided',
+};
+
+const STATUS_PILL_CLASS = {
+  issued: 'border-amber-200 bg-amber-50 text-amber-700',
+  waiting_release: 'border-blue-200 bg-blue-50 text-blue-700',
+  released: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  cleared: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  voided: 'border-red-200 bg-red-50 text-red-700',
 };
 
 const EMPTY_FORM = {
@@ -491,17 +490,17 @@ export default function CheckbookPage() {
         </select>
         <button
           onClick={handlePrint}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Printer size={14} />
-          Print
+          <Printer size={15} />
+          <span className="hidden sm:inline">Print</span>
         </button>
         <button
           onClick={handleExportCSV}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Download size={14} />
-          Export CSV
+          <Download size={15} />
+          <span className="hidden sm:inline">Export CSV</span>
         </button>
       </div>
 
@@ -509,15 +508,29 @@ export default function CheckbookPage() {
       {loading ? (
         <div className="flex justify-center py-20"><Spinner /></div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[17%]" />
+                <col className="w-[20%]" />
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[6%]" />
+              </colgroup>
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
+                <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
                   {['Check No.', 'Date', 'Payee', 'Purpose', 'Bank', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                      className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
+                        ['Check No.', 'Date', 'Amount', 'Status', 'Actions'].includes(h)
+                          ? 'text-center'
+                          : 'text-left'
+                      }`}
                     >
                       {h}
                     </th>
@@ -541,13 +554,13 @@ export default function CheckbookPage() {
                       entry.status === 'voided' ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <span className="font-mono text-xs font-semibold text-gray-700
                         bg-gray-100 px-2 py-0.5 rounded">
                         {entry.check_no}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-center">
                       {formatDate(entry.date)}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
@@ -565,16 +578,16 @@ export default function CheckbookPage() {
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {entry.bank || '—'}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">
+                    <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap text-center">
                       {formatCurrency(entry.amount)}
                     </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={STATUS_BADGE[entry.status] || 'default'} dot>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[entry.status] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
                         {STATUS_LABEL[entry.status] || entry.status}
-                      </Badge>
+                      </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
+                      <div className="flex items-center gap-1 justify-center">
                         <button
                           onClick={() => setViewTarget(entry)}
                           title="View Details"
@@ -809,9 +822,9 @@ export default function CheckbookPage() {
                 bg-gray-100 px-3 py-1 rounded-lg">
                 {viewTarget.check_no}
               </span>
-              <Badge variant={STATUS_BADGE[viewTarget.status] || 'default'} dot>
+              <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[viewTarget.status] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
                 {STATUS_LABEL[viewTarget.status] || viewTarget.status}
-              </Badge>
+              </span>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">

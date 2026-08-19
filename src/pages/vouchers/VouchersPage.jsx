@@ -8,7 +8,6 @@ import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
-import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -34,16 +33,16 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_BADGE = {
-  draft: 'warning',
-  approved: 'success',
-  voided: 'danger',
-};
-
 const STATUS_LABEL = {
   draft: 'Draft',
   approved: 'Approved',
   voided: 'Voided',
+};
+
+const STATUS_PILL_CLASS = {
+  draft: 'border-amber-200 bg-amber-50 text-amber-700',
+  approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  voided: 'border-red-200 bg-red-50 text-red-700',
 };
 
 const VOUCHER_KIND_OPTIONS = [
@@ -114,9 +113,9 @@ function voucherStatusLabel(voucher) {
   return STATUS_LABEL[voucher?.status] || voucher?.status || '';
 }
 
-function voucherStatusBadge(voucher) {
-  if (needsVoucherNumber(voucher)) return 'warning';
-  return STATUS_BADGE[voucher?.status] || 'default';
+function voucherStatusPillClass(voucher) {
+  if (needsVoucherNumber(voucher)) return 'border-amber-200 bg-amber-50 text-amber-700';
+  return STATUS_PILL_CLASS[voucher?.status] || 'border-gray-200 bg-gray-50 text-gray-600';
 }
 
 function voucherNoDisplay(value) {
@@ -866,32 +865,42 @@ export default function VouchersPage() {
         </select>
         <button
           onClick={handlePrint}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Printer size={14} />
-          Print
+          <Printer size={15} />
+          <span className="hidden sm:inline">Print</span>
         </button>
         <button
           onClick={handleExportCSV}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Download size={14} />
-          Export CSV
+          <Download size={15} />
+          <span className="hidden sm:inline">Export CSV</span>
         </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><Spinner /></div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[13%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
+                <col className="w-[19%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[7%]" />
+              </colgroup>
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
+                <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
                   {['Voucher No.', 'Type', 'Date', 'Payee', 'Purpose', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
-                      className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
+                      className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
                         ['Voucher No.', 'Type', 'Date', 'Amount', 'Status', 'Actions'].includes(h)
                           ? 'text-center'
                           : 'text-left'
@@ -968,9 +977,9 @@ export default function VouchersPage() {
                     </td>
 
                     <td className="px-4 py-3 text-center">
-                      <Badge variant={voucherStatusBadge(voucher)} dot>
+                      <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${voucherStatusPillClass(voucher)}`}>
                         {voucherStatusLabel(voucher)}
-                      </Badge>
+                      </span>
                     </td>
 
                     <td className="px-4 py-3">
@@ -1377,9 +1386,9 @@ export default function VouchersPage() {
               <span className="font-mono text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">
                 {voucherNoDisplay(viewTarget.voucher_no)}
               </span>
-              <Badge variant={voucherStatusBadge(viewTarget)} dot>
+              <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${voucherStatusPillClass(viewTarget)}`}>
                 {voucherStatusLabel(viewTarget)}
-              </Badge>
+              </span>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">

@@ -1,4 +1,14 @@
 import { supabase } from './supabase';
+import { getGeneratedMemberAccountNos } from './memberService';
+
+function accountNoForMember(account, member) {
+  const generated = getGeneratedMemberAccountNos(member?.member_no);
+  const accountType = String(account?.account_type || '').toLowerCase();
+
+  if (accountType === 'cbu') return generated.cbu || account.account_no;
+  if (accountType === 'savings') return generated.savings || account.account_no;
+  return account.account_no;
+}
 
 async function enrichWithMembers(accounts) {
   if (!accounts || accounts.length === 0) return accounts || [];
@@ -10,7 +20,14 @@ async function enrichWithMembers(accounts) {
     .in('id', memberIds);
 
   const memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
-  return accounts.map(a => ({ ...a, members: memberMap[a.member_id] || null }));
+  return accounts.map(a => {
+    const member = memberMap[a.member_id] || null;
+    return {
+      ...a,
+      account_no: accountNoForMember(a, member),
+      members: member,
+    };
+  });
 }
 
 export async function getAccounts() {
@@ -39,6 +56,7 @@ export async function getAccountById(id) {
       .eq('id', data.member_id)
       .single();
 
+    data.account_no = accountNoForMember(data, member);
     data.members = member || null;
   }
 
@@ -53,7 +71,17 @@ export async function getAccountsByMemberId(memberId) {
     .order('account_type');
 
   if (error) throw error;
-  return data || [];
+
+  const { data: member } = await supabase
+    .from('members')
+    .select('id, member_no')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  return (data || []).map(account => ({
+    ...account,
+    account_no: accountNoForMember(account, member),
+  }));
 }
 
 export async function getMemberAccountsMap(memberId) {

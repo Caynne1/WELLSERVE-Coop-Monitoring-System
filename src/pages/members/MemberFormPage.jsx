@@ -19,6 +19,7 @@ import {
   updateMember,
   getMemberById,
   initializeMemberAccounts,
+  getGeneratedMemberAccountNos,
 } from '../../services/memberService';
 
 import { getAccountsByMemberId, updateAccount } from '../../services/accountService';
@@ -709,6 +710,7 @@ export function MemberFormContent({
 
   const recordType     = watch('record_type');
   const membershipType = watch('membership_type');
+  const memberNo       = watch('member_no');
   const paymentOption  = watch('payment_option');
   const paymentMode    = watch('payment_mode');
   const paymentReference = watch('payment_reference');
@@ -774,6 +776,14 @@ export function MemberFormContent({
     if (isEdit) loadMember();
   }, [memberId]);
 
+  useEffect(() => {
+    const generated = getGeneratedMemberAccountNos(memberNo);
+    if (!generated.cbu && !generated.savings) return;
+
+    setValue('cbu_account_no', generated.cbu);
+    setValue('savings_account_no', generated.savings);
+  }, [memberNo, setValue]);
+
   // Old membership has no Kiddy breakdown — fall back to
   // Associate if the user switches record type while Kiddy is selected.
   useEffect(() => {
@@ -824,6 +834,7 @@ export function MemberFormContent({
       const accounts = await getAccountsByMemberId(memberId);
       const cbu = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
       const savings = (accounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
+      const generatedAccountNos = getGeneratedMemberAccountNos(data.member_no);
 
       reset({
         record_type: data.record_type || 'new_member',
@@ -861,8 +872,8 @@ export function MemberFormContent({
         payment_mode: '',
         payment_reference: '',
         payment_notes: '',
-        cbu_account_no: cbu?.account_no || '',
-        savings_account_no: savings?.account_no || '',
+        cbu_account_no: cbu?.account_no || generatedAccountNos.cbu || '',
+        savings_account_no: savings?.account_no || generatedAccountNos.savings || '',
         old_cbu_balance: '',
         old_savings_balance: '',
         old_manual_membership_fee: '',
@@ -923,6 +934,10 @@ export function MemberFormContent({
         }
       }
       // ─────────────────────────────────────────────────────────────────────
+      const generatedAccountNos = getGeneratedMemberAccountNos(values.member_no);
+      const cbuAccountNo = values.cbu_account_no || generatedAccountNos.cbu || null;
+      const savingsAccountNo = values.savings_account_no || generatedAccountNos.savings || null;
+
       const payload = {
         first_name: values.first_name,
         last_name: values.last_name,
@@ -964,8 +979,8 @@ export function MemberFormContent({
         const cbuAccount = (existingAccounts || []).find(a => String(a.account_type).toLowerCase() === 'cbu');
         const savingsAccount = (existingAccounts || []).find(a => String(a.account_type).toLowerCase() === 'savings');
 
-        if (cbuAccount) await updateAccount(cbuAccount.id, { account_no: values.cbu_account_no || null });
-        if (savingsAccount) await updateAccount(savingsAccount.id, { account_no: values.savings_account_no || null });
+        if (cbuAccount) await updateAccount(cbuAccount.id, { account_no: cbuAccountNo });
+        if (savingsAccount) await updateAccount(savingsAccount.id, { account_no: savingsAccountNo });
 
         toast.success('Member updated successfully');
         trackActivity({ userId: user?.id, module: 'member', action: 'update', description: `Updated member: ${values.first_name} ${values.last_name}` });
@@ -1008,8 +1023,8 @@ export function MemberFormContent({
         const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
         const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
-        if (cbuAccount) await updateAccount(cbuAccount.id, { account_no: values.cbu_account_no || null, balance: parseFloat(values.old_cbu_balance) || 0 });
-        if (savingsAccount) await updateAccount(savingsAccount.id, { account_no: values.savings_account_no || null, balance: parseFloat(values.old_savings_balance) || 0 });
+        if (cbuAccount) await updateAccount(cbuAccount.id, { account_no: cbuAccountNo, balance: parseFloat(values.old_cbu_balance) || 0 });
+        if (savingsAccount) await updateAccount(savingsAccount.id, { account_no: savingsAccountNo, balance: parseFloat(values.old_savings_balance) || 0 });
 
         await createMembership({
           member_id: newMemberId,
@@ -1099,8 +1114,8 @@ export function MemberFormContent({
           const accounts = await getAccountsByMemberId(newMemberId);
           const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
-          if (savingsAccount && values.savings_account_no) {
-            await updateAccount(savingsAccount.id, { account_no: values.savings_account_no });
+          if (savingsAccount && savingsAccountNo) {
+            await updateAccount(savingsAccount.id, { account_no: savingsAccountNo });
           }
 
           const refreshedAccounts = await getAccountsByMemberId(newMemberId);
@@ -1233,8 +1248,8 @@ export function MemberFormContent({
       const cbuAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'cbu');
       const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
 
-      if (cbuAccount && values.cbu_account_no) await updateAccount(cbuAccount.id, { account_no: values.cbu_account_no });
-      if (savingsAccount && values.savings_account_no) await updateAccount(savingsAccount.id, { account_no: values.savings_account_no });
+      if (cbuAccount && cbuAccountNo) await updateAccount(cbuAccount.id, { account_no: cbuAccountNo });
+      if (savingsAccount && savingsAccountNo) await updateAccount(savingsAccount.id, { account_no: savingsAccountNo });
 
       const refreshedAccounts = await getAccountsByMemberId(newMemberId);
       const refreshedCbuAccount = refreshedAccounts.find(a => String(a.account_type).toLowerCase() === 'cbu');

@@ -74,16 +74,16 @@ const CATEGORY_BADGE = {
   others:      'default',
 };
 
-const STATUS_BADGE = {
-  pending:  'warning',
-  approved: 'success',
-  voided:   'danger',
-};
-
 const STATUS_LABEL = {
   pending:  'Pending',
   approved: 'Approved',
   voided:   'Voided',
+};
+
+const STATUS_PILL_CLASS = {
+  pending:  'bg-amber-50 text-amber-700 border-amber-200',
+  approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  voided:   'bg-red-50 text-red-700 border-red-200',
 };
 
 function voucherDisplay(value) {
@@ -594,17 +594,17 @@ export default function ExpensesPage() {
         </div>
         <button
           onClick={handlePrint}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Printer size={14} />
-          Print
+          <Printer size={15} />
+          <span className="hidden sm:inline">Print</span>
         </button>
         <button
           onClick={handleExportCSV}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Download size={14} />
-          Export CSV
+          <Download size={15} />
+          <span className="hidden sm:inline">Export CSV</span>
         </button>
       </div>
 
@@ -687,9 +687,9 @@ export default function ExpensesPage() {
                       {formatCurrency(expense.amount)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <Badge variant={STATUS_BADGE[expense.status] || 'default'} dot>
+                      <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[expense.status] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
                         {STATUS_LABEL[expense.status] || expense.status}
-                      </Badge>
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {expense.voucher_no ? (

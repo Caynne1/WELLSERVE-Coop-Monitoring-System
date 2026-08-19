@@ -6,20 +6,11 @@ import {
   Trash2,
   Search,
   CreditCard,
-  Calendar,
   Wallet,
   Layers3,
   AlertCircle,
   Printer,
   Download,
-  Upload,
-  LayoutGrid,
-  TrendingUp,
-  TrendingDown,
-  Briefcase,
-  Heart,
-  Bike,
-  Sliders,
   ChevronUp,
   ChevronDown,
   ArrowUpDown,
@@ -27,7 +18,6 @@ import {
 import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
-import LoanImportModal from '../../components/shared/LoanImportModal';
 import LoanTypeModal from '../../components/shared/LoanTypeModal';
 
 import PageHeader from '../../components/layout/PageHeader';
@@ -132,16 +122,6 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'Others', label: 'Others' },
 ];
 
-const PRODUCT_TABS = [
-  { value: 'all',                    label: 'All Products',           icon: LayoutGrid },
-  { value: 'beneficial_straight',    label: 'Beneficial (Straight)',  icon: TrendingUp },
-  { value: 'beneficial_diminishing', label: 'Beneficial (Dim.)',      icon: TrendingDown },
-  { value: 'productive',             label: 'WELLife Productive',     icon: Briefcase },
-  { value: 'providential',           label: 'Providential',           icon: Heart },
-  { value: 'financing',              label: 'Financing',              icon: Bike },
-  { value: 'custom',                 label: 'Custom / Other',         icon: Sliders },
-];
-
 function titleCase(value) {
   if (!value) return '—';
   return String(value)
@@ -169,6 +149,38 @@ function parseJSONSafe(val, fallback = {}) {
   } catch {
     return fallback;
   }
+}
+
+function getLoanBalanceWithInterest(loan) {
+  const schedule = parseJSONSafe(loan?.preview_schedule_json, []);
+  if (Array.isArray(schedule) && schedule.length > 0) {
+    const remaining = schedule
+      .filter(row => !row?.paid)
+      .reduce((sum, row) => {
+        const rowTotal = Number(
+          row?.remaining_due ??
+          row?.total_due ??
+          row?.payment ??
+          ((Number(row?.principal) || 0) + (Number(row?.interest ?? row?.interest_amount) || 0))
+        ) || 0;
+        return sum + rowTotal;
+      }, 0);
+
+    return Math.max(0, remaining);
+  }
+
+  const summary = parseJSONSafe(loan?.preview_summary_json, {});
+  const rawBalance = Number(loan?.balance ?? loan?.amount) || 0;
+  if (rawBalance <= 0) return 0;
+
+  const principal = Number(loan?.amount) || 0;
+  const payable = Number(summary?.total_loan_payable ?? loan?.total_loan_payable) || 0;
+  if (payable > principal && principal > 0) {
+    const totalInterest = payable - principal;
+    return Math.max(0, rawBalance + (totalInterest * (rawBalance / principal)));
+  }
+
+  return rawBalance;
 }
 
 // Computes the automatic due-date status for a loan:
@@ -290,9 +302,7 @@ export default function LoansPage() {
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState(null);
-  const [importOpen, setImportOpen] = useState(false);
   const [loanTypeModalOpen, setLoanTypeModalOpen] = useState(false);
-  const [productFilter, setProductFilter] = useState('all');
 
   const [payModal, setPayModal] = useState({
     open: false,
@@ -423,15 +433,12 @@ export default function LoansPage() {
         matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays < 0;
       }
 
-      const matchesProduct =
-        productFilter === 'all' || (loan.loan_product || '') === productFilter;
-
       const matchesStatus =
         statusFilter === 'all' || normalizeLoanStatus(loan.status) === statusFilter;
 
-      return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesProduct && matchesStatus;
+      return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesStatus;
     });
-  }, [loans, search, frequencyFilter, methodFilter, dueFilter, productFilter, statusFilter]);
+  }, [loans, search, frequencyFilter, methodFilter, dueFilter, statusFilter]);
 
   function handleSort(key) {
     setSortConfig(prev => {
@@ -463,8 +470,8 @@ export default function LoansPage() {
           bVal = Number(b.amount) || 0;
           break;
         case 'balance':
-          aVal = Number(a.balance ?? a.amount) || 0;
-          bVal = Number(b.balance ?? b.amount) || 0;
+          aVal = getLoanBalanceWithInterest(a);
+          bVal = getLoanBalanceWithInterest(b);
           break;
         case 'released':
           aVal = new Date(a.release_date || a.created_at || 0).getTime() || 0;
@@ -498,14 +505,14 @@ export default function LoansPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, frequencyFilter, methodFilter, dueFilter, productFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, frequencyFilter, methodFilter, dueFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
   const activeLoans = loans.filter(l => ['approved', 'released', 'active', 'ongoing'].includes(l.status));
   const totalReleased = loans
     .filter(l => l.status === 'released')
     .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
-    const totalOutstanding = activeLoans.reduce((sum, l) => sum + (Number(l.balance) || 0), 0);
+    const totalOutstanding = activeLoans.reduce((sum, l) => sum + getLoanBalanceWithInterest(l), 0);
 
     return {
       total: loans.length,
@@ -524,7 +531,7 @@ export default function LoansPage() {
         <tr>
           <td>${memberName}<br/><span style="color:#6b7280;font-size:9pt;">${loan.members?.member_no || '—'}</span></td>
           <td style="text-align:right;">${formatCurrency(loan.amount || 0)}</td>
-          <td style="text-align:right;">${formatCurrency(loan.balance ?? loan.amount ?? 0)}</td>
+          <td style="text-align:right;">${formatCurrency(getLoanBalanceWithInterest(loan))}</td>
           <td>${titleCase(loan.loan_method)}</td>
           <td>${frequencyLabel(loan.repayment_frequency)}</td>
           <td>${loan.term_months || '—'}</td>
@@ -578,7 +585,7 @@ export default function LoansPage() {
         member: `${l.members?.first_name || ''} ${l.members?.last_name || ''}`.trim(),
         member_no: l.members?.member_no || '',
         amount: l.amount || 0,
-        balance: l.balance ?? l.amount,
+        balance: getLoanBalanceWithInterest(l),
         method: titleCase(l.loan_method),
         frequency: frequencyLabel(l.repayment_frequency),
         term_months: l.term_months || '',
@@ -600,14 +607,9 @@ export default function LoansPage() {
         action={
           <div className="flex items-center gap-2">
             {canCreate && (
-              <>
-                <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImportOpen(true)}>
-                  Import Excel
-                </Button>
-                <Button icon={<Plus size={15} />} onClick={() => setLoanTypeModalOpen(true)}>
-                  New Loan
-                </Button>
-              </>
+              <Button icon={<Plus size={15} />} onClick={() => setLoanTypeModalOpen(true)}>
+                New Loan
+              </Button>
             )}
           </div>
         }
@@ -632,42 +634,6 @@ export default function LoansPage() {
           value={formatCurrency(stats.totalOutstanding)}
           bg="bg-orange-50"
         />
-      </div>
-
-      {/* Product Tabs */}
-      <div className="mt-5 flex gap-2 flex-wrap print:hidden">
-        {PRODUCT_TABS.map(tab => {
-          const Icon = tab.icon;
-          const count = tab.value === 'all'
-            ? loans.length
-            : loans.filter(l => (l.loan_product || '') === tab.value).length;
-          const isActive = productFilter === tab.value;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => setProductFilter(tab.value)}
-              className={`
-                flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
-                ${isActive
-                  ? 'bg-[#07A04E] text-white shadow-sm shadow-green-200'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }
-              `}
-            >
-              <Icon size={15} />
-              {tab.label}
-              <span className={`
-                text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center
-                ${isActive
-                  ? 'bg-white/20 text-white'
-                  : 'bg-gray-200 text-gray-500'
-                }
-              `}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
       </div>
 
       <div className="mt-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
@@ -759,30 +725,39 @@ export default function LoansPage() {
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[19%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[14%]" />
+                <col className="w-[15%]" />
+                <col className="w-[12%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-100">
+                <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
                   {[
                     { key: 'member', label: 'Member', align: 'left' },
-                    { key: 'amount', label: 'Amount', align: 'right' },
-                    { key: 'balance', label: 'Balance', align: 'right' },
-                    { key: 'released', label: 'Released', align: 'left' },
-                    { key: 'due_date', label: 'Due Date', align: 'left' },
-                    { key: 'status', label: 'Status', align: 'left' },
-                    { key: null, label: 'Actions', align: 'right' },
+                    { key: 'amount', label: 'Amount', align: 'center' },
+                    { key: 'balance', label: 'Balance', align: 'center' },
+                    { key: 'released', label: 'Released', align: 'center' },
+                    { key: 'due_date', label: 'Due Date', align: 'center' },
+                    { key: 'status', label: 'Status', align: 'center' },
+                    { key: null, label: 'Actions', align: 'center' },
                   ].map(col => {
                     const isSorted = sortConfig.key === col.key && col.key;
                     return (
                       <th
                         key={col.label}
                         onClick={col.key ? () => handleSort(col.key) : undefined}
-                        className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          col.align === 'right' ? 'text-right' : 'text-left'
+                        className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${
+                          col.align === 'center' ? 'text-center' : 'text-left'
                         } ${col.key ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}
                       >
                         <span
                           className={`inline-flex items-center gap-1 ${
-                            col.align === 'right' ? 'justify-end w-full' : ''
+                            col.align === 'center' ? 'justify-center w-full' : ''
                           }`}
                         >
                           {col.label}
@@ -820,6 +795,7 @@ export default function LoansPage() {
                   pageItems.map(loan => {
                     const dueInfo = getNextDueInfo(loan);
                     const normalizedStatus = normalizeLoanStatus(loan.status);
+                    const displayBalance = getLoanBalanceWithInterest(loan);
 
                     return (
                       <tr
@@ -837,32 +813,29 @@ export default function LoansPage() {
                           )}
                         </td>
 
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-center">
                           <span className="font-semibold text-gray-900">
                             {formatCurrency(loan.amount)}
                           </span>
                         </td>
 
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-center">
                           <span
                             className={`font-semibold ${
-                              (loan.balance ?? loan.amount) > 0 ? 'text-orange-600' : 'text-green-600'
+                              displayBalance > 0 ? 'text-orange-600' : 'text-green-600'
                             }`}
                           >
-                            {formatCurrency(loan.balance ?? loan.amount)}
+                            {formatCurrency(displayBalance)}
                           </span>
                         </td>
 
-                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                          <div className="flex items-center gap-1">
-                            <Calendar size={12} className="text-gray-300" />
-                            <span>{formatDate(loan.release_date || loan.created_at)}</span>
-                          </div>
+                        <td className="px-4 py-3 text-center text-gray-500 text-xs whitespace-nowrap">
+                          {formatDate(loan.release_date || loan.created_at)}
                         </td>
 
-                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        <td className="px-4 py-3 text-center text-xs whitespace-nowrap">
                           {dueInfo.dueDate ? (
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium ${dueInfo.badge.className}`}>
+                            <span className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium ${dueInfo.badge.className}`}>
                               <AlertCircle size={11} />
                               {dueInfo.badge.label}
                             </span>
@@ -871,14 +844,14 @@ export default function LoansPage() {
                           )}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-center">
                           <Badge variant={statusVariant[normalizedStatus] || 'default'}>
                             {STATUS_OPTIONS.find(opt => opt.value === normalizedStatus)?.label || titleCase(loan.status)}
                           </Badge>
                         </td>
 
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
                             {((normalizedStatus === 'draft' && canEdit) ||
                               (normalizedStatus === 'credit_committee_approval' && canApproveLoan)) && (
                               <button
@@ -927,7 +900,7 @@ export default function LoansPage() {
                 {formatCurrency(
                   filtered
                     .filter(l => l.status === 'active' || l.status === 'ongoing')
-                    .reduce((s, l) => s + (l.balance || 0), 0)
+                    .reduce((s, l) => s + getLoanBalanceWithInterest(l), 0)
                 )}
               </p>
             </div>
@@ -960,13 +933,6 @@ export default function LoansPage() {
         loan={payModal.loan}
         userId={user?.id}
         onSuccess={fetchLoans}
-      />
-
-      <LoanImportModal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        userId={user?.id}
-        onImported={fetchLoans}
       />
 
       <LoanTypeModal

@@ -15,7 +15,6 @@ import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
-import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -457,30 +456,38 @@ export default function SavingsPage() {
         </select>
         <button
           onClick={handlePrint}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Printer size={14} />
-          Print
+          <Printer size={15} />
+          <span className="hidden sm:inline">Print</span>
         </button>
         <button
           onClick={handleExportCSV}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
         >
-          <Download size={14} />
-          Export CSV
+          <Download size={15} />
+          <span className="hidden sm:inline">Export CSV</span>
         </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><Spinner /></div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Member', 'Account No.', 'Total Deposits', 'Total Withdrawals', 'Status', 'Updated', 'Actions'].map(h => (
-                    <th key={h} className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${['Account No.', 'Total Deposits', 'Total Withdrawals', 'Actions'].includes(h) ? 'text-center' : 'text-left'}`}>
+                <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
+                  {['Member', 'Account No.', 'Total Deposits', 'Total Withdrawals', 'Date Updated', 'Actions'].map(h => (
+                    <th key={h} className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${['Account No.', 'Total Deposits', 'Total Withdrawals', 'Date Updated', 'Actions'].includes(h) ? 'text-center' : 'text-left'}`}>
                       {h}
                     </th>
                   ))}
@@ -489,7 +496,7 @@ export default function SavingsPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-gray-400">
+                    <td colSpan={6} className="text-center py-12 text-gray-400">
                       <Wallet size={32} className="mx-auto mb-2 text-gray-200" />
                       {search ? 'No Savings accounts match your search.' : 'No Savings accounts found.'}
                     </td>
@@ -497,23 +504,14 @@ export default function SavingsPage() {
                 ) : pageItems.map(account => (
                   <tr key={account.id} className="hover:bg-[#D6FADC]/20 transition-colors">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-blue-700 text-xs font-semibold">
-                            {(account.members?.first_name?.[0] || '') + (account.members?.last_name?.[0] || '')}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {account.members?.first_name} {account.members?.last_name}
-                          </p>
-                          {account.members?.member_no && (
-                            <p className="text-xs text-gray-400 font-mono">
-                              {formatMemberNo(account.members.member_no)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                      <p className="font-medium text-gray-900 truncate">
+                        {account.members?.first_name} {account.members?.last_name}
+                      </p>
+                      {account.members?.member_no && (
+                        <p className="text-xs text-gray-400 font-mono">
+                          {formatMemberNo(account.members.member_no)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-600 text-center">
                       {account.account_no || '—'}
@@ -524,12 +522,7 @@ export default function SavingsPage() {
                     <td className="px-4 py-3 text-gray-600 text-center">
                       {formatCurrency(account.total_withdrawals || 0)}
                     </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={account.status === 'active' ? 'success' : 'warning'}>
-                        {account.status || 'active'}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">
+                    <td className="px-4 py-3 text-center text-gray-400 text-xs">
                       {account.updated_at ? formatDate(account.updated_at) : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -538,9 +531,9 @@ export default function SavingsPage() {
                         <button
                           onClick={() => openWithdrawModal(account)}
                           title="Post Savings Withdrawal"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 transition-colors"
                         >
-                          <TrendingDown size={15} />
+                          Withdrawal
                         </button>
                         )}
                         <button

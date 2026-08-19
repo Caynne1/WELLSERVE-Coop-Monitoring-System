@@ -18,7 +18,6 @@ import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
-import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
 import Pagination from '../../components/ui/Pagination';
 import usePagination from '../../hooks/usePagination';
@@ -66,19 +65,6 @@ function fullName(member) {
 function plainFullName(member) {
   const mi = member?.middle_initial ? `${member.middle_initial}.` : '';
   return [member?.first_name, mi, member?.last_name].filter(Boolean).join(' ');
-}
-
-function getBadgeVariant(status) {
-  if (status === 'claimed') return 'success';
-  if (status === 'unclaimed') return 'warning';
-  if (status === 'delivered') return 'info';
-  return 'default';
-}
-
-function getPrintBadgeVariant(status) {
-  if (status === 'done') return 'success';
-  if (status === 'not_yet') return 'warning';
-  return 'default';
 }
 
 export default function PassbookPage() {
@@ -158,8 +144,8 @@ export default function PassbookPage() {
         const linked = accountMap.get(member.id) || {};
         return {
           ...member,
-          cbu_account_no: linked.cbu?.account_no || '—',
-          savings_account_no: linked.savings?.account_no || '—',
+          cbu_account_no: linked.cbu?.account_no || 'â€”',
+          savings_account_no: linked.savings?.account_no || 'â€”',
         };
       })
       .filter(row => {
@@ -263,8 +249,8 @@ export default function PassbookPage() {
         surname: r.last_name || '',
         first_name: r.first_name || '',
         middle_initial: r.middle_initial || '',
-        cbu_account_no: r.cbu_account_no || '—',
-        savings_account_no: r.savings_account_no || '—',
+        cbu_account_no: r.cbu_account_no || 'â€”',
+        savings_account_no: r.savings_account_no || 'â€”',
         passbook_status: r.passbook_status || '',
         print_status: r.passbook_print_status || '',
         recruiter: r.recruiter_name || 'Self',
@@ -280,14 +266,14 @@ export default function PassbookPage() {
     const rows = registryRows.map(row => `
       <tr>
         <td>${row.recruiter_name || 'Self'}</td>
-        <td>${STATUS_META[row.passbook_status]?.label || row.passbook_status || '—'}</td>
+        <td>${STATUS_META[row.passbook_status]?.label || row.passbook_status || 'â€”'}</td>
         <td>${row.passbook_print_status === 'done' ? 'Done' : 'Not Yet'}</td>
-        <td>${row.cbu_account_no || '—'}</td>
-        <td>${row.savings_account_no || '—'}</td>
-        <td style="text-align:center;">${row.registry_no || '—'}</td>
-        <td>${row.last_name || '—'}</td>
-        <td>${row.first_name || '—'}</td>
-        <td>${row.middle_initial || '—'}</td>
+        <td>${row.cbu_account_no || 'â€”'}</td>
+        <td>${row.savings_account_no || 'â€”'}</td>
+        <td style="text-align:center;">${row.registry_no || 'â€”'}</td>
+        <td>${row.last_name || 'â€”'}</td>
+        <td>${row.first_name || 'â€”'}</td>
+        <td>${row.middle_initial || 'â€”'}</td>
       </tr>
     `).join('');
 
@@ -312,7 +298,7 @@ export default function PassbookPage() {
           ${rows || '<tr><td colspan="9" style="text-align:center; padding:16px;">No passbook registry rows found.</td></tr>'}
         </tbody>
       </table>
-      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System â€” Authorized personnel only.</div>
     `;
 
     printHtmlDocument(wrapWithLetterhead(html, { title: 'Passbook Registry' }), {
@@ -331,8 +317,8 @@ export default function PassbookPage() {
     const title = PASSBOOK_VARIANTS[type];
     const accountNo =
       type === 'savings'
-        ? selectedAccounts.savings?.account_no || '—'
-        : selectedAccounts.cbu?.account_no || '—';
+        ? selectedAccounts.savings?.account_no || 'â€”'
+        : selectedAccounts.cbu?.account_no || 'â€”';
 
     const chronological = [...passbookTransactions].sort((a, b) => {
       const dateA = new Date(a.transaction_date || a.created_at).getTime();
@@ -357,7 +343,7 @@ export default function PassbookPage() {
           <td>${date}</td>
           <td>${particulars}</td>
           <td style="text-align:right;">${formatCurrency(tx.amount)}</td>
-          <td>${tx.reference || '—'}</td>
+          <td>${tx.reference || 'â€”'}</td>
         </tr>
       `;
     }).join('');
@@ -368,7 +354,7 @@ export default function PassbookPage() {
       <div class="section-heading">Member Information</div>
       <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
         <div class="stat-box"><div class="stat-label">Name</div><div class="stat-value" style="font-size:12pt">${plainFullName(selectedMember)}</div></div>
-        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${selectedMember.member_no || '—'}</div></div>
+        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${selectedMember.member_no || 'â€”'}</div></div>
         <div class="stat-box"><div class="stat-label">Referred By</div><div class="stat-value" style="font-size:11pt">${selectedMember.recruiter_name || 'Self'}</div></div>
         <div class="stat-box"><div class="stat-label">Account No.</div><div class="stat-value" style="font-size:11pt">${accountNo}</div></div>
         <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${formatDate(selectedMember.date_joined || selectedMember.created_at)}</div></div>
@@ -388,7 +374,7 @@ export default function PassbookPage() {
           ${rows || '<tr><td colspan="5">No transactions found.</td></tr>'}
         </tbody>
       </table>
-      <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System â€” Authorized personnel only.</div>
     `;
 
     printHtmlDocument(wrapWithLetterhead(html, { title }), {
@@ -413,31 +399,43 @@ export default function PassbookPage() {
         subtitle="Manage passbook registry and member passbook records"
       />
 
-      <div className="mt-6 bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="flex border-b border-gray-100">
+      <div className="mt-6 flex gap-2 print:hidden">
           <button
             onClick={() => setActiveTab('registry')}
-            className={`px-5 py-3 text-sm font-semibold transition-colors ${
+            className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${
               activeTab === 'registry'
-                ? 'text-emerald-700 border-b-2 border-emerald-600 bg-emerald-50/50'
-                : 'text-gray-500 hover:text-gray-800'
+                ? 'border-[#07A04E] bg-[#07A04E] text-white shadow-sm shadow-emerald-200'
+                : 'border-gray-100 bg-white text-gray-600 shadow-sm hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700'
             }`}
           >
+            <BookOpen size={16} />
             Passbook Registry
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              activeTab === 'registry' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {registryRows.length}
+            </span>
           </button>
 
           <button
             onClick={() => setActiveTab('member')}
-            className={`px-5 py-3 text-sm font-semibold transition-colors ${
+            className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${
               activeTab === 'member'
-                ? 'text-emerald-700 border-b-2 border-emerald-600 bg-emerald-50/50'
-                : 'text-gray-500 hover:text-gray-800'
+                ? 'border-[#07A04E] bg-[#07A04E] text-white shadow-sm shadow-emerald-200'
+                : 'border-gray-100 bg-white text-gray-600 shadow-sm hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700'
             }`}
           >
+            <User size={16} />
             Member Passbook
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              activeTab === 'member' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {members.length}
+            </span>
           </button>
-        </div>
+      </div>
 
+      <div className="mt-4 bg-white rounded-2xl border border-gray-200 overflow-hidden">
         {activeTab === 'registry' && (
           <div className="p-5">
             <div className="flex flex-col lg:flex-row gap-3 mb-4">
@@ -494,26 +492,32 @@ export default function PassbookPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto border border-gray-100 rounded-xl">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[16%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
+                  <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
                     {[
                       'Referred By',
-                      'Status',
-                      'Print Passbook',
+                      'Last Name',
+                      'First Name',
                       'CBU Account',
                       'Savings Account',
-                      'No.',
-                      'Surname',
-                      'First Name',
-                      'Middle Name',
+                      'Status',
                       'Action',
                     ].map(h => (
                       <th
                         key={h}
-                        className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${
-                          ['Status', 'Print Passbook', 'CBU Account', 'Savings Account', 'No.', 'Action'].includes(h)
+                        className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${
+                          ['CBU Account', 'Savings Account', 'Status', 'Action'].includes(h)
                             ? 'text-center'
                             : 'text-left'
                         }`}
@@ -526,7 +530,7 @@ export default function PassbookPage() {
                 <tbody className="divide-y divide-gray-50">
                   {registryRows.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="text-center py-16 text-gray-400">
+                      <td colSpan={7} className="text-center py-16 text-gray-400">
                         No passbook registry rows found.
                       </td>
                     </tr>
@@ -536,25 +540,18 @@ export default function PassbookPage() {
                       const isUpdating = statusUpdating === row.id;
                       const isOpen = openStatusMenu === row.id;
                       return (
-                      <tr key={row.id} className="hover:bg-emerald-50/30">
-                        <td className="px-4 py-3">{row.recruiter_name || 'Self'}</td>
-                        <td className="px-4 py-3 text-center">
-                          <Badge variant={getBadgeVariant(row.passbook_status)}>
-                            {row.passbook_status === 'claimed' ? 'Claimed' : row.passbook_status === 'delivered' ? 'Delivered' : 'Unclaimed'}
-                          </Badge>
+                      <tr key={row.id} className="transition-colors hover:bg-emerald-50/30">
+                        <td className="px-4 py-3.5 font-medium text-gray-700 truncate">{row.recruiter_name || 'Self'}</td>
+                        <td className="px-4 py-3.5 font-semibold text-gray-900 truncate">{row.last_name || '-'}</td>
+                        <td className="px-4 py-3.5 font-medium text-gray-700 truncate">{row.first_name || '-'}</td>
+                        <td className="px-4 py-3.5 text-center font-mono text-xs text-gray-700">{row.cbu_account_no}</td>
+                        <td className="px-4 py-3.5 text-center font-mono text-xs text-gray-700">{row.savings_account_no}</td>
+                        <td className="px-4 py-3.5 text-center">
+                          <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${meta.color}`}>
+                            {meta.label}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <Badge variant={getPrintBadgeVariant(row.passbook_print_status)}>
-                            {row.passbook_print_status === 'done' ? 'Done' : 'Not Yet'}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-center">{row.cbu_account_no}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-center">{row.savings_account_no}</td>
-                        <td className="px-4 py-3 text-center">{row.registry_no}</td>
-                        <td className="px-4 py-3">{row.last_name || '—'}</td>
-                        <td className="px-4 py-3">{row.first_name || '—'}</td>
-                        <td className="px-4 py-3">{row.middle_initial || '—'}</td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3.5 text-center">
                           <button
                             disabled={isUpdating}
                             onClick={(e) => {
@@ -566,7 +563,7 @@ export default function PassbookPage() {
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${meta.color} ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
                           >
                             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot} shrink-0`} />
-                            {isUpdating ? 'Saving…' : meta.label}
+                            {isUpdating ? 'Savingâ€¦' : meta.label}
                             {!isUpdating && <ChevronDown size={11} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
                           </button>
 
@@ -662,10 +659,10 @@ export default function PassbookPage() {
                         </p>
                         <div className="mt-2 space-y-1">
                           <p className="text-[11px] text-gray-500">
-                            CBU: <span className="font-mono">{linked.cbu?.account_no || '—'}</span>
+                            CBU: <span className="font-mono">{linked.cbu?.account_no || 'â€”'}</span>
                           </p>
                           <p className="text-[11px] text-gray-500">
-                            Savings: <span className="font-mono">{linked.savings?.account_no || '—'}</span>
+                            Savings: <span className="font-mono">{linked.savings?.account_no || 'â€”'}</span>
                           </p>
                         </div>
                       </button>
@@ -689,11 +686,11 @@ export default function PassbookPage() {
                             {plainFullName(selectedMember)}
                           </h3>
                           <div className="mt-2 space-y-1 text-sm text-gray-500">
-                            <p>Member No.: <span className="font-medium text-gray-800">{selectedMember.member_no || '—'}</span></p>
+                            <p>Member No.: <span className="font-medium text-gray-800">{selectedMember.member_no || 'â€”'}</span></p>
                             <p>Referred By: <span className="font-medium text-gray-800">{selectedMember.recruiter_name || 'Self'}</span></p>
                             <p>Date Joined: <span className="font-medium text-gray-800">{formatDate(selectedMember.date_joined || selectedMember.created_at)}</span></p>
-                            <p>CBU Account No.: <span className="font-mono text-gray-800">{selectedAccounts.cbu?.account_no || '—'}</span></p>
-                            <p>Savings Account No.: <span className="font-mono text-gray-800">{selectedAccounts.savings?.account_no || '—'}</span></p>
+                            <p>CBU Account No.: <span className="font-mono text-gray-800">{selectedAccounts.cbu?.account_no || 'â€”'}</span></p>
+                            <p>Savings Account No.: <span className="font-mono text-gray-800">{selectedAccounts.savings?.account_no || 'â€”'}</span></p>
                           </div>
                         </div>
 
@@ -775,7 +772,7 @@ export default function PassbookPage() {
                                   <td className="px-4 py-3 font-semibold whitespace-nowrap">
                                     {formatCurrency(tx.amount)}
                                   </td>
-                                  <td className="px-4 py-3 text-gray-500">{tx.reference || '—'}</td>
+                                  <td className="px-4 py-3 text-gray-500">{tx.reference || 'â€”'}</td>
                                 </tr>
                               ))
                             )}

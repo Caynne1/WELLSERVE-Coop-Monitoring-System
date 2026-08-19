@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getGeneratedMemberAccountNos } from './memberService';
 
 // ── Pagination helper ────────────────────────────────────────────────────────
 // PostgREST/Supabase caps a single .select() at 1000 rows by default. Any
@@ -99,7 +100,23 @@ export async function getPassbookData() {
     getPassbookAccounts(),
     getPassbookTransactions(),
   ]);
-  return { members, accounts, transactions };
+
+  const memberMap = new Map((members || []).map(member => [member.id, member]));
+  const normalizedAccounts = (accounts || []).map(account => {
+    const member = memberMap.get(account.member_id);
+    const generated = getGeneratedMemberAccountNos(member?.member_no);
+    const accountType = String(account.account_type || '').toLowerCase();
+
+    if (accountType === 'cbu' && generated.cbu) {
+      return { ...account, account_no: generated.cbu };
+    }
+    if (accountType === 'savings' && generated.savings) {
+      return { ...account, account_no: generated.savings };
+    }
+    return account;
+  });
+
+  return { members, accounts: normalizedAccounts, transactions };
 }
 
 // ── Per-member ledger ─────────────────────────────────────────────────────────
