@@ -11,7 +11,6 @@ import {
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
@@ -26,8 +25,15 @@ import {
 } from '../../services/accountManagementService';
 import { formatDate } from '../../utils/formatters';
 
-const statusVariant = { active: 'success', inactive: 'danger' };
-const roleVariant = { admin: 'navy', staff: 'default' };
+const ROLE_PILL_CLASS = {
+  admin: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+  staff: 'border-gray-200 bg-gray-50 text-gray-600',
+};
+
+const STATUS_PILL_CLASS = {
+  active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  inactive: 'border-red-200 bg-red-50 text-red-700',
+};
 
 // ── Main page ─────────────────────────────────────────────────
 export default function AccountManagementPage() {
@@ -163,7 +169,7 @@ export default function AccountManagementPage() {
                       <th
                         key={h}
                         className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                          i === 5 ? 'text-right' : 'text-left'
+                          i === 2 || i === 3 ? 'text-center' : i === 5 ? 'text-right' : 'text-left'
                         }`}
                       >
                         {h}
@@ -224,16 +230,20 @@ export default function AccountManagementPage() {
 
                         {/* Role */}
                         <td className="px-4 py-3">
-                          <Badge variant={roleVariant[account.role] || 'default'} dot>
+                          <div className="flex justify-center">
+                            <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${ROLE_PILL_CLASS[account.role] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
                             {account.role || '—'}
-                          </Badge>
+                            </span>
+                          </div>
                         </td>
 
                         {/* Status */}
                         <td className="px-4 py-3">
-                          <Badge variant={statusVariant[account.status] || 'default'} dot>
-                            {account.status || 'active'}
-                          </Badge>
+                          <div className="flex justify-center">
+                            <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${STATUS_PILL_CLASS[account.status || 'active'] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+                              {account.status || 'active'}
+                            </span>
+                          </div>
                         </td>
 
                         {/* Created */}

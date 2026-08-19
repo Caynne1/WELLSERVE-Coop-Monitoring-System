@@ -7,7 +7,6 @@ import {
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
@@ -55,6 +54,18 @@ const CREDIT_COMMITTEE_DEFAULT_PERMISSIONS = {
 const STATUS_META = {
   active:   { label: 'Active',   variant: 'success', icon: CheckCircle2 },
   inactive: { label: 'Inactive', variant: 'danger',  icon: XCircle },
+};
+
+const ROLE_PILL_CLASS = {
+  admin: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+  manager: 'border-purple-200 bg-purple-50 text-purple-700',
+  credit_committee: 'border-blue-200 bg-blue-50 text-blue-700',
+  staff: 'border-gray-200 bg-gray-50 text-gray-600',
+};
+
+const STATUS_PILL_CLASS = {
+  active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  inactive: 'border-red-200 bg-red-50 text-red-700',
 };
 
 // ─── Permission Matrix Component ──────────────────────────────────────────────
@@ -233,7 +244,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
   return (
     <Modal open={open} onClose={resetAndClose} title="Create Staff Account" size="lg">
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-5">
+      <div className="flex gap-2 mb-5">
         {[
           { key: 'info', label: 'Account Info' },
           { key: 'permissions', label: 'Permissions' },
@@ -241,12 +252,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={[
-              'flex-1 py-1.5 text-xs font-semibold rounded-md transition-all',
-              tab === t.key
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700',
-            ].join(' ')}
+            className={`ws-tab-button flex-1 ${tab === t.key ? 'ws-tab-button-active' : 'ws-tab-button-inactive'}`}
           >
             {t.label}
           </button>
@@ -399,7 +405,7 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
   return (
     <Modal open={open} onClose={onClose} title="Edit User" size="lg">
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-5">
+      <div className="flex gap-2 mb-5">
         {[
           { key: 'info', label: 'Account Info' },
           { key: 'permissions', label: 'Permissions' },
@@ -407,12 +413,7 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={[
-              'flex-1 py-1.5 text-xs font-semibold rounded-md transition-all',
-              tab === t.key
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700',
-            ].join(' ')}
+            className={`ws-tab-button flex-1 ${tab === t.key ? 'ws-tab-button-active' : 'ws-tab-button-inactive'}`}
           >
             {t.label}
           </button>
@@ -531,7 +532,7 @@ function PermissionsViewerModal({ open, onClose, user }) {
 function UserRow({ user, onEdit, onToggleStatus, onViewPermissions, isSelf }) {
   const { profile: currentProfile } = useAuth();
   const status = STATUS_META[user.status] || STATUS_META.active;
-  const StatusIcon = status.icon;
+  const roleLabel = user.role === 'credit_committee' ? 'Credit Committee' : (user.role || 'staff');
 
   return (
     <tr className="hover:bg-gray-50/50 transition-colors">
@@ -556,14 +557,18 @@ function UserRow({ user, onEdit, onToggleStatus, onViewPermissions, isSelf }) {
         </div>
       </td>
       <td className="px-5 py-3">
-        <Badge variant={user.role === 'admin' ? 'navy' : user.role === 'manager' ? 'purple' : user.role === 'credit_committee' ? 'info' : 'default'} dot>
-          {user.role === 'credit_committee' ? 'Credit Committee' : (user.role || 'staff')}
-        </Badge>
+        <div className="flex justify-center">
+          <span className={`inline-flex min-w-[110px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold capitalize ${ROLE_PILL_CLASS[user.role] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+            {roleLabel}
+          </span>
+        </div>
       </td>
       <td className="px-5 py-3">
-        <Badge variant={status.variant} dot>
-          {status.label}
-        </Badge>
+        <div className="flex justify-center">
+          <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[user.status || 'active'] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+            {status.label}
+          </span>
+        </div>
       </td>
       <td className="px-5 py-3 text-xs text-gray-400">{formatDate(user.created_at)}</td>
       <td className="px-5 py-3">
@@ -762,8 +767,17 @@ export default function UserManagementPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['User', 'Role', 'Status', 'Created', ''].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  {['User', 'Role', 'Status', 'Created', 'Actions'].map(h => (
+                    <th
+                      key={h}
+                      className={`px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
+                        ['Role', 'Status'].includes(h)
+                          ? 'text-center'
+                          : h === 'Actions'
+                            ? 'text-right'
+                            : 'text-left'
+                      }`}
+                    >
                       {h}
                     </th>
                   ))}
