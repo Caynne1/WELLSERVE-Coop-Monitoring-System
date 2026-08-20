@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Upload, Eye, Search, UserPlus, Pencil, Trash2, Users, Printer,
   Download, Filter, RotateCcw, CheckSquare,
-  X, UserCheck, UserX, ChevronDown, CalendarDays, Baby,
+  X, UserCheck, UserX, ChevronDown, CalendarDays, Baby, Archive,
   LayoutGrid, List, FileSpreadsheet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -74,6 +74,7 @@ const membershipTypeClass = {
 const MEMBER_VIEWS = [
   { id: 'regular', label: 'Members', icon: Users },
   { id: 'kiddy',   label: 'Kiddy & Youth', icon: Baby },
+  { id: 'closed',  label: 'Closed Account', icon: Archive },
 ];
 
 // ─── Bulk Action Toolbar ──────────────────────────────────────────────────────
@@ -243,14 +244,15 @@ export default function MembersPage() {
     setSelectedIds(new Set());
   }, [memberView, statusTab, typeFilter, search, yearFilter]);
 
+  const isClosedView = memberView === 'closed';
+  const isKiddyView = memberView === 'kiddy';
+
   useEffect(() => {
     setTypeFilter('all');
     setSearch('');
     setYearFilter('all');
-    setStatusTab('active');
+    setStatusTab(memberView === 'closed' ? 'closed' : 'active');
   }, [memberView]);
-
-  const isKiddyView = memberView === 'kiddy';
 
   const regularMemberCount = useMemo(
     () => members.filter(m => m.membership_type !== 'kiddy' && (m.status || 'active') === 'active').length,
@@ -260,11 +262,18 @@ export default function MembersPage() {
     () => members.filter(m => m.membership_type === 'kiddy' && (m.status || 'active') === 'active').length,
     [members]
   );
+  const closedMemberCount = useMemo(
+    () => members.filter(m => m.status === 'closed').length,
+    [members]
+  );
 
   const availableYears = useMemo(() => {
     const yearSet = new Set();
     members
-      .filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy')
+      .filter(m => {
+        if (isClosedView) return m.status === 'closed';
+        return isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy';
+      })
       .forEach(m => {
         const raw = m.date_joined || m.created_at;
         if (!raw) return;
@@ -272,13 +281,13 @@ export default function MembersPage() {
         if (!isNaN(yr)) yearSet.add(yr);
       });
     return [...yearSet].sort((a, b) => b - a);
-  }, [members, isKiddyView]);
+  }, [members, isClosedView, isKiddyView]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return members.filter(m => {
       if (isKiddyView && m.membership_type !== 'kiddy') return false;
-      if (!isKiddyView && m.membership_type === 'kiddy') return false;
+      if (!isKiddyView && !isClosedView && m.membership_type === 'kiddy') return false;
 
       const matchesSearch =
         m.first_name?.toLowerCase().includes(q) ||
@@ -291,6 +300,8 @@ export default function MembersPage() {
       const matchesType =
         typeFilter === 'all'
           ? true
+          : isClosedView
+            ? (m.membership_type || '').toLowerCase() === typeFilter
           : isKiddyView
             ? (m.kiddy_savings_type || 'regular_savings') === typeFilter
             : (m.membership_type || '').toLowerCase() === typeFilter;
@@ -309,7 +320,7 @@ export default function MembersPage() {
 
       return matchesSearch && matchesType && matchesStatus && matchesYear;
     });
-  }, [members, search, typeFilter, statusTab, yearFilter, isKiddyView]);
+  }, [members, search, typeFilter, statusTab, yearFilter, isClosedView, isKiddyView]);
 
   const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
 
@@ -320,6 +331,13 @@ export default function MembersPage() {
   const allFilteredSelected = filtered.length > 0 && filtered.every(m => selectedIds.has(m.id));
   const someFilteredSelected = filtered.some(m => selectedIds.has(m.id));
   const selectedCount = [...selectedIds].filter(id => filtered.some(m => m.id === id)).length;
+  const currentViewTotal = useMemo(
+    () => members.filter(m => {
+      if (isClosedView) return m.status === 'closed';
+      return isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy';
+    }).length,
+    [members, isClosedView, isKiddyView]
+  );
 
   function toggleOne(id) {
     setSelectedIds(prev => {
@@ -365,11 +383,19 @@ export default function MembersPage() {
       : null;
     setDeleting(true);
     try {
-      const result = await deleteMember(id);
-      toast.success(result?.message || 'Member deleted');
+      const isPermanentDelete = confirmDelete?.status === 'closed';
+      const result = isPermanentDelete
+        ? await deleteMember(id)
+        : await updateMember(id, { status: 'closed' });
+
+      toast.success(isPermanentDelete
+        ? (result?.message || 'Member permanently deleted')
+        : 'Member moved to Closed Account');
       trackActivity({
-        userId: user?.id, module: 'member', action: 'delete',
-        description: memberName ? `Deleted member: ${memberName}` : `Deleted member ID: ${id}`,
+        userId: user?.id, module: 'member', action: isPermanentDelete ? 'delete' : 'close_account',
+        description: memberName
+          ? `${isPermanentDelete ? 'Permanently deleted' : 'Moved to Closed Account'} member: ${memberName}`
+          : `${isPermanentDelete ? 'Permanently deleted' : 'Moved to Closed Account'} member ID: ${id}`,
       });
       setConfirmDelete(null);
       await fetchMembers();
@@ -451,12 +477,24 @@ export default function MembersPage() {
     const ids = selectedMembers.map(m => m.id);
     let successCount = 0; let failCount = 0;
     setBulkDeleting(true);
-    await Promise.allSettled(ids.map(id => deleteMember(id).then(() => successCount++).catch(() => failCount++)));
+    const isPermanentDelete = isClosedView;
+    await Promise.allSettled(ids.map(id => (
+      isPermanentDelete ? deleteMember(id) : updateMember(id, { status: 'closed' })
+    ).then(() => successCount++).catch(() => failCount++)));
     if (successCount > 0) {
-      toast.success(`${successCount} member${successCount !== 1 ? 's' : ''} deleted/archived.`);
-      trackActivity({ userId: user?.id, module: 'member', action: 'delete', description: `Bulk deleted ${successCount} member(s).` });
+      toast.success(isPermanentDelete
+        ? `${successCount} member${successCount !== 1 ? 's' : ''} permanently deleted.`
+        : `${successCount} member${successCount !== 1 ? 's' : ''} moved to Closed Account.`);
+      trackActivity({
+        userId: user?.id,
+        module: 'member',
+        action: isPermanentDelete ? 'delete' : 'close_account',
+        description: isPermanentDelete
+          ? `Bulk permanently deleted ${successCount} member(s).`
+          : `Bulk moved ${successCount} member(s) to Closed Account.`,
+      });
     }
-    if (failCount > 0) toast.error(`${failCount} deletion${failCount !== 1 ? 's' : ''} failed.`);
+    if (failCount > 0) toast.error(`${failCount} ${isPermanentDelete ? 'deletion' : 'close account update'}${failCount !== 1 ? 's' : ''} failed.`);
     clearSelection(); setConfirmBulkDelete(false); setBulkDeleting(false);
     await fetchMembers();
   }
@@ -576,7 +614,7 @@ export default function MembersPage() {
           subtitle="Manage cooperative members and their financial accounts"
           action={
             <div className="flex items-center gap-2">
-              {canCreate && !isKiddyView && (
+              {canCreate && !isKiddyView && !isClosedView && (
                 <>
                   <Button 
                     variant="outline" 
@@ -587,7 +625,7 @@ export default function MembersPage() {
                   </Button>
                 </>
               )}
-              {canCreate && (
+              {canCreate && !isClosedView && (
               <Button 
                 onClick={() => setAddMemberOpen(true)} 
                 icon={<UserPlus size={16} />}
@@ -604,7 +642,11 @@ export default function MembersPage() {
       <div className="mt-6 flex gap-2 print:hidden">
         {MEMBER_VIEWS.map(view => {
           const Icon = view.icon;
-          const count = view.id === 'kiddy' ? kiddyMemberCount : regularMemberCount;
+          const count = view.id === 'kiddy'
+            ? kiddyMemberCount
+            : view.id === 'closed'
+              ? closedMemberCount
+              : regularMemberCount;
           const isActive = memberView === view.id;
           return (
             <button
@@ -654,7 +696,7 @@ export default function MembersPage() {
               <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder={isKiddyView ? 'Search kiddy members…' : 'Search by name, ID, email, recruiter…'}
+                placeholder={isClosedView ? 'Search closed accounts…' : isKiddyView ? 'Search kiddy members…' : 'Search by name, ID, email, recruiter…'}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-2xl
@@ -673,7 +715,14 @@ export default function MembersPage() {
                   focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500
                   appearance-none cursor-pointer transition-all duration-200"
               >
-                {isKiddyView ? (
+                {isClosedView ? (
+                  <>
+                    <option value="all">All Types</option>
+                    <option value="associate">Associate</option>
+                    <option value="regular">Regular</option>
+                    <option value="kiddy">Kiddy & Youth</option>
+                  </>
+                ) : isKiddyView ? (
                   <>
                     <option value="all">All Savings Types</option>
                     <option value="regular_savings">Regular Savings Account</option>
@@ -829,7 +878,7 @@ export default function MembersPage() {
                               : statusTab === 'inactive'
                                 ? `No inactive ${isKiddyView ? 'Kiddy & Youth' : ''} members.`
                                 : statusTab === 'closed'
-                                  ? `No closed account ${isKiddyView ? 'Kiddy & Youth' : ''} members.`
+                                  ? 'No closed account members.'
                                   : isKiddyView
                                     ? 'No Kiddy & Youth members yet.'
                                     : 'No members yet.'
@@ -991,7 +1040,7 @@ export default function MembersPage() {
                               {canDelete && (
                               <button
                                 onClick={() => setConfirmDelete(member)}
-                                title={member.status === 'inactive' ? 'Delete permanently' : 'Delete member'}
+                                title={member.status === 'closed' ? 'Delete permanently' : 'Move to Closed Account'}
                                 className="p-1.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all"
                               >
                                 <Trash2 size={15} />
@@ -1014,8 +1063,8 @@ export default function MembersPage() {
                   Showing{' '}
                   <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
                   <span className="font-medium text-gray-600">
-                    {members.filter(m => isKiddyView ? m.membership_type === 'kiddy' : m.membership_type !== 'kiddy').length}
-                  </span> {isKiddyView ? 'kiddy members' : 'members'}
+                    {currentViewTotal}
+                  </span> {isClosedView ? 'closed accounts' : isKiddyView ? 'kiddy members' : 'members'}
                   {yearFilter !== 'all' && <span className="ml-2 font-medium text-emerald-600">· joined {yearFilter}</span>}
                   {selectedCount > 0 && <span className="ml-2 font-medium text-emerald-600">· {selectedCount} selected</span>}
                 </p>
@@ -1034,7 +1083,7 @@ export default function MembersPage() {
               pageSize={pageSize}
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
-              itemLabel={isKiddyView ? 'kiddy members' : 'members'}
+              itemLabel={isClosedView ? 'closed accounts' : isKiddyView ? 'kiddy members' : 'members'}
             />
           </div>
         )}
@@ -1043,13 +1092,13 @@ export default function MembersPage() {
       {/* ── Dialogs ── */}
       <ConfirmDialog
         open={!!confirmDelete}
-        title={confirmDelete?.status === 'inactive' ? 'Delete Permanently' : 'Delete Member'}
+        title={confirmDelete?.status === 'closed' ? 'Delete Permanently' : 'Move to Closed Account'}
         message={
-          confirmDelete?.status === 'inactive'
+          confirmDelete?.status === 'closed'
             ? `Permanently delete ${confirmDelete?.first_name} ${confirmDelete?.last_name}? This is only for mistakenly added members with no protected records.`
-            : `Delete ${confirmDelete?.first_name} ${confirmDelete?.last_name}? Members with existing records will be archived instead of permanently deleted.`
+            : `Move ${confirmDelete?.first_name} ${confirmDelete?.last_name} to Closed Account? Their records will stay traceable and can still be reviewed from the Closed Account tab.`
         }
-        confirmLabel={confirmDelete?.status === 'inactive' ? 'Delete Permanently' : 'Delete'}
+        confirmLabel={confirmDelete?.status === 'closed' ? 'Delete Permanently' : 'Move to Closed Account'}
         confirmVariant="danger"
         loading={deleting}
         onConfirm={() => handleDelete(confirmDelete?.id)}
@@ -1058,9 +1107,15 @@ export default function MembersPage() {
 
       <ConfirmDialog
         open={confirmBulkDelete}
-        title={`Delete ${selectedCount} Member${selectedCount !== 1 ? 's' : ''}`}
-        message={`Are you sure you want to delete ${selectedCount} selected member${selectedCount !== 1 ? 's' : ''}? Members with existing records will be archived. This cannot be undone for permanent deletions.`}
-        confirmLabel={`Delete ${selectedCount} Member${selectedCount !== 1 ? 's' : ''}`}
+        title={isClosedView
+          ? `Delete ${selectedCount} Member${selectedCount !== 1 ? 's' : ''} Permanently`
+          : `Move ${selectedCount} Member${selectedCount !== 1 ? 's' : ''} to Closed Account`}
+        message={isClosedView
+          ? `Permanently delete ${selectedCount} selected closed account${selectedCount !== 1 ? 's' : ''}? This is only for mistakenly added members with no protected records.`
+          : `Move ${selectedCount} selected member${selectedCount !== 1 ? 's' : ''} to Closed Account? Their records will stay traceable.`}
+        confirmLabel={isClosedView
+          ? `Delete ${selectedCount} Permanently`
+          : `Move ${selectedCount} to Closed Account`}
         confirmVariant="danger"
         loading={bulkDeleting}
         onConfirm={executeBulkDelete}

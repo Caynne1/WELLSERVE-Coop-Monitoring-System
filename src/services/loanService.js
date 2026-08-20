@@ -418,6 +418,80 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount) {
   return data;
 }
 
+export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount) {
+  const amount = round2(safeNum(paymentAmount));
+  if (!loanId || amount <= 0) throw new Error('Valid loan ID and payment amount are required.');
+
+  const loan = await getLoanById(loanId);
+  const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+  const summary = parseJSONSafe(loan.preview_summary_json, {});
+
+  if (!Array.isArray(schedule) || schedule.length === 0) return loan;
+
+  let remaining = amount;
+  const updatedSchedule = schedule.map(r => ({ ...r }));
+
+  for (let i = updatedSchedule.length - 1; i >= 0 && remaining > 0; i--) {
+    const row = updatedSchedule[i];
+    const paidAmount = round2(row.paid_amount || 0);
+    if (paidAmount <= 0) continue;
+
+    const reversal = Math.min(paidAmount, remaining);
+    const rowTotal = round2(row.total_due ?? row.payment ?? ((row.principal || 0) + (row.interest || row.interest_amount || 0)));
+    const nextPaidAmount = round2(paidAmount - reversal);
+
+    row.paid_amount = nextPaidAmount;
+    row.remaining_due = round2(Math.max(0, rowTotal - nextPaidAmount));
+    row.paid = false;
+    row.partial_paid = nextPaidAmount > 0;
+    row.partial_paid_amount = nextPaidAmount > 0 ? nextPaidAmount : 0;
+
+    if (nextPaidAmount <= 0) {
+      row.paid_at = null;
+      row.last_partial_paid_at = null;
+      row.last_interest_paid_at = null;
+      row.last_interest_paid_amount = 0;
+      row.interest_paid_amount = 0;
+    } else {
+      const rowInterest = round2(row.interest ?? row.interest_amount ?? 0);
+      row.interest_paid_amount = rowTotal > 0
+        ? round2(Math.min(rowInterest, rowInterest * (nextPaidAmount / rowTotal)))
+        : 0;
+      row.last_interest_paid_amount = 0;
+    }
+
+    remaining = round2(remaining - reversal);
+  }
+
+  const unpaidPrincipal = round2(
+    updatedSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
+  );
+  const nextUnpaid = updatedSchedule.find(r => !r.paid);
+  const newStatus = computeLoanStatus(unpaidPrincipal, nextUnpaid?.due_date, updatedSchedule);
+  const updatedSummary = buildScheduleSummary(updatedSchedule, {
+    amount: loan.amount,
+    frequency: loan.repayment_frequency,
+    method: loan.loan_method,
+    total_cash_out: summary.total_cash_out,
+  });
+
+  const { data, error } = await supabase
+    .from('loans')
+    .update({
+      balance: unpaidPrincipal,
+      status: newStatus,
+      due_date: nextUnpaid?.due_date || loan.due_date || null,
+      preview_schedule_json: JSON.stringify(updatedSchedule),
+      preview_summary_json: JSON.stringify(updatedSummary),
+    })
+    .eq('id', loanId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 /**
  * Get payment history for a specific loan (from transactions table).
  */

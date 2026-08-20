@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Receipt, Search, Plus, Pencil, Ban, Eye,
-  CheckCircle, Clock, X, Printer, Download,
+  CheckCircle, Clock, X, Printer, Download, Trash2,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
@@ -21,6 +21,7 @@ import {
   updateInvoice,
   markInvoicePaid,
   voidInvoice,
+  deleteInvoiceAndLinkedRecords,
   getMemberPaymentSummary,
   createMultiCategoryInvoice,
 } from '../../services/invoiceService';
@@ -121,6 +122,8 @@ export default function InvoicesPage() {
 
   const [voidTarget, setVoidTarget] = useState(null);
   const [voiding, setVoiding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [multiOpen, setMultiOpen] = useState(false);
 
@@ -325,6 +328,27 @@ export default function InvoicesPage() {
       toast.error(err.message || 'Failed to void invoice.');
     } finally {
       setVoiding(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to delete invoices');
+      setDeleteTarget(null);
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      await deleteInvoiceAndLinkedRecords(deleteTarget.id, { deleted_by: user?.id || null });
+      toast.success(`Invoice ${deleteTarget.invoice_no || 'record'} deleted and linked records reversed.`);
+      setDeleteTarget(null);
+      fetchInvoices();
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete invoice.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -744,6 +768,16 @@ export default function InvoicesPage() {
                             <Ban size={15} />
                           </button>
                         )}
+
+                        {canEdit && invoice.status !== 'voided' && (
+                          <button
+                            onClick={() => setDeleteTarget(invoice)}
+                            title="Delete Invoice"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1019,6 +1053,16 @@ export default function InvoicesPage() {
                   </Button>
                 </>
               )}
+              {canEdit && viewTarget.status !== 'voided' && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={<Trash2 size={13} />}
+                  onClick={() => { setViewTarget(null); setDeleteTarget(viewTarget); }}
+                >
+                  Delete
+                </Button>
+              )}
             </div>
           </>
           );
@@ -1114,6 +1158,52 @@ export default function InvoicesPage() {
                 icon={!voiding && <Ban size={15} />}
               >
                 Void Invoice
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Invoice"
+        size="sm"
+      >
+        {deleteTarget && (
+          <>
+            <p className="text-sm text-gray-600 mb-3">
+              Delete this invoice and reverse its linked records?
+            </p>
+            <div className="bg-red-50 rounded-lg px-4 py-3 mb-4 border border-red-100">
+              <p className="font-mono text-xs font-bold text-red-700 mb-1">
+                {deleteTarget.invoice_no || 'No SI#'}
+              </p>
+              <p className="font-medium text-gray-900 text-sm">{deleteTarget.payee}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {formatDate(deleteTarget.date)} Â· {formatCurrency(deleteTarget.amount)}
+              </p>
+            </div>
+            <p className="text-xs text-gray-500 mb-5">
+              This removes the invoice and deletes/reverses linked fund, transaction,
+              membership, CBU, savings, and loan payment records that can be traced
+              to this invoice.
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleting}
+                onClick={handleDelete}
+                icon={!deleting && <Trash2 size={15} />}
+              >
+                Delete Invoice
               </Button>
             </div>
           </>

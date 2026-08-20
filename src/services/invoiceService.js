@@ -5,7 +5,7 @@ import {
   recordMembershipPayment,
   computeFeeBalance,
 } from './membershipService';
-import { getLoansByMemberId, applyLoanPaymentToSchedule } from './loanService';
+import { getLoansByMemberId, applyLoanPaymentToSchedule, reverseLoanPaymentFromSchedule } from './loanService';
 import { getMemberAccountsMap, updateAccount } from './accountService';
 import { updateMember } from './memberService';
 import {
@@ -254,6 +254,205 @@ export async function voidInvoice(id) {
 
   if (error) throw error;
   return data;
+}
+
+export async function deleteInvoiceAndLinkedRecords(id, { deleted_by = null } = {}) {
+  const invoice = await getInvoiceById(id);
+  if (!invoice) throw new Error('Invoice could not be found.');
+
+  const invoiceNo = String(invoice.invoice_no || '').trim();
+  const referenceKeys = [invoiceNo, invoice.id].filter(Boolean);
+  const paymentDate = invoice.payment_date || invoice.date || null;
+  const amount = Number(invoice.amount || 0);
+
+  let relatedTransactions = [];
+  if (referenceKeys.length > 0) {
+    let txQuery = supabase
+      .from('transactions')
+      .select('*')
+      .in('reference', referenceKeys);
+
+    if (invoice.member_id) txQuery = txQuery.eq('member_id', invoice.member_id);
+
+    const { data, error } = await txQuery;
+    if (error) throw error;
+    relatedTransactions = data || [];
+  }
+
+  const hasLoanTransactions = relatedTransactions.some(tx =>
+    ['loan_payment', 'loan_interest', 'penalty_payment'].includes(String(tx.type || '').toLowerCase())
+  );
+
+  if (hasLoanTransactions) {
+    const loanGroups = relatedTransactions.reduce((map, tx) => {
+      if (!tx.loan_id) return map;
+      if (!['loan_payment', 'loan_interest'].includes(String(tx.type || '').toLowerCase())) return map;
+      const current = map.get(tx.loan_id) || 0;
+      map.set(tx.loan_id, current + Number(tx.amount || 0));
+      return map;
+    }, new Map());
+
+    for (const [loanId, total] of loanGroups.entries()) {
+      await reverseLoanPaymentFromSchedule(loanId, total);
+    }
+  }
+
+  for (const tx of relatedTransactions) {
+    const txType = String(tx.type || '').toLowerCase();
+    const category = String(tx.category || '').toLowerCase();
+    const txAmount = Number(tx.amount || 0);
+
+    if (tx.account_id && txType === 'deposit' && ['cbu', 'savings'].includes(category)) {
+      const { data: account, error: accountError } = await supabase
+        .from('accounts')
+        .select('id, balance, total_deposits')
+        .eq('id', tx.account_id)
+        .maybeSingle();
+
+      if (accountError) throw accountError;
+      if (account) {
+        await updateAccount(account.id, {
+          balance: Math.max(0, Number(account.balance || 0) - txAmount),
+          total_deposits: Math.max(0, Number(account.total_deposits || 0) - txAmount),
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  if (invoice.payment_type === 'membership' && invoice.ref_id && amount > 0) {
+    const { data: membership, error: membershipError } = await supabase
+      .from('member_memberships')
+      .select('id, fee_paid')
+      .eq('id', invoice.ref_id)
+      .maybeSingle();
+
+    if (membershipError) throw membershipError;
+    if (membership) {
+      await supabase
+        .from('member_memberships')
+        .update({ fee_paid: Math.max(0, Number(membership.fee_paid || 0) - amount) })
+        .eq('id', membership.id);
+    }
+
+    let paymentQuery = supabase
+      .from('membership_payments')
+      .select('id')
+      .eq('member_membership_id', invoice.ref_id)
+      .eq('amount', amount)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (invoice.member_id) paymentQuery = paymentQuery.eq('member_id', invoice.member_id);
+    if (paymentDate) paymentQuery = paymentQuery.eq('payment_date', paymentDate);
+
+    const { data: membershipPaymentRows, error: paymentFindError } = await paymentQuery;
+    if (paymentFindError) throw paymentFindError;
+
+    if (membershipPaymentRows?.[0]?.id) {
+      const { error: paymentDeleteError } = await supabase
+        .from('membership_payments')
+        .delete()
+        .eq('id', membershipPaymentRows[0].id);
+
+      if (paymentDeleteError) throw paymentDeleteError;
+    }
+  }
+
+  if (invoice.payment_type === 'savings_booster' && invoice.ref_id && amount > 0) {
+    const { data: booster, error: boosterError } = await supabase
+      .from('savings_booster')
+      .select('id, total_deposited, weeks_deposited')
+      .eq('id', invoice.ref_id)
+      .maybeSingle();
+
+    if (boosterError) throw boosterError;
+    if (booster) {
+      await supabase
+        .from('savings_booster')
+        .update({
+          total_deposited: Math.max(0, Number(booster.total_deposited || 0) - amount),
+          weeks_deposited: Math.max(0, Number(booster.weeks_deposited || 0) - 1),
+        })
+        .eq('id', booster.id);
+    }
+  }
+
+  if (relatedTransactions.length > 0) {
+    const { error: txDeleteError } = await supabase
+      .from('transactions')
+      .delete()
+      .in('id', relatedTransactions.map(tx => tx.id));
+
+    if (txDeleteError) throw txDeleteError;
+  }
+
+  const { data: fundRowsByRefId, error: fundRefIdError } = await supabase
+    .from('fund_transactions')
+    .select('*')
+    .eq('ref_id', invoice.id);
+
+  if (fundRefIdError) throw fundRefIdError;
+
+  const { data: fundRowsByReference, error: fundReferenceError } = await supabase
+    .from('fund_transactions')
+    .select('*')
+    .in('reference', referenceKeys);
+
+  if (fundReferenceError) throw fundReferenceError;
+
+  const fundRows = Object.values(
+    [...(fundRowsByRefId || []), ...(fundRowsByReference || [])]
+      .reduce((map, row) => ({ ...map, [row.id]: row }), {})
+  );
+
+  if (fundRows.length) {
+    const { data: fund, error: fundError } = await supabase
+      .from('coop_fund')
+      .select('*')
+      .maybeSingle();
+
+    if (fundError) throw fundError;
+
+    if (fund) {
+      const cashIn = fundRows
+        .filter(row => row.flow_type === 'cash_in')
+        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const cashOut = fundRows
+        .filter(row => row.flow_type === 'cash_out')
+        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+      await supabase
+        .from('coop_fund')
+        .update({
+          cash_in: Math.max(0, Number(fund.cash_in || 0) - cashIn),
+          cash_out: Math.max(0, Number(fund.cash_out || 0) - cashOut),
+          balance: Math.max(0, Number(fund.balance || 0) - cashIn + cashOut),
+          last_updated: new Date().toISOString(),
+        })
+        .eq('id', fund.id);
+    }
+
+    const { error: fundDeleteError } = await supabase
+      .from('fund_transactions')
+      .delete()
+      .in('id', fundRows.map(row => row.id));
+
+    if (fundDeleteError) throw fundDeleteError;
+  }
+
+  const { error: invoiceDeleteError } = await supabase
+    .from('invoices')
+    .delete()
+    .eq('id', invoice.id);
+
+  if (invoiceDeleteError) throw invoiceDeleteError;
+
+  return {
+    invoice,
+    deletedTransactions: relatedTransactions.length,
+    deletedBy: deleted_by,
+  };
 }
 
 // ── Centralized Payment Recording (Invoice Module) ────────────────────────────
@@ -546,6 +745,7 @@ export async function createMultiCategoryInvoice({
     invoicePayload.payment_date = effectivePaymentDate;
 
     const savedInvoice = await insertInvoiceRow(invoicePayload);
+    const invoiceReference = siNo || savedInvoice.id;
     created.push(savedInvoice);
     rollbacks.push(async () => {
       await supabase.from('invoices').delete().eq('id', savedInvoice.id);
@@ -593,7 +793,7 @@ export async function createMultiCategoryInvoice({
           category: 'membership',
           type: 'membership_payment',
           amount,
-          reference: siNo || null,
+          reference: invoiceReference,
           notes: [entry.purpose || 'Membership Fee Payment', 'Membership breakdown', notes].filter(Boolean).join(' - '),
           created_by,
           transaction_date: effectivePaymentDate,
@@ -621,7 +821,7 @@ export async function createMultiCategoryInvoice({
             category: deposit.key,
             type: 'deposit',
             amount: deposit.amount,
-            reference: siNo || deposit.account.account_no || null,
+            reference: invoiceReference || deposit.account.account_no || null,
             notes: [deposit.label, 'Membership breakdown', notes].filter(Boolean).join(' - '),
             created_by,
             transaction_date: effectivePaymentDate,
@@ -670,7 +870,7 @@ export async function createMultiCategoryInvoice({
             category: 'loan',
             type: 'loan_payment',
             amount: principalAmount,
-            reference: entry.loan.loan_no || siNo,
+            reference: invoiceReference || entry.loan.loan_no || null,
             notes,
             created_by,
             transaction_date: effectivePaymentDate,
@@ -694,7 +894,7 @@ export async function createMultiCategoryInvoice({
             category: 'loan',
             type: 'loan_interest',
             amount: interestAmount,
-            reference: entry.loan.loan_no || siNo,
+            reference: invoiceReference || entry.loan.loan_no || null,
             notes,
             created_by,
             transaction_date: effectivePaymentDate,
@@ -718,7 +918,7 @@ export async function createMultiCategoryInvoice({
             category: 'penalty',
             type: 'penalty_payment',
             amount: penaltyAmount,
-            reference: entry.loan.loan_no || siNo,
+            reference: invoiceReference || entry.loan.loan_no || null,
             notes,
             created_by,
             transaction_date: effectivePaymentDate,
@@ -761,7 +961,7 @@ export async function createMultiCategoryInvoice({
           category: entry.category,
           type: 'deposit',
           amount,
-          reference: siNo,
+          reference: invoiceReference,
           notes: isKiddySavings ? [kiddySavingsLabel, notes].filter(Boolean).join(' — ') : notes,
           created_by,
           transaction_date: effectivePaymentDate,
@@ -814,7 +1014,7 @@ export async function createMultiCategoryInvoice({
           time_deposit_id: entry.timeDeposit.id,
           amount,
           payment_date: effectivePaymentDate,
-          si_number: siNo,
+          si_number: invoiceReference,
           created_by,
         });
         // Time Deposit payments live in their own `time_deposit_payments`
@@ -828,7 +1028,7 @@ export async function createMultiCategoryInvoice({
           category: 'time_deposit',
           type: 'deposit',
           amount,
-          reference: siNo,
+          reference: invoiceReference,
           notes,
           created_by,
           transaction_date: effectivePaymentDate,
@@ -875,7 +1075,7 @@ export async function createMultiCategoryInvoice({
           category: 'savings_booster',
           type: 'deposit',
           amount,
-          reference: siNo,
+          reference: invoiceReference,
           notes,
           created_by,
           transaction_date: effectivePaymentDate,
