@@ -1704,6 +1704,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className={fieldClass}>
                 <option value="">Select mode…</option>
                 <option value="Cash">Cash</option>
+                <option value="Not Traceable">Not Traceable</option>
                 <option value="GCash">GCash</option>
                 <option value="Bank Transfer">Bank Transfer</option>
                 <option value="Check">Check</option>
