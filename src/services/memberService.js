@@ -315,6 +315,7 @@ export async function getMemberStats() {
   const total     = members.length;
   const active    = members.filter(m => m.status === 'active').length;
   const inactive  = members.filter(m => m.status === 'inactive').length;
+  const closed    = members.filter(m => m.status === 'closed').length;
   const regular   = members.filter(m => m.membership_type === 'regular').length;
   const associate = members.filter(m => m.membership_type === 'associate').length;
   const kiddy     = members.filter(m => m.membership_type === 'kiddy').length;
@@ -328,6 +329,7 @@ export async function getMemberStats() {
     total,
     active,
     inactive,
+    closed,
     regular,
     associate,
     kiddy,

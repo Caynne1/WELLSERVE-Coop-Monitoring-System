@@ -352,17 +352,69 @@ export async function deleteLoan(id) {
 export async function getLoanStats() {
   const { data, error } = await supabase
     .from('loans')
-    .select('status, amount, balance');
+    .select('status, amount, balance, total_loan_payable, preview_summary_json');
 
   if (error) throw error;
 
-  const active = (data || []).filter(l => ['approved', 'released', 'active'].includes(l.status));
+  const loans = data || [];
+  const statusOf = (loan) => String(loan?.status || '').toLowerCase();
+  const summaryOf = (loan) => parseJSONSafe(loan?.preview_summary_json, {});
+  const payableBalance = (loan) => {
+    const principal = safeNum(loan?.amount);
+    const principalBalance = safeNum(loan?.balance);
+    if (principalBalance <= 0) return 0;
+
+    const summary = summaryOf(loan);
+    const payable = safeNum(summary?.total_loan_payable ?? loan?.total_loan_payable);
+    const totalInterest = safeNum(summary?.total_interest ?? summary?.total_interest_earned);
+
+    if (principal > 0 && totalInterest > 0) {
+      return round2(principalBalance + (totalInterest * (principalBalance / principal)));
+    }
+
+    if (payable > principal && principal > 0) {
+      return round2(principalBalance + ((payable - principal) * (principalBalance / principal)));
+    }
+
+    return round2(principalBalance);
+  };
+
+  const pendingStatuses = new Set(['draft', 'credit_committee_approval', 'pending']);
+  const approvedStatuses = new Set(['approved']);
+  const releasedStatuses = new Set(['released', 'active', 'ongoing', 'overdue']);
+  const paidStatuses = new Set(['paid']);
+
+  const pending = loans.filter(l => pendingStatuses.has(statusOf(l)));
+  const approved = loans.filter(l => approvedStatuses.has(statusOf(l)));
+  const released = loans.filter(l => releasedStatuses.has(statusOf(l)));
+  const paid = loans.filter(l => paidStatuses.has(statusOf(l)));
+  const active = released.filter(l => safeNum(l.balance) > 0);
+  const exactReleased = loans.filter(l => statusOf(l) === 'released');
+  const exactActive = loans.filter(l => ['active', 'ongoing'].includes(statusOf(l)));
+  const exactOverdue = loans.filter(l => statusOf(l) === 'overdue');
 
   return {
-    total: (data || []).length,
+    total: loans.length,
     active: active.length,
-    totalReleased: (data || []).reduce((s, l) => s + (l.amount || 0), 0),
-    totalOutstanding: active.reduce((s, l) => s + (l.balance || 0), 0),
+    pending: pending.length,
+    approved: approved.length,
+    released: released.length,
+    paid: paid.length,
+    overdue: exactOverdue.length,
+    pendingAmount: round2(pending.reduce((s, l) => s + safeNum(l.amount), 0)),
+    approvedAmount: round2(approved.reduce((s, l) => s + safeNum(l.amount), 0)),
+    totalReleased: round2(released.reduce((s, l) => s + safeNum(l.amount), 0)),
+    totalOutstanding: round2(active.reduce((s, l) => s + payableBalance(l), 0)),
+    byStatus: {
+      draft: loans.filter(l => statusOf(l) === 'draft').length,
+      credit_committee_approval: loans.filter(l => statusOf(l) === 'credit_committee_approval').length,
+      pending: pending.length,
+      approved: approved.length,
+      released: exactReleased.length,
+      active: exactActive.length,
+      overdue: exactOverdue.length,
+      paid: paid.length,
+    },
   };
 }
 

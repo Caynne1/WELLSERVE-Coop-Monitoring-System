@@ -788,21 +788,23 @@ export async function createMultiCategoryInvoice({
           }
           await supabase.from('member_memberships').update({ fee_paid: priorFeePaid }).eq('id', entry.membership.id);
         });
-        const membershipTx = await createTransaction({
-          member_id: member.id,
-          category: 'membership',
-          type: 'membership_payment',
-          amount,
-          reference: invoiceReference,
-          notes: [entry.purpose || 'Membership Fee Payment', 'Membership breakdown', notes].filter(Boolean).join(' - '),
-          created_by,
-          transaction_date: effectivePaymentDate,
-          payment_mode,
-          payment_mode_note,
-        });
-        rollbacks.push(async () => {
-          await supabase.from('transactions').delete().eq('id', membershipTx.id);
-        });
+        if (entryAmount > 0) {
+          const membershipTx = await createTransaction({
+            member_id: member.id,
+            category: 'membership',
+            type: 'membership_payment',
+            amount: entryAmount,
+            reference: invoiceReference,
+            notes: [entry.purpose || 'Membership Fee Payment', 'Membership fee portion', notes].filter(Boolean).join(' - '),
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', membershipTx.id);
+          });
+        }
 
         const membershipDeposits = [
           { key: 'cbu', amount: cbuAmount, account: entry.cbuAccount, label: 'Initial CBU' },

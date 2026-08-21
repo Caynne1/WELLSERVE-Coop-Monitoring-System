@@ -558,20 +558,29 @@ function EnhancedDonut({ slices, size = 100 }) {
 // Cash-In Breakdown horizontal bars
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CashInBreakdown({ transactions }) {
+function CashInBreakdown({ transactions, incomeData }) {
   const cashInTx = transactions.filter(tx => tx.type === 'cash_in');
+  const membershipTotals = {
+    membership: Number(incomeData?.membership_fee || 0),
+    membership_cbu: Number(incomeData?.membership_cbu || 0),
+    membership_savings: Number(incomeData?.membership_savings || 0),
+  };
 
   const groups = [
     { key: 'loan_payment', label: 'Loan Payments',       color: '#f97316', bg: 'bg-orange-400' },
     { key: 'cbu',          label: 'CBU Deposits',         color: '#22c55e', bg: 'bg-green-400'  },
+    { key: 'membership_cbu', label: 'Membership CBU',     color: '#16a34a', bg: 'bg-green-500'  },
     { key: 'savings',      label: 'Savings Deposits',     color: '#3b82f6', bg: 'bg-blue-400'   },
+    { key: 'membership_savings', label: 'Membership Savings', color: '#0284c7', bg: 'bg-sky-500' },
     { key: 'membership',   label: 'Membership Fees',      color: '#a855f7', bg: 'bg-purple-400' },
     { key: 'capital',      label: 'Capital / Fund',       color: '#6366f1', bg: 'bg-indigo-400' },
     { key: 'time_deposit', label: 'Time Deposits',        color: '#8b5cf6', bg: 'bg-violet-400' },
     { key: 'invoice',      label: 'Other Invoices',       color: '#9ca3af', bg: 'bg-gray-400'   },
   ].map(g => ({
     ...g,
-    total: cashInTx.filter(tx => tx.category === g.key).reduce((s, tx) => s + tx.amount, 0),
+    total: Object.prototype.hasOwnProperty.call(membershipTotals, g.key)
+      ? membershipTotals[g.key]
+      : cashInTx.filter(tx => tx.category === g.key).reduce((s, tx) => s + tx.amount, 0),
     count: cashInTx.filter(tx => tx.category === g.key).length,
   })).filter(g => g.total > 0);
 
@@ -619,7 +628,7 @@ function CashInBreakdown({ transactions }) {
 // Dashboard Charts Panel — enhanced 2-row layout
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DashboardCharts({ transactions }) {
+function DashboardCharts({ transactions, incomeData }) {
   const now = new Date();
   const txDates = transactions
     .map(tx => new Date(txDisplayDate(tx)))
@@ -669,7 +678,9 @@ function DashboardCharts({ transactions }) {
   const breakdownDefs = [
     { key: 'loan_payment', label: 'Loan Payments', color: '#f97316' },
     { key: 'cbu',          label: 'CBU Deposits',  color: '#22c55e' },
+    { key: 'membership_cbu', label: 'Membership CBU', color: '#16a34a' },
     { key: 'savings',      label: 'Savings',        color: '#3b82f6' },
+    { key: 'membership_savings', label: 'Membership Savings', color: '#0284c7' },
     { key: 'membership',   label: 'Membership',     color: '#a855f7' },
     { key: 'capital',      label: 'Capital',        color: '#6366f1' },
     { key: 'time_deposit', label: 'Time Deposits',  color: '#8b5cf6' },
@@ -677,9 +688,16 @@ function DashboardCharts({ transactions }) {
   ];
 
   const cashInTx   = transactions.filter(tx => tx.type === 'cash_in');
+  const membershipTotals = {
+    membership: Number(incomeData?.membership_fee || 0),
+    membership_cbu: Number(incomeData?.membership_cbu || 0),
+    membership_savings: Number(incomeData?.membership_savings || 0),
+  };
   const donutSlices = breakdownDefs.map(d => ({
     ...d,
-    value: cashInTx.filter(tx => tx.category === d.key).reduce((s, tx) => s + tx.amount, 0),
+    value: Object.prototype.hasOwnProperty.call(membershipTotals, d.key)
+      ? membershipTotals[d.key]
+      : cashInTx.filter(tx => tx.category === d.key).reduce((s, tx) => s + tx.amount, 0),
   })).filter(d => d.value > 0);
   const grandCashIn = donutSlices.reduce((s, d) => s + d.value, 0);
 
@@ -1427,10 +1445,10 @@ export default function CoopMonitoringPage() {
           </div>
 
           {/* ── Dashboard Charts ── */}
-          <DashboardCharts transactions={dateFilteredTransactions} />
+          <DashboardCharts transactions={dateFilteredTransactions} incomeData={incomeData} />
 
           {/* ── Cash-In Breakdown ── */}
-          <CashInBreakdown transactions={dateFilteredTransactions} />
+          <CashInBreakdown transactions={dateFilteredTransactions} incomeData={incomeData} />
 
           {/* ── Income Monitoring Breakdown ── */}
           <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -1452,9 +1470,9 @@ export default function CoopMonitoringPage() {
                   <button
                     key={key}
                     onClick={() => applyIncomePeriod(key)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
                       incomePeriod === key
-                        ? 'bg-[#07A04E] text-white'
+                        ? 'bg-[#07A04E] text-white shadow-sm'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
@@ -1522,9 +1540,11 @@ export default function CoopMonitoringPage() {
                     {[
                       { label: 'Service Fee', value: incomeData.service_fee, color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
                       { label: 'CBU Retention', value: incomeData.cbu_retention, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Capital build-up deductions' },
+                      { label: 'Membership CBU', value: incomeData.membership_cbu, color: 'bg-green-50 border-green-100', text: 'text-green-700', sub: 'Initial CBU from membership payments' },
                       { label: 'Legal Fees', value: incomeData.legal_fees, color: 'bg-slate-50 border-slate-100', text: 'text-slate-700', sub: 'Legal and notarial deductions' },
                       { label: 'CLPI/Insurance', value: incomeData.clpi_insurance, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Loan protection and insurance' },
                       { label: 'Regular Savings', value: incomeData.regular_savings, color: 'bg-blue-50 border-blue-100', text: 'text-blue-700', sub: 'Savings deductions' },
+                      { label: 'Membership Savings', value: incomeData.membership_savings, color: 'bg-sky-50 border-sky-100', text: 'text-sky-700', sub: 'Initial savings from membership payments' },
                       { label: 'Penalty Due', value: incomeData.penalty_due, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Penalty deductions' },
                       { label: 'Annual Due', value: incomeData.annual_dues, color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
                       { label: 'CBU Completion', value: incomeData.cbu_completion, color: 'bg-teal-50 border-teal-100', text: 'text-teal-700', sub: 'CBU completion deductions' },

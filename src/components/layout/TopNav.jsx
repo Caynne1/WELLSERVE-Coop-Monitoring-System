@@ -1,6 +1,6 @@
 /**
  * TopNav — multi-level enterprise navigation.
- * Only top-level categories are shown; each (except Dashboard/Members) reveals
+ * Only top-level categories are shown; each (except Dashboard) reveals
  * a dropdown submenu on click. Single-open-at-a-time, keyboard accessible,
  * sticky beneath the Topbar. All routes/permissions are unchanged — presentation only.
  */
@@ -21,7 +21,13 @@ import {
 // Flat links show directly; `children` items render inside a dropdown panel.
 const NAV_ITEMS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/members',   icon: Users,           label: 'Members', permKey: 'members' },
+  {
+    key: 'members', label: 'Members', icon: Users,
+    children: [
+      { to: '/members', icon: Users, label: 'Members', permKey: 'members' },
+      { to: '/membership-monitoring', icon: ShieldCheck, label: 'Membership Monitoring', permKey: 'members' },
+    ],
+  },
   {
     key: 'products', label: 'Products & Services', icon: Wallet2,
     children: [

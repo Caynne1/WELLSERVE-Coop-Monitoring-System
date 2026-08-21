@@ -17,9 +17,9 @@ import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import { getMemberStats } from '../../services/memberService';
-import { getLoanStats, getLoanPortfolioAnalytics } from '../../services/loanService';
+import { getLoanStats } from '../../services/loanService';
 import { getAccountStats } from '../../services/accountService';
-import { computeCoopSummaryFromInvoices, getIncomeBreakdown } from '../../services/coopFundService';
+import { getFundLedgerSummary } from '../../services/coopFundService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -38,6 +38,8 @@ const CHART_COLORS = {
   loans:   { stroke: '#f97316' },
   savings: { stroke: '#2563eb' },
   cbu:     { stroke: '#059669' },
+  income:  { stroke: '#10b981' },
+  expense: { stroke: '#ef4444' },
 };
 
 function ledgerDate(tx) {
@@ -45,7 +47,7 @@ function ledgerDate(tx) {
 }
 
 function normalized(value) {
-  return String(value || '').toLowerCase();
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 }
 
 function isCountedLedgerRow(tx) {
@@ -53,13 +55,29 @@ function isCountedLedgerRow(tx) {
 }
 
 function isLoanRelease(tx) {
-  return tx.type === 'cash_out' && normalized(tx.category) === 'loan_release';
+  const category = normalized(tx.category);
+  const text = normalized(`${tx.description || ''} ${tx.ref_no || ''}`);
+  return tx.type === 'cash_out' && (
+    category === 'loan_release' ||
+    category === 'loan_net_proceeds' ||
+    (category === 'capital' && text.includes('loan'))
+  );
 }
 
 function isLoanPayment(tx) {
+  const text = normalized(`${tx.description || ''} ${tx.note || ''}`);
   return tx.type === 'cash_in' && (
     normalized(tx.category) === 'loan_payment' ||
-    normalized(tx.raw_type) === 'loan_payment'
+    normalized(tx.raw_type) === 'loan_payment' ||
+    (normalized(tx.category) === 'loan' && !text.includes('interest'))
+  );
+}
+
+function isLoanInterest(tx) {
+  const text = normalized(`${tx.description || ''} ${tx.note || ''}`);
+  return tx.type === 'cash_in' && (
+    normalized(tx.category) === 'loan_interest' ||
+    (normalized(tx.category) === 'loan' && text.includes('interest'))
   );
 }
 
@@ -85,7 +103,6 @@ function isMembershipCollection(tx) {
   return tx.type === 'cash_in' && (
     category === 'membership' ||
     category === 'membership_fee' ||
-    category === 'vip_card' ||
     rawType === 'membership_payment'
   );
 }
@@ -107,22 +124,42 @@ function isLoanDeduction(tx) {
       'cbu_completion',
       'petty_cash',
       'admin_regulatory_fees',
+      'membership_fee',
+      'vip_card',
     ].includes(category)
   );
 }
 
+function isReportIncome(tx) {
+  if (tx.type !== 'cash_in') return false;
+  const category = normalized(tx.category);
+  return [
+    'loan_payment',
+    'loan_interest',
+    'penalty_payment',
+    'penalty',
+    'penalty_due',
+    'membership',
+    'membership_fee',
+    'vip_card',
+    'service_fee',
+    'cbu_retention',
+    'legal_fees',
+    'insurance',
+    'clpi_insurance',
+    'regular_savings',
+    'annual_dues',
+    'cbu_completion',
+    'petty_cash',
+    'admin_regulatory_fees',
+    'capital',
+    'others',
+    'other_payment',
+  ].includes(category);
+}
+
 function isExpense(tx) {
   return tx.type === 'cash_out' && !isLoanRelease(tx) && !normalized(tx.category).includes('withdrawal');
-}
-
-function displayLedgerType(type) {
-  if (type === 'cash_in') return 'Cash In';
-  if (type === 'cash_out') return 'Cash Out';
-  return String(type || '').replace(/_/g, ' ') || 'â€”';
-}
-
-function displayLedgerCategory(category) {
-  return String(category || 'â€”').replace(/_/g, ' ');
 }
 
 // â”€â”€ Date helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -181,6 +218,8 @@ function buildTimeSeries(transactions, from, to, preset) {
       loans:   inPeriod.filter(t => isCountedLedgerRow(t) && isLoanRelease(t)).reduce((s, t) => s + (t.amount || 0), 0),
       savings: inPeriod.filter(isSavingsDeposit).reduce((s, t) => s + (t.amount || 0), 0),
       cbu:     inPeriod.filter(isCbuDeposit).reduce((s, t) => s + (t.amount || 0), 0),
+      income:  inPeriod.filter(t => isCountedLedgerRow(t) && isReportIncome(t)).reduce((s, t) => s + (t.amount || 0), 0),
+      expense: inPeriod.filter(t => isCountedLedgerRow(t) && isExpense(t)).reduce((s, t) => s + (t.amount || 0), 0),
     };
   });
 }
@@ -428,7 +467,7 @@ function DateRangePicker({ preset, customFrom, customTo, onPresetChange, onCusto
         <span>{activeLabel}</span>
         {preset === 'custom' && customFrom && customTo && (
           <span className="text-xs text-gray-400 ml-1">
-            {format(customFrom, 'MMM d')} â€“ {format(customTo, 'MMM d, yyyy')}
+            {format(customFrom, 'MMM d')} - {format(customTo, 'MMM d, yyyy')}
           </span>
         )}
         <ChevronDown size={13} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -505,7 +544,7 @@ function buildReportHtml({
   totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
   totalIncome, totalExpense, loanInterest, membershipCollections,
   loanDeductions, totalCBUBalance, totalSavingsBalance,
-  cbuDeposits, savingsDeposits, transactions,
+  cbuDeposits, savingsDeposits,
 }) {
   const fmt = (n) =>
     'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -514,25 +553,12 @@ function buildReportHtml({
   const generated = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
     + ' at ' + now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
 
-  const txRows = transactions.slice(0, 100).map(tx => {
-    const name = tx.member_name || [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—';
-    const date = tx.transaction_date || (tx.created_at ? tx.created_at.slice(0, 10) : 'â€”');
-    const type = displayLedgerType(tx.type);
-    const cat  = displayLedgerCategory(tx.category);
-    const amt  = fmt(tx.amount);
-    return `<tr><td>${date}</td><td style="text-transform:capitalize">${type}</td><td>${cat}</td><td>${name}</td><td style="text-align:right">${amt}</td></tr>`;
-  }).join('');
-
-  const moreTx = transactions.length > 100
-    ? `<p style="font-size:8pt;color:#6b7280;margin-top:2mm">(Showing first 100 of ${transactions.length} transactions)</p>`
-    : '';
-
   return `
     <h1 class="report-title">Financial Report</h1>
     <div class="report-meta">
       <strong>Period:</strong> ${periodLabel} &nbsp;|&nbsp;
       <strong>Generated:</strong> ${generated} &nbsp;|&nbsp;
-      <span style="color:#b91c1c;font-weight:600">CONFIDENTIAL â€” AUTHORIZED USE ONLY</span>
+      <span style="color:#b91c1c;font-weight:600">CONFIDENTIAL - AUTHORIZED USE ONLY</span>
     </div>
 
     <div class="section-heading">Membership Overview</div>
@@ -543,16 +569,18 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Kiddy</div><div class="stat-value">${num(memberStats?.kiddy)}</div></div>
       <div class="stat-box"><div class="stat-label">Active</div><div class="stat-value">${num(memberStats?.active)}</div></div>
       <div class="stat-box"><div class="stat-label">Inactive</div><div class="stat-value">${num(memberStats?.inactive)}</div></div>
+      <div class="stat-box"><div class="stat-label">Closed Accounts</div><div class="stat-value">${num(memberStats?.closed)}</div></div>
       <div class="stat-box"><div class="stat-label">Membership Collections</div><div class="stat-value" style="font-size:10pt">${fmt(membershipCollections)}</div></div>
     </div>
 
     <div class="section-heading">Loan Portfolio</div>
     <div class="stats-grid">
       <div class="stat-box"><div class="stat-label">Total Loans</div><div class="stat-value">${num(loanStats?.total)}</div><div class="stat-sub">${num(loanStats?.active)} active</div></div>
-      <div class="stat-box"><div class="stat-label">Outstanding Balance</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.totalOutstanding)}</div></div>
-      <div class="stat-box"><div class="stat-label">Released (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalReleased)}</div></div>
-      <div class="stat-box"><div class="stat-label">Repaid (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalRepaid)}</div></div>
-      <div class="stat-box"><div class="stat-label">Interest Income</div><div class="stat-value" style="font-size:10pt">${fmt(loanInterest)}</div></div>
+      <div class="stat-box"><div class="stat-label">Pending Loan Amount</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.pendingAmount)}</div></div>
+      <div class="stat-box"><div class="stat-label">Approved Loan Amount</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.approvedAmount)}</div></div>
+      <div class="stat-box"><div class="stat-label">Released Loan Amount</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.totalReleased)}</div></div>
+      <div class="stat-box"><div class="stat-label">Outstanding Payable</div><div class="stat-value" style="font-size:10pt">${fmt(loanStats?.totalOutstanding)}</div></div>
+      <div class="stat-box"><div class="stat-label">Loan Interest Earned</div><div class="stat-value" style="font-size:10pt">${fmt(loanInterest)}</div></div>
     </div>
 
     <div class="section-heading">Cash Flow & Savings</div>
@@ -568,17 +596,8 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Savings Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(savingsDeposits)}</div></div>
     </div>
 
-    ${transactions.length > 0 ? `
-    <div class="section-heading">Transaction Detail</div>
-    <table>
-      <thead><tr><th>Date</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th></tr></thead>
-      <tbody>${txRows}</tbody>
-    </table>
-    ${moreTx}
-    ` : ''}
-
     <div class="confidential">
-      WELLSERVE Cooperative Monitoring System â€” This report is for authorized personnel only.
+      WELLSERVE Cooperative Monitoring System - This report is for authorized personnel only.
     </div>
   `;
 }
@@ -588,11 +607,8 @@ function buildReportHtml({
 export default function ReportsPage() {
   const [memberStats, setMemberStats]       = useState(null);
   const [loanStats, setLoanStats]           = useState(null);
-  const [loanAnalytics, setLoanAnalytics]   = useState(null);
   const [accountStats, setAccountStats]     = useState(null);
   const [allTransactions, setAllTransactions] = useState([]);
-  const [incomeBreakdown, setIncomeBreakdown] = useState({ total_income: 0, loan_interest: 0 });
-  const [prevIncomeBreakdown, setPrevIncomeBreakdown] = useState({ total_income: 0, loan_interest: 0 });
   const [loading, setLoading]               = useState(true);
 
   const [preset, setPreset]             = useState('monthly');
@@ -611,16 +627,14 @@ export default function ReportsPage() {
   async function fetchAll() {
     setLoading(true);
     try {
-      const [ms, ls, la, as, fundSummary] = await Promise.all([
+      const [ms, ls, as, fundSummary] = await Promise.all([
         getMemberStats(),
         getLoanStats(),
-        getLoanPortfolioAnalytics().catch(() => null),
         getAccountStats(),
-        computeCoopSummaryFromInvoices(),
+        getFundLedgerSummary(),
       ]);
       setMemberStats(ms);
       setLoanStats(ls);
-      setLoanAnalytics(la);
       setAccountStats(as);
       setAllTransactions(fundSummary?.transactions || []);
     } catch {
@@ -645,25 +659,6 @@ export default function ReportsPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  useEffect(() => {
-    let active = true;
-    async function fetchIncome() {
-      try {
-        const [current, previous] = await Promise.all([
-          getIncomeBreakdown({ from: format(from, 'yyyy-MM-dd'), to: format(to, 'yyyy-MM-dd') }),
-          getIncomeBreakdown({ from: format(prevRange.from, 'yyyy-MM-dd'), to: format(prevRange.to, 'yyyy-MM-dd') }),
-        ]);
-        if (!active) return;
-        setIncomeBreakdown(current || { total_income: 0, loan_interest: 0 });
-        setPrevIncomeBreakdown(previous || { total_income: 0, loan_interest: 0 });
-      } catch (error) {
-        console.warn('[ReportsPage] income breakdown failed:', error?.message || error);
-      }
-    }
-    fetchIncome();
-    return () => { active = false; };
-  }, [from, to, prevRange.from, prevRange.to]);
-
   // Filter by period
   const filterByRange = (txs, rangeFrom, rangeTo) => txs.filter(tx => {
     const dateValue = ledgerDate(tx);
@@ -686,32 +681,26 @@ export default function ReportsPage() {
   const totalRepaid     = sum(countedTransactions, isLoanPayment);
   const totalReleased   = sum(countedTransactions, isLoanRelease);
   const totalExpense    = sum(countedTransactions, isExpense);
-  const totalIncome     = Number(incomeBreakdown?.total_income || 0);
-  const loanInterest    = Number(incomeBreakdown?.loan_interest || 0);
+  const totalIncome     = sum(countedTransactions, isReportIncome);
+  const loanInterest    = sum(countedTransactions, isLoanInterest);
   const membershipCollections = sum(countedTransactions, isMembershipCollection);
   const loanDeductions = sum(countedTransactions, isLoanDeduction);
   const cbuDeposits     = sum(transactions, isCbuDeposit);
   const savingsDeposits = sum(transactions, isSavingsDeposit);
-  const totalCBUBalance = sum(allTransactions, isCbuDeposit) - sum(allTransactions, isCbuWithdrawal);
-  const totalSavingsBalance = sum(allTransactions, isSavingsDeposit) - sum(allTransactions, isSavingsWithdrawal);
+  const totalCBUBalance = Number(accountStats?.totalCBU || 0);
+  const totalSavingsBalance = Number(accountStats?.totalSavings || 0);
 
   const prevDeposited   = sum(countedPrevTransactions, t => t.type === 'cash_in');
   const prevWithdrawn   = sum(countedPrevTransactions, t => t.type === 'cash_out');
   const prevRepaid      = sum(countedPrevTransactions, isLoanPayment);
   const prevReleased    = sum(countedPrevTransactions, isLoanRelease);
   const prevExpense     = sum(countedPrevTransactions, isExpense);
-  const prevIncome      = Number(prevIncomeBreakdown?.total_income || 0);
-  const prevLoanInterest = Number(prevIncomeBreakdown?.loan_interest || 0);
+  const prevIncome      = sum(countedPrevTransactions, isReportIncome);
+  const prevLoanInterest = sum(countedPrevTransactions, isLoanInterest);
   const prevMembershipCollections = sum(countedPrevTransactions, isMembershipCollection);
   const prevLoanDeductions = sum(countedPrevTransactions, isLoanDeduction);
   const prevCbuDep      = sum(prevTransactions, isCbuDeposit);
   const prevSavingsDep  = sum(prevTransactions, isSavingsDeposit);
-
-  const deposits     = countedTransactions.filter(t => t.type === 'cash_in');
-  const withdrawals  = countedTransactions.filter(t => t.type === 'cash_out');
-  const loanPayments = countedTransactions.filter(isLoanPayment);
-  const loanReleases = countedTransactions.filter(isLoanRelease);
-  const expenses     = countedTransactions.filter(isExpense);
 
   // Time series
   const currSeries = useMemo(() => buildTimeSeries(transactions, from, to, preset), [transactions, from, to, preset]);
@@ -722,15 +711,18 @@ export default function ReportsPage() {
     loans:   { current: currSeries.map(s => s.loans),   previous: prevSeries.map(s => s.loans) },
     savings: { current: currSeries.map(s => s.savings), previous: prevSeries.map(s => s.savings) },
     cbu:     { current: currSeries.map(s => s.cbu),     previous: prevSeries.map(s => s.cbu) },
+    income:  { current: currSeries.map(s => s.income),  previous: prevSeries.map(s => s.income) },
+    expense: { current: currSeries.map(s => s.expense), previous: prevSeries.map(s => s.expense) },
   };
 
   // Exports
   function handleExportSummary() {
     const rows = [
-      { Metric: 'Report Period',                  Value: `${formatDate(from.toISOString())} â€“ ${formatDate(to.toISOString())}` },
+      { Metric: 'Report Period',                  Value: `${formatDate(from.toISOString())} - ${formatDate(to.toISOString())}` },
       { Metric: 'Total Members',                  Value: memberStats?.total ?? 0 },
       { Metric: 'Active Members',                 Value: memberStats?.active ?? 0 },
       { Metric: 'Inactive Members',               Value: memberStats?.inactive ?? 0 },
+      { Metric: 'Closed Accounts',                Value: memberStats?.closed ?? 0 },
       { Metric: 'Regular Members',                Value: memberStats?.regular ?? 0 },
       { Metric: 'Associate Members',              Value: memberStats?.associate ?? 0 },
       { Metric: 'Kiddy Members',                  Value: memberStats?.kiddy ?? 0 },
@@ -738,8 +730,10 @@ export default function ReportsPage() {
       { Metric: 'Total Savings Balance (PHP)',     Value: totalSavingsBalance },
       { Metric: 'Total Loans',                    Value: loanStats?.total ?? 0 },
       { Metric: 'Active Loans',                   Value: loanStats?.active ?? 0 },
-      { Metric: 'Outstanding Balance (PHP)',       Value: loanStats?.totalOutstanding ?? 0 },
-      { Metric: 'Period: Loans Released (PHP)',   Value: totalReleased },
+      { Metric: 'Pending Loan Amount (PHP)',      Value: loanStats?.pendingAmount ?? 0 },
+      { Metric: 'Approved Loan Amount (PHP)',     Value: loanStats?.approvedAmount ?? 0 },
+      { Metric: 'Released Loan Amount (PHP)',     Value: loanStats?.totalReleased ?? 0 },
+      { Metric: 'Outstanding Payable Balance (PHP)', Value: loanStats?.totalOutstanding ?? 0 },
       { Metric: 'Period: Loan Repayments (PHP)',  Value: totalRepaid },
       { Metric: 'Period: Cooperative Income (PHP)', Value: totalIncome },
       { Metric: 'Period: Membership Collections (PHP)', Value: membershipCollections },
@@ -754,23 +748,6 @@ export default function ReportsPage() {
     ];
     exportToCSV('wellserve_summary_report', rows);
     toast.success('Summary report exported.');
-  }
-
-  function handleExportTransactions() {
-    if (transactions.length === 0) return toast.error('No transactions in this period.');
-    const rows = transactions.map(tx => ({
-      type: displayLedgerType(tx.type),
-      category: displayLedgerCategory(tx.category),
-      member_name: tx.member_name || `${tx.members?.first_name || ''} ${tx.members?.last_name || ''}`.trim(),
-      member_no: tx.members?.member_no || '',
-      amount: tx.amount ?? 0,
-      reference: tx.ref_no || tx.reference || '',
-      description: tx.description || '',
-      created_by: tx.created_by || '',
-      date: tx.transaction_date || (tx.created_at ? formatDate(tx.created_at) : ''),
-    }));
-    exportToCSV(`transactions_${format(from, 'yyyy-MM-dd')}_to_${format(to, 'yyyy-MM-dd')}`, rows);
-    toast.success(`Exported ${rows.length} transactions.`);
   }
 
   function handlePrint() {
@@ -792,11 +769,10 @@ export default function ReportsPage() {
       totalSavingsBalance,
       cbuDeposits,
       savingsDeposits,
-      transactions,
     });
 
     const fullHtml = wrapWithLetterhead(contentHtml, {
-      title: `WELLSERVE Report â€” ${periodLabel}`,
+      title: `WELLSERVE Report - ${periodLabel}`,
     });
 
     const win = printHtmlDocument(fullHtml, {
@@ -811,30 +787,27 @@ export default function ReportsPage() {
   }
 
   const periodLabel = preset !== 'custom'
-    ? `${PRESETS.find(p => p.id === preset)?.label} â€” ${format(from, 'MMM d')} to ${format(to, 'MMM d, yyyy')}`
-    : `${format(from, 'MMM d, yyyy')} â€“ ${format(to, 'MMM d, yyyy')}`;
+    ? `${PRESETS.find(p => p.id === preset)?.label} - ${format(from, 'MMM d')} to ${format(to, 'MMM d, yyyy')}`
+    : `${format(from, 'MMM d, yyyy')} - ${format(to, 'MMM d, yyyy')}`;
 
   const auditRows = [
-    { label: 'Total Members',            curr: memberStats?.total ?? 0,           prev: memberStats?.total ?? 0,          fmt: v => v },
-    { label: 'Active Members',           curr: memberStats?.active ?? 0,          prev: memberStats?.active ?? 0,         fmt: v => v },
-    { label: 'Inactive Members',         curr: memberStats?.inactive ?? 0,        prev: memberStats?.inactive ?? 0,       fmt: v => v },
-    { label: 'Regular Members',          curr: memberStats?.regular ?? 0,         prev: memberStats?.regular ?? 0,        fmt: v => v },
-    { label: 'Associate Members',        curr: memberStats?.associate ?? 0,       prev: memberStats?.associate ?? 0,      fmt: v => v },
-    { label: 'Kiddy Members',            curr: memberStats?.kiddy ?? 0,           prev: memberStats?.kiddy ?? 0,          fmt: v => v },
-    { label: 'Total CBU Balance',        curr: totalCBUBalance,                   prev: totalCBUBalance,                  fmt: formatCurrency },
-    { label: 'Total Savings Balance',    curr: totalSavingsBalance,               prev: totalSavingsBalance,              fmt: formatCurrency },
-    { label: 'Outstanding Loan Balance', curr: loanStats?.totalOutstanding ?? 0,  prev: loanStats?.totalOutstanding ?? 0, fmt: formatCurrency },
-    { label: 'Cooperative Income (Period)', curr: totalIncome,                    prev: prevIncome,                       fmt: formatCurrency },
-    { label: 'Membership Collections (Period)', curr: membershipCollections,       prev: prevMembershipCollections,        fmt: formatCurrency },
-    { label: 'Loan Deductions (Period)', curr: loanDeductions,                    prev: prevLoanDeductions,               fmt: formatCurrency },
-    { label: 'Loan Interest (Period)',   curr: loanInterest,                      prev: prevLoanInterest,                 fmt: formatCurrency },
-    { label: 'Loans Released (Period)',  curr: totalReleased,                      prev: prevReleased,                     fmt: formatCurrency },
-    { label: 'Loan Repayments (Period)', curr: totalRepaid,                        prev: prevRepaid,                       fmt: formatCurrency },
-    { label: 'Cash In (Period)',         curr: totalDeposited,                     prev: prevDeposited,                    fmt: formatCurrency },
-    { label: 'Cash Out (Period)',        curr: totalWithdrawn,                     prev: prevWithdrawn,                    fmt: formatCurrency },
-    { label: 'Expenses (Period)',        curr: totalExpense,                       prev: prevExpense,                      fmt: formatCurrency },
-    { label: 'CBU Cash In (Period)',    curr: cbuDeposits,                        prev: prevCbuDep,                       fmt: formatCurrency },
-    { label: 'Savings Cash In (Period)',curr: savingsDeposits,                    prev: prevSavingsDep,                   fmt: formatCurrency },
+    { group: 'Members', label: 'Total Members', curr: memberStats?.total ?? 0, prev: memberStats?.total ?? 0, fmt: v => v },
+    { group: 'Members', label: 'Active Members', curr: memberStats?.active ?? 0, prev: memberStats?.active ?? 0, fmt: v => v },
+    { group: 'Members', label: 'Closed Accounts', curr: memberStats?.closed ?? 0, prev: memberStats?.closed ?? 0, fmt: v => v },
+    { group: 'Members', label: 'Regular / Associate / Kiddy', curr: `${memberStats?.regular ?? 0} / ${memberStats?.associate ?? 0} / ${memberStats?.kiddy ?? 0}`, prev: null, fmt: v => v },
+    { group: 'Loans', label: 'Pending Loan Amount', curr: loanStats?.pendingAmount ?? 0, prev: loanStats?.pendingAmount ?? 0, fmt: formatCurrency },
+    { group: 'Loans', label: 'Approved Loan Amount', curr: loanStats?.approvedAmount ?? 0, prev: loanStats?.approvedAmount ?? 0, fmt: formatCurrency },
+    { group: 'Loans', label: 'Released Loan Amount', curr: loanStats?.totalReleased ?? 0, prev: loanStats?.totalReleased ?? 0, fmt: formatCurrency },
+    { group: 'Loans', label: 'Outstanding Payable Balance', curr: loanStats?.totalOutstanding ?? 0, prev: loanStats?.totalOutstanding ?? 0, fmt: formatCurrency },
+    { group: 'Loans', label: 'Loan Interest Earned', curr: loanInterest, prev: prevLoanInterest, fmt: formatCurrency },
+    { group: 'Funds', label: 'Cooperative Income', curr: totalIncome, prev: prevIncome, fmt: formatCurrency },
+    { group: 'Funds', label: 'Membership Collections', curr: membershipCollections, prev: prevMembershipCollections, fmt: formatCurrency },
+    { group: 'Funds', label: 'Loan Deductions', curr: loanDeductions, prev: prevLoanDeductions, fmt: formatCurrency },
+    { group: 'Funds', label: 'Expenses', curr: totalExpense, prev: prevExpense, fmt: formatCurrency },
+    { group: 'CBU & Savings', label: 'Total CBU Balance', curr: totalCBUBalance, prev: totalCBUBalance, fmt: formatCurrency },
+    { group: 'CBU & Savings', label: 'Total Savings Balance', curr: totalSavingsBalance, prev: totalSavingsBalance, fmt: formatCurrency },
+    { group: 'CBU & Savings', label: 'CBU Cash In', curr: cbuDeposits, prev: prevCbuDep, fmt: formatCurrency },
+    { group: 'CBU & Savings', label: 'Savings Cash In', curr: savingsDeposits, prev: prevSavingsDep, fmt: formatCurrency },
   ];
 
   return (
@@ -893,10 +866,8 @@ export default function ReportsPage() {
             </p>
           </div>
 
-          {/* â”€â”€ Membership â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <SectionTitle>Membership</SectionTitle>
 
-          {/* Top-line summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 mb-4">
             <StatCard
               icon={<Users size={20} />}
@@ -923,6 +894,14 @@ export default function ReportsPage() {
             />
             <StatCard
               icon={<Users size={20} />}
+              label="Closed Accounts"
+              value={memberStats?.closed ?? 0}
+              sub="Status: closed"
+              iconBg="bg-rose-50"
+              iconColor="#E11D48"
+            />
+            <StatCard
+              icon={<Users size={20} />}
               label="Kiddy Members"
               value={memberStats?.kiddy ?? 0}
               sub={`${memberStats?.activeKiddy ?? 0} active`}
@@ -933,7 +912,7 @@ export default function ReportsPage() {
               icon={<PiggyBank size={20} />}
               label="Membership Collections"
               value={formatCurrency(membershipCollections)}
-              sub="Membership + WELLife VIP"
+              sub="Membership payments"
               iconBg="bg-purple-50"
               iconColor="#7C3AED"
               trend={showComparison ? pct(membershipCollections, prevMembershipCollections) : undefined}
@@ -941,124 +920,48 @@ export default function ReportsPage() {
             />
           </div>
 
-          {/* Detailed breakdown with stacked bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <MembershipBreakdownCard memberStats={memberStats} />
-          </div>
-
-          {/* â”€â”€ Loans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <SectionTitle>Loans</SectionTitle>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard icon={<CreditCard size={20} />} label="Total Loans"  value={loanStats?.total ?? 0}  iconBg="bg-orange-50" iconColor="#EA580C" />
-            <StatCard icon={<CreditCard size={20} />} label="Active Loans" value={loanStats?.active ?? 0} iconBg="bg-orange-50" iconColor="#EA580C" />
-            <StatCard icon={<TrendingUp size={20} />}   label="Total Released"  value={formatCurrency(loanStats?.totalReleased ?? 0)}    iconBg="bg-green-50" iconColor="#16A34A"
-              trend={showComparison ? pct(totalReleased, prevReleased) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingDown size={20} />} label="Outstanding" value={formatCurrency(loanStats?.totalOutstanding ?? 0)} sub="Active loans only" iconBg="bg-red-50" iconColor="#DC2626" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+            <StatCard icon={<CreditCard size={20} />} label="Pending Loan Amount" value={formatCurrency(loanStats?.pendingAmount ?? 0)} sub={`${loanStats?.pending ?? 0} pending`} iconBg="bg-amber-50" iconColor="#D97706" />
+            <StatCard icon={<CreditCard size={20} />} label="Approved Loan Amount" value={formatCurrency(loanStats?.approvedAmount ?? 0)} sub={`${loanStats?.approved ?? 0} approved`} iconBg="bg-blue-50" iconColor="#2563EB" />
+            <StatCard icon={<TrendingUp size={20} />} label="Released Loan Amount" value={formatCurrency(loanStats?.totalReleased ?? 0)} sub={`${loanStats?.released ?? 0} released`} iconBg="bg-green-50" iconColor="#16A34A" />
+            <StatCard icon={<TrendingDown size={20} />} label="Outstanding Payable" value={formatCurrency(loanStats?.totalOutstanding ?? 0)} sub="Balance including interest" iconBg="bg-red-50" iconColor="#DC2626" />
+            <StatCard icon={<TrendingUp size={20} />} label="Loan Interest Earned" value={formatCurrency(loanInterest)} sub="Collected in period" iconBg="bg-emerald-50" iconColor="#059669"
+              trend={showComparison ? pct(loanInterest, prevLoanInterest) : undefined} trendLabel="vs prev" />
           </div>
 
-          {/* Loan Portfolio Analytics */}
-          {loanAnalytics && (
-            <>
-              <SectionTitle>Loan Portfolio Analytics</SectionTitle>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                <StatCard
-                  icon={<TrendingUp size={20} />}
-                  label="Collection Rate"
-                  value={`${loanAnalytics.rates.collection_rate ?? 0}%`}
-                  sub="Amount collected vs released"
-                  iconBg="bg-emerald-50"
-                  iconColor="#059669"
-                />
-                <StatCard
-                  icon={<TrendingDown size={20} />}
-                  label="Default Rate"
-                  value={`${loanAnalytics.rates.default_rate ?? 0}%`}
-                  sub="Defaulted / Total loans"
-                  iconBg="bg-red-50"
-                  iconColor="#DC2626"
-                />
-                <StatCard
-                  icon={<CreditCard size={20} />}
-                  label="Total Outstanding"
-                  value={formatCurrency(loanAnalytics.portfolio.total_outstanding ?? 0)}
-                  sub="Across all active loans"
-                  iconBg="bg-orange-50"
-                  iconColor="#EA580C"
-                />
-                <StatCard
-                  icon={<TrendingUp size={20} />}
-                  label="Total Paid Off"
-                  value={formatCurrency(loanAnalytics.portfolio.total_paid_off ?? 0)}
-                  sub="Fully settled loans"
-                  iconBg="bg-blue-50"
-                  iconColor="#2563EB"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Status breakdown */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Loan Status Breakdown</p>
-                  <div className="space-y-3">
-                    {[
-                      { key: 'active',    label: 'Active',    color: 'bg-emerald-400' },
-                      { key: 'paid',      label: 'Paid',      color: 'bg-blue-400' },
-                      { key: 'overdue',   label: 'Overdue',   color: 'bg-red-400' },
-                      { key: 'partial',   label: 'Partial',   color: 'bg-yellow-400' },
-                      { key: 'pending',   label: 'Pending',   color: 'bg-amber-400' },
-                      { key: 'defaulted', label: 'Defaulted', color: 'bg-rose-600' },
-                    ].map(({ key, label, color }) => {
-                      const count = loanAnalytics.by_status[key] ?? 0;
-                      const p     = loanAnalytics.total > 0 ? ((count / loanAnalytics.total) * 100).toFixed(1) : 0;
-                      return (
-                        <div key={key} className="flex items-center gap-3">
-                          <span className="text-xs text-gray-500 w-16 flex-shrink-0">{label}</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${p}%` }} />
-                          </div>
-                          <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">
-                            {count} <span className="font-normal text-gray-400">({p}%)</span>
-                          </span>
-                        </div>
-                      );
-                    })}
+          <SectionTitle>Loan Status Breakdown</SectionTitle>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[
+                { key: 'draft', label: 'Draft', color: 'bg-gray-400' },
+                { key: 'credit_committee_approval', label: 'Pending Approval', color: 'bg-amber-400' },
+                { key: 'approved', label: 'Approved', color: 'bg-blue-400' },
+                { key: 'released', label: 'Released', color: 'bg-emerald-400' },
+                { key: 'active', label: 'Active Loan', color: 'bg-green-500' },
+                { key: 'overdue', label: 'Overdue', color: 'bg-red-400' },
+                { key: 'paid', label: 'Paid', color: 'bg-indigo-400' },
+              ].map(({ key, label, color }) => {
+                const count = loanStats?.byStatus?.[key] ?? 0;
+                const p = (loanStats?.total ?? 0) > 0 ? ((count / loanStats.total) * 100).toFixed(1) : '0.0';
+                return (
+                  <div key={key} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
+                        <span className="text-xs font-semibold text-gray-600">{label}</span>
+                      </div>
+                      <span className="text-sm font-bold text-gray-900 tabular-nums">{count}</span>
+                    </div>
+                    <div className="h-2 bg-white rounded-full overflow-hidden">
+                      <div className={`h-2 rounded-full ${color}`} style={{ width: `${p}%` }} />
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">{p}% of loans</p>
                   </div>
-                </div>
-
-                {/* Aging analysis */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Loan Aging Analysis</p>
-                  <div className="space-y-3">
-                    {[
-                      { key: 'current',      label: 'Current (not overdue)', color: 'bg-emerald-400' },
-                      { key: 'days_30',      label: '1â€“30 days overdue',     color: 'bg-yellow-400' },
-                      { key: 'days_60',      label: '31â€“60 days overdue',    color: 'bg-orange-400' },
-                      { key: 'days_90_plus', label: '60+ days overdue',      color: 'bg-red-500' },
-                    ].map(({ key, label, color }) => {
-                      const count = loanAnalytics.aging[key] ?? 0;
-                      const totalUnpaid =
-                        (loanAnalytics.aging.current ?? 0) +
-                        (loanAnalytics.aging.days_30 ?? 0) +
-                        (loanAnalytics.aging.days_60 ?? 0) +
-                        (loanAnalytics.aging.days_90_plus ?? 0);
-                      const p = totalUnpaid > 0 ? ((count / totalUnpaid) * 100).toFixed(1) : 0;
-                      return (
-                        <div key={key} className="flex items-center gap-3">
-                          <span className="text-xs text-gray-500 w-36 flex-shrink-0">{label}</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${p}%` }} />
-                          </div>
-                          <span className="text-xs font-semibold text-gray-700 w-12 text-right tabular-nums">{count}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-3">Based on each loan's next due date vs. today.</p>
-                </div>
-              </div>
-            </>
-          )}
+                );
+              })}
+            </div>
+          </div>
 
           {/* CBU & Savings */}
           <SectionTitle>CBU & Savings</SectionTitle>
@@ -1071,135 +974,47 @@ export default function ReportsPage() {
               trend={showComparison ? pct(savingsDeposits, prevSavingsDep) : undefined} trendLabel="vs prev" />
           </div>
 
-          {/* Transaction totals */}
-          <SectionTitle>Transaction Totals â€” Period</SectionTitle>
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-4">
-            <StatCard icon={<TrendingUp size={20} />} label="Coop Income" value={formatCurrency(totalIncome)} sub="Matches Fund Monitoring income" iconBg="bg-emerald-50" iconColor="#059669"
-              trend={showComparison ? pct(totalIncome, prevIncome) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingUp size={20} />}   label="Cash In"    value={formatCurrency(totalDeposited)} sub={`${deposits.length} transactions`}    iconBg="bg-green-50"  iconColor="#16A34A"
-              trend={showComparison ? pct(totalDeposited, prevDeposited) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingDown size={20} />} label="Cash Out" value={formatCurrency(totalWithdrawn)} sub={`${withdrawals.length} transactions`} iconBg="bg-red-50"    iconColor="#DC2626"
-              trend={showComparison ? pct(totalWithdrawn, prevWithdrawn) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingDown size={20} />} label="Expenses" value={formatCurrency(totalExpense)} sub={`${expenses.length} expense records`} iconBg="bg-rose-50" iconColor="#E11D48"
-              trend={showComparison ? pct(totalExpense, prevExpense) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<PiggyBank size={20} />} label="Loan Deductions" value={formatCurrency(loanDeductions)} sub="Release-time deductions" iconBg="bg-purple-50" iconColor="#7C3AED"
-              trend={showComparison ? pct(loanDeductions, prevLoanDeductions) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<CreditCard size={20} />} label="Loan Repayments" value={formatCurrency(totalRepaid)}   sub={`${loanPayments.length} payments`}   iconBg="bg-orange-50" iconColor="#EA580C"
-              trend={showComparison ? pct(totalRepaid, prevRepaid) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<CreditCard size={20} />} label="Loans Released"  value={formatCurrency(totalReleased)} sub={`${loanReleases.length} releases`}   iconBg="bg-violet-50" iconColor="#7C3AED"
-              trend={showComparison ? pct(totalReleased, prevReleased) : undefined} trendLabel="vs prev" />
-          </div>
-
           {/* Trend Charts */}
           <SectionTitle>Trend Analysis</SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <TrendChart title="Coop Income" current={chartData.income.current} previous={chartData.income.previous} color={CHART_COLORS.income} showComparison={showComparison} labels={labels} />
+            <TrendChart title="Expenses" current={chartData.expense.current} previous={chartData.expense.previous} color={CHART_COLORS.expense} showComparison={showComparison} labels={labels} />
             <TrendChart title="Loan Releases"    current={chartData.loans.current}   previous={chartData.loans.previous}   color={CHART_COLORS.loans}   showComparison={showComparison} labels={labels} />
             <TrendChart title="Savings Deposits" current={chartData.savings.current} previous={chartData.savings.previous} color={CHART_COLORS.savings} showComparison={showComparison} labels={labels} />
             <TrendChart title="CBU Deposits"     current={chartData.cbu.current}     previous={chartData.cbu.previous}     color={CHART_COLORS.cbu}     showComparison={showComparison} labels={labels} />
           </div>
 
-          {/* Audit Summary Table */}
           <SectionTitle>Audit Summary</SectionTitle>
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Metric</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {showComparison ? 'Current Period' : 'Value'}
-                  </th>
-                  {showComparison && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Previous Period</th>}
-                  {showComparison && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Change</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {auditRows.map(({ label, curr, prev, fmt }) => {
-                  const change = pct(curr, prev);
-                  return (
-                    <tr key={label} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-3 text-gray-700 font-medium">{label}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums">{fmt(curr)}</td>
-                      {showComparison && <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(prev)}</td>}
-                      {showComparison && (
-                        <td className="px-4 py-3 text-right">
-                          {change === null ? (
-                            <span className="text-gray-400 text-xs">â€”</span>
-                          ) : (
-                            <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${
-                              change > 0 ? 'text-emerald-600' : change < 0 ? 'text-red-500' : 'text-gray-400'
-                            }`}>
-                              {change > 0 ? <ArrowUpRight size={11} /> : change < 0 ? <ArrowDownRight size={11} /> : <Minus size={11} />}
-                              {Math.abs(change).toFixed(1)}%
-                            </span>
-                          )}
-                        </td>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {auditRows.map(({ group, label, curr, prev, fmt }) => {
+              const numeric = typeof curr === 'number' && typeof prev === 'number';
+              const change = numeric ? pct(curr, prev) : null;
+              return (
+                <div key={`${group}-${label}`} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">{group}</p>
+                  <p className="mt-1 text-xs font-semibold text-gray-500">{label}</p>
+                  <p className="mt-2 text-lg font-bold text-gray-900 tabular-nums">{fmt(curr)}</p>
+                  {showComparison && numeric && (
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                      <span className="text-gray-400">Prev: {fmt(prev)}</span>
+                      {change === null ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-0.5 font-semibold ${
+                          change > 0 ? 'text-emerald-600' : change < 0 ? 'text-red-500' : 'text-gray-400'
+                        }`}>
+                          {change > 0 ? <ArrowUpRight size={11} /> : change < 0 ? <ArrowDownRight size={11} /> : <Minus size={11} />}
+                          {Math.abs(change).toFixed(1)}%
+                        </span>
                       )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {/* Transactions Table */}
-          <div className="flex items-center justify-between mt-8 mb-3">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
-              Transactions â€” Period ({transactions.length})
-            </h2>
-            <Button variant="outline" size="sm" icon={<Download size={13} />} onClick={handleExportTransactions} className="no-print">
-              Export CSV
-            </Button>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['Type', 'Category', 'Member', 'Amount', 'Date'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {transactions.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-center py-10 text-gray-400">No transactions in this period.</td>
-                    </tr>
-                  ) : transactions.slice(0, 30).map(tx => (
-                    <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 capitalize text-gray-700">{displayLedgerType(tx.type)}</td>
-                      <td className="px-4 py-3">
-                        <span className="capitalize text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">{displayLedgerCategory(tx.category)}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{tx.member_name || [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '—'}</p>
-                        {tx.members?.member_no && <p className="text-xs text-gray-400 font-mono">{tx.members.member_no}</p>}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-gray-800 tabular-nums">{formatCurrency(tx.amount)}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">
-                        {tx.transaction_date ? formatDate(tx.transaction_date) : (tx.created_at ? formatDate(tx.created_at) : 'â€”')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {transactions.length > 30 && (
-              <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
-                <p className="text-xs text-gray-400">
-                  Showing 30 of {transactions.length} transactions. Use <strong>Export CSV</strong> for the full list.
-                </p>
-              </div>
-            )}
-          </div>
-
-
         </>
       )}
     </div>
   );
 }
-
-
-

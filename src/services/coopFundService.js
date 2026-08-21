@@ -1,6 +1,7 @@
 import { notifyCashIn, notifyCashOut } from './notificationService';
 import { supabase } from './supabase';
 import { createInvoice } from './invoiceService';
+import { getMembershipMonitoringIncomeSummary } from './membershipMonitoringService';
 
 // ── Primary: reads from coop_fund + fund_transactions ────────────────────────
 
@@ -28,6 +29,80 @@ export async function getFundTransactions(filters = {}) {
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+export async function getFundLedgerSummary() {
+  const [fundRes, txRes] = await Promise.all([
+    supabase.from('coop_fund').select('*').maybeSingle(),
+    supabase
+      .from('fund_transactions')
+      .select('*')
+      .order('transaction_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false }),
+  ]);
+
+  if (fundRes.error) throw fundRes.error;
+  if (txRes.error) throw txRes.error;
+
+  const txList = txRes.data || [];
+  const memberIds = [...new Set(txList.map(t => t.member_id).filter(Boolean))];
+  const createdByIds = [...new Set(txList.map(t => t.created_by).filter(isUuid))];
+
+  const [membersRes, profilesRes] = await Promise.all([
+    memberIds.length
+      ? supabase.from('members').select('id, first_name, last_name, member_no').in('id', memberIds)
+      : Promise.resolve({ data: [] }),
+    createdByIds.length
+      ? supabase.from('profiles').select('id, full_name, email').in('id', createdByIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const memberMap = Object.fromEntries((membersRes.data || []).map(m => [
+    m.id,
+    `${m.member_no ? `${m.member_no} - ` : ''}${[m.first_name, m.last_name].filter(Boolean).join(' ')}`.trim(),
+  ]));
+  const profileMap = Object.fromEntries((profilesRes.data || []).map(p => [p.id, profileName(p)]));
+
+  const transactions = dedupeLedgerRows(txList.map(t => ({
+    id: t.id,
+    type: t.flow_type,
+    category: t.category || 'others',
+    raw_type: t.category || null,
+    raw_category: t.category || null,
+    amount: Number(t.amount || 0),
+    description: t.description || t.note || '',
+    ref_no: t.reference || null,
+    member_name:
+      memberMap[t.member_id] ||
+      extractMemberNameFromHistoricalNotes(t.description) ||
+      extractMemberNameFromHistoricalNotes(t.note) ||
+      null,
+    loan_id: t.loan_id || null,
+    created_by: profileMap[t.created_by] || t.created_by || 'System',
+    created_at: t.created_at,
+    imported_at: t.created_at || null,
+    transaction_date: t.transaction_date || null,
+    source: t.source || 'manual',
+    record_type: t.record_type || 'workflow',
+    note: t.note || null,
+  }))).sort((a, b) => new Date(b.transaction_date || b.created_at) - new Date(a.transaction_date || a.created_at));
+
+  const computedCashIn = transactions
+    .filter(t => t.type === 'cash_in')
+    .reduce((s, t) => s + Number(t.amount || 0), 0);
+  const computedCashOut = transactions
+    .filter(t => t.type === 'cash_out')
+    .reduce((s, t) => s + Number(t.amount || 0), 0);
+  const fund = fundRes.data || {};
+
+  return {
+    fund: {
+      balance: Number(fund.balance ?? (computedCashIn - computedCashOut)),
+      cash_in: Number(fund.cash_in ?? computedCashIn),
+      cash_out: Number(fund.cash_out ?? computedCashOut),
+    },
+    transactions,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -60,6 +135,16 @@ function profileName(profile) {
 
 function transactionReportCategory(tx) {
   const type = String(tx?.type || '').toLowerCase();
+  const category = String(tx?.category || '').toLowerCase();
+  const notes = String(tx?.notes || tx?.description || '').toLowerCase();
+  if (type === 'deposit' && category === 'cbu' && (
+    notes.includes('membership breakdown') ||
+    (notes.includes('membership deduction') && notes.includes('initial cbu'))
+  )) return 'membership_cbu';
+  if (type === 'deposit' && category === 'savings' && (
+    notes.includes('membership breakdown') ||
+    (notes.includes('membership deduction') && notes.includes('initial savings'))
+  )) return 'membership_savings';
   if (type === 'loan_payment') return 'loan_payment';
   if (type === 'loan_interest') return 'loan_interest';
   if (type === 'penalty_payment') return 'penalty_payment';
@@ -257,6 +342,12 @@ export async function computeCoopSummaryFromInvoices() {
   const profileMap = Object.fromEntries((profilesRes.data || []).map(p => [p.id, profileName(p)]));
 
   // ── Cash In from transactions ─────────────────────────────────────────────
+  const membershipBreakdownKey = (t) => [
+    t.member_id || '',
+    t.reference || '',
+    String(t.transaction_date || t.created_at || '').slice(0, 10),
+  ].join('|');
+
   const isMembershipBreakdownDeposit = (t) => {
     const type = (t.type || '').toLowerCase();
     const cat  = (t.category || '').toLowerCase();
@@ -265,12 +356,32 @@ export async function computeCoopSummaryFromInvoices() {
   };
 
   const membershipBreakdownTx = txList.filter(isMembershipBreakdownDeposit);
+  const membershipBreakdownTotalByKey = membershipBreakdownTx.reduce((map, t) => {
+    const key = membershipBreakdownKey(t);
+    map.set(key, (map.get(key) || 0) + Number(t.amount || 0));
+    return map;
+  }, new Map());
+  const legacyFullMembershipKeys = new Set(
+    txList
+      .filter(t => {
+        const type = String(t.type || '').toLowerCase();
+        const cat = String(t.category || '').toLowerCase();
+        const notes = String(t.notes || '').toLowerCase();
+        const breakdownTotal = membershipBreakdownTotalByKey.get(membershipBreakdownKey(t)) || 0;
+        return type === 'membership_payment' &&
+          cat === 'membership' &&
+          notes.includes('membership breakdown') &&
+          breakdownTotal > 0 &&
+          Number(t.amount || 0) > breakdownTotal;
+      })
+      .map(membershipBreakdownKey)
+  );
 
   const cashInTx = dedupeLoanDeductionTransactions(txList.filter(t => {
     const type = (t.type || '').toLowerCase();
     const cat  = (t.category || '').toLowerCase();
     if (CASH_OUT_TX_TYPES.has(type)) return false;
-    if (isMembershipBreakdownDeposit(t)) return false;
+    if (isMembershipBreakdownDeposit(t) && legacyFullMembershipKeys.has(membershipBreakdownKey(t))) return false;
     return CASH_IN_TX_TYPES.has(type) || CASH_IN_TX_TYPES.has(cat);
   }));
 
@@ -304,26 +415,42 @@ export async function computeCoopSummaryFromInvoices() {
     cashOutInv.reduce((s, i) => s + (i.amount || 0), 0);
 
   // ── Build unified transaction ledger rows for display ─────────────────────
-  const txRows = cashInTx.map(t => ({
-    id:          t.id,
-    type:        'cash_in',
-    category:    transactionReportCategory(t),
-    raw_type:    t.type || null,
-    raw_category: t.category || null,
-    amount:      t.amount,
-    description: t.notes || t.type,
-    ref_no:      t.reference || null,
-    member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
-    loan_id:     t.loan_id || null,
-    created_by:  profileMap[t.created_by] || t.created_by || 'System',
-    created_at:  t.transaction_date || t.created_at,
-    imported_at: t.created_at || null,
-    transaction_date: t.transaction_date || null,
-    source:      t.source || 'manual',
-    record_type: t.record_type || 'workflow',
-  }));
+  const txRows = cashInTx.map(t => {
+    const key = membershipBreakdownKey(t);
+    const type = String(t.type || '').toLowerCase();
+    const cat = String(t.category || '').toLowerCase();
+    const notes = String(t.notes || '').toLowerCase();
+    const isLegacyFullMembershipPayment = legacyFullMembershipKeys.has(key) &&
+      type === 'membership_payment' &&
+      cat === 'membership' &&
+      notes.includes('membership breakdown');
+    const displayAmount = isLegacyFullMembershipPayment
+      ? Math.max(0, Number(t.amount || 0) - (membershipBreakdownTotalByKey.get(key) || 0))
+      : t.amount;
 
-  const membershipBreakdownRows = membershipBreakdownTx.map(t => ({
+    return {
+      id:          t.id,
+      type:        'cash_in',
+      category:    transactionReportCategory(t),
+      raw_type:    t.type || null,
+      raw_category: t.category || null,
+      amount:      displayAmount,
+      description: t.notes || t.type,
+      ref_no:      t.reference || null,
+      member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
+      loan_id:     t.loan_id || null,
+      created_by:  profileMap[t.created_by] || t.created_by || 'System',
+      created_at:  t.transaction_date || t.created_at,
+      imported_at: t.created_at || null,
+      transaction_date: t.transaction_date || null,
+      source:      t.source || 'manual',
+      record_type: t.record_type || 'workflow',
+    };
+  });
+
+  const membershipBreakdownRows = membershipBreakdownTx
+  .filter(t => legacyFullMembershipKeys.has(membershipBreakdownKey(t)))
+  .map(t => ({
     id:          t.id,
     type:        'cash_in',
     category:    transactionReportCategory(t),
@@ -523,12 +650,34 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
   if (txErr) throw txErr;
   const incomeTxList = dedupeLoanDeductionTransactions(txList);
 
+  const isMembershipDeposit = (tx, category) => {
+    const type = String(tx.type || '').toLowerCase();
+    const cat = String(tx.category || '').toLowerCase();
+    const note = String(tx.notes || '').toLowerCase();
+    if (type !== 'deposit' || cat !== category) return false;
+    return note.includes('membership breakdown') ||
+      (note.includes('membership deduction') && note.includes(category === 'cbu' ? 'initial cbu' : 'initial savings'));
+  };
+  const membershipKey = (tx) => [
+    tx.member_id || '',
+    tx.reference || '',
+    String(tx.transaction_date || tx.created_at || '').slice(0, 10),
+  ].join('|');
+  const membershipDepositTotalByKey = txList.reduce((map, tx) => {
+    if (!isMembershipDeposit(tx, 'cbu') && !isMembershipDeposit(tx, 'savings')) return map;
+    const key = membershipKey(tx);
+    map.set(key, (map.get(key) || 0) + Number(tx.amount || 0));
+    return map;
+  }, new Map());
+
   const buckets = {
     service_fee: 0,
     cbu_retention: 0,
+    membership_cbu: 0,
     legal_fees: 0,
     clpi_insurance: 0,
     regular_savings: 0,
+    membership_savings: 0,
     penalty_due: 0,
     annual_dues: 0,
     cbu_completion: 0,
@@ -543,6 +692,16 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     const txCategory = String(tx.category || '').toLowerCase();
     const bucketText = `${note} ${txCategory}`;
     const amount = Number(tx.amount || 0);
+
+    if (isMembershipDeposit(tx, 'cbu')) {
+      buckets.membership_cbu += amount;
+      continue;
+    }
+
+    if (isMembershipDeposit(tx, 'savings')) {
+      buckets.membership_savings += amount;
+      continue;
+    }
 
     if (tx.type === 'loan_deduction') {
       if (bucketText.includes('service')) buckets.service_fee += amount;
@@ -565,18 +724,30 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
       } else if (note.includes('regulatory') || note.includes('admin')) {
         buckets.admin_regulatory_fees += amount;
       } else {
-        buckets.membership_fee += amount;
+        const depositTotal = membershipDepositTotalByKey.get(membershipKey(tx)) || 0;
+        const membershipFeeOnly = note.includes('membership breakdown') && depositTotal > 0 && amount > depositTotal
+          ? amount - depositTotal
+          : amount;
+        buckets.membership_fee += membershipFeeOnly;
       }
     }
   }
+
+  const membershipIncome = await getMembershipMonitoringIncomeSummary({ from, to });
+  buckets.membership_fee = membershipIncome.membership_fee || 0;
+  buckets.membership_cbu = membershipIncome.membership_cbu || 0;
+  buckets.membership_savings = membershipIncome.membership_savings || 0;
+  buckets.vip_card = membershipIncome.vip_card || 0;
 
   const totalIncome =
     loanInterest +
     buckets.service_fee +
     buckets.cbu_retention +
+    buckets.membership_cbu +
     buckets.legal_fees +
     buckets.clpi_insurance +
     buckets.regular_savings +
+    buckets.membership_savings +
     buckets.penalty_due +
     buckets.annual_dues +
     buckets.cbu_completion +
@@ -589,9 +760,11 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     loan_interest: Math.round(loanInterest * 100) / 100,
     service_fee: Math.round(buckets.service_fee * 100) / 100,
     cbu_retention: Math.round(buckets.cbu_retention * 100) / 100,
+    membership_cbu: Math.round(buckets.membership_cbu * 100) / 100,
     legal_fees: Math.round(buckets.legal_fees * 100) / 100,
     clpi_insurance: Math.round(buckets.clpi_insurance * 100) / 100,
     regular_savings: Math.round(buckets.regular_savings * 100) / 100,
+    membership_savings: Math.round(buckets.membership_savings * 100) / 100,
     penalty_due: Math.round(buckets.penalty_due * 100) / 100,
     annual_dues: Math.round(buckets.annual_dues * 100) / 100,
     cbu_completion: Math.round(buckets.cbu_completion * 100) / 100,
@@ -610,8 +783,10 @@ export const CATEGORY_LABEL = {
   loan_interest: 'Loan Interest',
   penalty_payment: 'Penalty Payment',
   cbu: 'CBU Deposit',
+  membership_cbu: 'Membership CBU',
   cbu_withdrawal: 'CBU Withdrawal',
   savings: 'Savings Deposit',
+  membership_savings: 'Membership Savings',
   savings_withdrawal: 'Savings Withdrawal',
   membership: 'Membership Fee',
   penalty: 'Penalty Payment',
@@ -630,8 +805,10 @@ export const CATEGORY_COLOR = {
   loan_interest: 'text-green-700 bg-green-50',
   penalty_payment: 'text-red-700 bg-red-50',
   cbu: 'text-green-700 bg-green-50',
+  membership_cbu: 'text-green-700 bg-green-50',
   cbu_withdrawal: 'text-red-700 bg-red-50',
   savings: 'text-blue-700 bg-blue-50',
+  membership_savings: 'text-blue-700 bg-blue-50',
   savings_withdrawal: 'text-red-700 bg-red-50',
   membership: 'text-purple-700 bg-purple-50',
   penalty: 'text-red-700 bg-red-50',

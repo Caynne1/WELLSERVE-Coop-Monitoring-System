@@ -12,6 +12,7 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import MembersPage from './pages/members/MembersPage';
 import MemberFormPage from './pages/members/MemberFormPage';
 import MemberDetailPage from './pages/members/MemberDetailPage';
+import MembershipMonitoringPage from './pages/membership-monitoring/MembershipMonitoringPage';
 import PassbookPage from './pages/passbook/PassbookPage'; // ✅ NEW
 
 // Financial categories
@@ -142,6 +143,7 @@ export default function App() {
               <Route path="members/:id/edit" element={<PermissionRoute module="members" action="edit"><MemberFormPage /></PermissionRoute>} />
               <Route path="members/:id" element={<PermissionRoute module="members"><MemberDetailPage /></PermissionRoute>} />
               <Route path="passbook" element={<PermissionRoute module="members"><PassbookPage /></PermissionRoute>} />
+              <Route path="membership-monitoring" element={<PermissionRoute module="members"><MembershipMonitoringPage /></PermissionRoute>} />
 
               {/* Financial categories */}
               <Route path="loans" element={<PermissionRoute module="loans"><LoansPage /></PermissionRoute>} />
