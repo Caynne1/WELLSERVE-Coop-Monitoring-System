@@ -7,6 +7,7 @@ export async function getLogs({ limit = 200, search = '', dateFrom = null, dateT
   let query = supabase
     .from('activity_logs')
     .select('id, action, module, description, user_id, created_at, record_id')
+    .neq('action', 'view')
     .order('created_at', { ascending: false })
     .limit(limit);
 

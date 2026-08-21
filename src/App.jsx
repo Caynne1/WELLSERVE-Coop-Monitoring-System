@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -41,7 +40,6 @@ import UserManagementPage from './pages/user-management/UserManagementPage';
 
 // ── NEW: Cooperative Fund Monitoring ──────────────────────────────────────────
 import CoopMonitoringPage from './pages/coop-monitoring/CoopMonitoringPage';
-import { trackActivity } from './services/logService';
 
 // ── NEW: Time Deposit ──────────────────────────────────────────────────────────
 import TimeDepositPage from './pages/time-deposit/TimeDepositPage';
@@ -108,53 +106,6 @@ function LogoutGate() {
   return loggingOut ? <LogoutOverlay /> : null;
 }
 
-const ROUTE_MODULE_LABELS = {
-  dashboard: 'dashboard',
-  members: 'member',
-  passbook: 'passbook',
-  loans: 'loan',
-  cbu: 'cbu',
-  savings: 'savings',
-  transactions: 'transaction',
-  checkbook: 'checkbook',
-  invoices: 'invoice',
-  vouchers: 'voucher',
-  expenses: 'expense',
-  'coop-monitoring': 'account_monitoring',
-  'time-deposit': 'time_deposit',
-  'savings-booster': 'savings_booster',
-  reports: 'reports',
-  logs: 'logs',
-  settings: 'settings',
-  staff: 'staff',
-  'account-management': 'account_management',
-  'user-management': 'user_management',
-  accounts: 'account_monitoring',
-};
-
-function ActivityRouteLogger() {
-  const { user } = useAuth();
-  const location = useLocation();
-  const lastLoggedPath = useRef('');
-
-  useEffect(() => {
-    if (!user?.id || location.pathname === lastLoggedPath.current) return;
-
-    const segment = location.pathname.split('/').filter(Boolean)[0] || 'dashboard';
-    const module = ROUTE_MODULE_LABELS[segment] || segment;
-    lastLoggedPath.current = location.pathname;
-
-    trackActivity({
-      userId: user.id,
-      module,
-      action: 'view',
-      description: `Opened ${location.pathname}`,
-    });
-  }, [location.pathname, user?.id]);
-
-  return null;
-}
-
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -162,7 +113,6 @@ export default function App() {
         <AuthProvider>
           <NotificationProvider>
           <LogoutGate />
-          <ActivityRouteLogger />
           <Routes>
             {/* Public */}
             <Route

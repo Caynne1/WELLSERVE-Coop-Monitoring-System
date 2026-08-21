@@ -26,6 +26,7 @@ import {
 } from '../../services/invoiceService';
 import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
+import { trackActivity } from '../../services/logService';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -272,11 +273,25 @@ export default function InvoicesPage() {
 
       if (editTarget) {
         await updateInvoice(editTarget.id, payload);
+        trackActivity({
+          userId: user?.id,
+          module: 'invoice',
+          action: 'update',
+          description: `Updated invoice ${editTarget.invoice_no || editTarget.id} for ${payload.payee} - ${formatCurrency(payload.amount)}`,
+          recordId: editTarget.id,
+        });
         toast.success('Invoice updated.');
       } else {
-        await createInvoice({
+        const createdInvoice = await createInvoice({
           ...payload,
           status: 'unpaid',
+        });
+        trackActivity({
+          userId: user?.id,
+          module: 'invoice',
+          action: 'create',
+          description: `Created invoice ${createdInvoice?.invoice_no || ''} for ${payload.payee} - ${formatCurrency(payload.amount)}`.trim(),
+          recordId: createdInvoice?.id || null,
         });
         toast.success('Invoice created.');
       }
@@ -341,6 +356,13 @@ export default function InvoicesPage() {
     setDeleting(true);
     try {
       await deleteInvoiceAndLinkedRecords(deleteTarget.id, { deleted_by: user?.id || null });
+      trackActivity({
+        userId: user?.id,
+        module: 'invoice',
+        action: 'delete',
+        description: `Deleted invoice ${deleteTarget.invoice_no || 'record'} for ${deleteTarget.payee || 'unknown payee'} - ${formatCurrency(deleteTarget.amount || 0)}`,
+        recordId: deleteTarget.id,
+      });
       toast.success(`Invoice ${deleteTarget.invoice_no || 'record'} deleted and linked records reversed.`);
       setDeleteTarget(null);
       fetchInvoices();
@@ -1496,6 +1518,13 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
         created_by: userId ?? null,
       });
       const savedLabel = invoiceNo.trim() ? `Invoice ${invoiceNo.trim()}` : 'Old transaction';
+      const memberName = `${member.first_name || ''} ${member.last_name || ''}`.trim() || 'selected member';
+      trackActivity({
+        userId,
+        module: 'invoice',
+        action: 'create',
+        description: `${savedLabel} saved for ${memberName} with ${entries.length} payment categor${entries.length > 1 ? 'ies' : 'y'} - ${formatCurrency(totalAmount)}`,
+      });
       toast.success(`${savedLabel} saved with ${entries.length} payment categor${entries.length > 1 ? 'ies' : 'y'}.`);
       onSuccess();
       reset();

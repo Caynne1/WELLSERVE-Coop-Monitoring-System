@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  FileText, Search, Download, X, Calendar, Printer, RefreshCw,
+  FileText, Search, Download, X, Calendar, Printer,
   ActivitySquare, User, Layers, ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -70,13 +70,12 @@ function uniqueOptions(rows, key) {
 }
 
 function exportLogsToCSV(logs) {
-  const headers = ['Date & Time', 'User Name', 'Module', 'Action Performed', 'Record ID', 'Description'];
+  const headers = ['Date & Time', 'User Name', 'Module', 'Action Performed', 'Description'];
   const rows = logs.map(log => [
     formatDateTime(log.created_at),
     displayUser(log),
     log.module || '',
     displayText(log.action),
-    log.record_id || '',
     (log.description || '').replace(/,/g, ';'),
   ]);
 
@@ -231,14 +230,13 @@ export default function ActivityLogsPage() {
       <td>${displayUser(log)}</td>
       <td style="text-transform:capitalize">${displayText(log.module)}</td>
       <td style="text-transform:capitalize">${displayText(log.action)}</td>
-      <td style="font-family:monospace;font-size:8pt">${log.record_id || '-'}</td>
       <td style="max-width:240px">${log.description || '-'}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Activity Logs</h1>
       <div class="report-meta">System audit trail | ${filteredLogs.length} records | Generated: ${new Date().toLocaleString('en-PH')}</div>
       <table>
-        <thead><tr><th>Date &amp; Time</th><th>User Name</th><th>Module</th><th>Action Performed</th><th>Record ID</th><th>Description</th></tr></thead>
+        <thead><tr><th>Date &amp; Time</th><th>User Name</th><th>Module</th><th>Action Performed</th><th>Description</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
@@ -293,7 +291,7 @@ export default function ActivityLogsPage() {
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder="Search action, module, user, record..."
+              placeholder="Search action, module, user, description..."
               className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000066]/30 focus:border-[#000066]/60"
             />
             {searchInput && (
@@ -354,14 +352,6 @@ export default function ActivityLogsPage() {
 
         <div className="flex-1" />
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchLogs({ quiet: true })}
-          icon={<RefreshCw size={13} className={loading ? 'animate-spin' : ''} />}
-        >
-          Refresh
-        </Button>
         <Button variant="outline" size="sm" onClick={handlePrint} icon={<Printer size={13} />}>
           Print
         </Button>
@@ -418,7 +408,7 @@ export default function ActivityLogsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Date & Time', 'User Name', 'Module', 'Action Performed', 'Record ID', 'Description'].map(header => (
+                  {['Date & Time', 'User Name', 'Module', 'Action Performed', 'Description'].map(header => (
                     <th key={header} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {header}
                     </th>
@@ -428,7 +418,7 @@ export default function ActivityLogsPage() {
               <tbody className="divide-y divide-gray-50">
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-16 text-gray-400">
+                    <td colSpan={5} className="text-center py-16 text-gray-400">
                       <FileText size={32} className="mx-auto mb-2 text-gray-200" />
                       {hasActiveFilters ? 'No logs match your filters.' : 'No activity logs found.'}
                     </td>
@@ -455,9 +445,6 @@ export default function ActivityLogsPage() {
                       <span className={`text-xs px-2 py-0.5 rounded-md font-medium capitalize ${actionBadgeClass(log.action)}`}>
                         {displayText(log.action)}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs font-mono">
-                      {log.record_id ? String(log.record_id).slice(0, 12) : '-'}
                     </td>
                     <td className="px-4 py-3 text-gray-500 max-w-md truncate" title={log.description}>
                       {log.description || '-'}

@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import toast from 'react-hot-toast';
 import { trackActivity } from '../services/logService';
 
 const AuthContext = createContext(null);
+const LOGIN_LOGGED_USER_KEY = 'wellserve:activity-login-logged-user';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -11,6 +12,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const loggedLoginUserRef = useRef(null);
 
   const fetchAndValidateProfile = useCallback(async (authUser) => {
     if (!authUser) {
@@ -115,7 +117,20 @@ export function AuthProvider({ children }) {
 
       fetchAndValidateProfile(nextSession?.user ?? null);
 
+      if (_event === 'SIGNED_OUT') {
+        loggedLoginUserRef.current = null;
+        localStorage.removeItem(LOGIN_LOGGED_USER_KEY);
+      }
+
       if (_event === 'SIGNED_IN' && nextSession?.user?.id) {
+        const loggedUserId = localStorage.getItem(LOGIN_LOGGED_USER_KEY);
+        if (loggedLoginUserRef.current === nextSession.user.id || loggedUserId === nextSession.user.id) {
+          return;
+        }
+
+        loggedLoginUserRef.current = nextSession.user.id;
+        localStorage.setItem(LOGIN_LOGGED_USER_KEY, nextSession.user.id);
+
         trackActivity({
           userId: nextSession.user.id,
           module: 'auth',
@@ -141,6 +156,8 @@ export function AuthProvider({ children }) {
         description: 'User signed out.',
       });
     }
+    loggedLoginUserRef.current = null;
+    localStorage.removeItem(LOGIN_LOGGED_USER_KEY);
     // Let the logout animation play briefly before the auth state actually
     // flips and the router kicks the user back to /login.
     await new Promise(resolve => setTimeout(resolve, 1100));
