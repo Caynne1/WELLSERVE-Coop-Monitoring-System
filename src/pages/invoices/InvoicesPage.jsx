@@ -6,7 +6,6 @@ import {
 import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
-import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -30,16 +29,16 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_BADGE = {
-  unpaid: 'warning',
-  paid: 'success',
-  voided: 'danger',
-};
-
 const STATUS_LABEL = {
   unpaid: 'Unpaid',
   paid: 'Paid',
   voided: 'Voided',
+};
+
+const STATUS_PILL_CLASS = {
+  unpaid: 'border-amber-200 bg-amber-50 text-amber-700',
+  paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  voided: 'border-red-200 bg-red-50 text-red-700',
 };
 
 const PAYMENT_TYPE_OPTIONS = [
@@ -716,9 +715,9 @@ export default function InvoicesPage() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <Badge variant={STATUS_BADGE[invoice.status] || 'default'} dot>
+                      <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[invoice.status] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
                         {STATUS_LABEL[invoice.status] || invoice.status}
-                      </Badge>
+                      </span>
                     </td>
 
                     <td className="px-4 py-3">
@@ -952,9 +951,9 @@ export default function InvoicesPage() {
                 {viewTarget.invoice_no}
               </span>
               <div className="flex items-center gap-2">
-                <Badge variant={STATUS_BADGE[viewTarget.status] || 'default'} dot>
+                <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[viewTarget.status] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
                   {STATUS_LABEL[viewTarget.status] || viewTarget.status}
-                </Badge>
+                </span>
               </div>
             </div>
 
