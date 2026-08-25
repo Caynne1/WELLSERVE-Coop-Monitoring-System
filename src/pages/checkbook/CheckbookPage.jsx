@@ -28,6 +28,11 @@ import { getVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
+function voucherNoDisplay(value) {
+  if (!value) return '';
+  return String(value || '').startsWith('FOR-TRACING-') ? 'For Tracing' : value;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STATUS_LABEL = {
@@ -168,7 +173,7 @@ export default function CheckbookPage() {
   function getVoucherCheckFields(voucher) {
     if (!voucher) return {};
     const noteParts = [
-      voucher.voucher_no ? `Voucher No: ${voucher.voucher_no}` : null,
+      voucher.voucher_no ? `Voucher No: ${voucherNoDisplay(voucher.voucher_no)}` : null,
       voucher.reference ? `Reference: ${voucher.reference}` : null,
       voucher.notes || null,
     ].filter(Boolean);
@@ -571,7 +576,7 @@ export default function CheckbookPage() {
                       {/* [ADDED] Show linked voucher number below purpose when present */}
                       {entry.vouchers && (
                         <p className="text-xs font-mono text-[#07A04E] mt-0.5">
-                          {entry.vouchers.voucher_no}
+                          {voucherNoDisplay(entry.vouchers.voucher_no)}
                         </p>
                       )}
                     </td>
@@ -720,7 +725,7 @@ export default function CheckbookPage() {
               <option value="">— None —</option>
               {availableVouchers.map(v => (
                 <option key={v.id} value={v.id}>
-                  {v.voucher_no} · {v.payee} · {formatCurrency(v.amount)}
+                  {voucherNoDisplay(v.voucher_no)} · {v.payee} · {formatCurrency(v.amount)}
                 </option>
               ))}
             </select>
@@ -854,7 +859,7 @@ export default function CheckbookPage() {
                   </span>
                   <div className="text-right">
                     <p className="font-mono text-xs font-bold text-gray-700">
-                      {viewTarget.vouchers.voucher_no}
+                      {voucherNoDisplay(viewTarget.vouchers.voucher_no)}
                     </p>
                     <p className="text-gray-900 text-sm mt-0.5">
                       {viewTarget.vouchers.payee}

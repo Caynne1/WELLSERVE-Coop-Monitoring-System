@@ -88,7 +88,14 @@ const STATUS_PILL_CLASS = {
 
 function voucherDisplay(value) {
   if (!value) return '';
+  if (String(value || '').startsWith('FOR-TRACING-')) return 'For Tracing';
   return isNeedVoucherNumber(value) ? 'Need Voucher Number' : value;
+}
+
+function loanExpenseOptionLabel(loan) {
+  const borrower = loan.payee || `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim() || 'Borrower';
+  const reference = loan.loan_no || `Loan ${String(loan.id || '').slice(0, 8).toUpperCase()}`;
+  return `${reference} - ${borrower} - ${formatCurrency(loan.net_proceeds || 0)}`;
 }
 
 // Column defs shared by header + body so alignment can never drift between
@@ -499,7 +506,7 @@ export default function ExpensesPage() {
               <option value="">Create Loan Expense</option>
               {loanList.map(loan => (
                 <option key={loan.id} value={loan.id}>
-                  {loan.loan_no || loan.id} - {loan.payee || `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim()} - {formatCurrency(loan.net_proceeds || 0)}
+                  {loanExpenseOptionLabel(loan)}
                 </option>
               ))}
             </select>

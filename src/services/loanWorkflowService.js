@@ -26,6 +26,10 @@ function memberName(member) {
   return [member?.first_name, member?.last_name].filter(Boolean).join(' ').trim();
 }
 
+function dateOnly(value) {
+  return String(value || '').split('T')[0];
+}
+
 export function getLoanNetProceeds(loan) {
   const deductions = parseJSONSafe(loan?.preview_deductions_json, {});
   const fromPreview = Number(deductions.net_proceeds || 0);
@@ -364,8 +368,9 @@ export async function getLoanByReference(reference) {
 
 export function buildLoanExpensePayload(loan, createdBy) {
   const borrower = memberName(loan.members) || loan.loan_no || 'Borrower';
+  const loanStartDate = dateOnly(loan.release_date) || new Date().toISOString().split('T')[0];
   return {
-    date: new Date().toISOString().split('T')[0],
+    date: loanStartDate,
     description: `Loan net proceeds - ${loan.loan_no || loan.id}`,
     category: 'loan_net_proceeds',
     amount: getLoanNetProceeds(loan),

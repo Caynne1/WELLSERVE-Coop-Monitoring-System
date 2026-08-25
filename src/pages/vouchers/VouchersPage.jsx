@@ -56,8 +56,10 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'GCash', label: 'GCash' },
   { value: 'Bank Transfer', label: 'Bank Transfer' },
   { value: 'Check', label: 'Check' },
-  { value: 'Others', label: 'Others' },
+  { value: 'For Tracing', label: 'For Tracing' },
 ];
+
+const VOUCHER_FOR_TRACING_PREFIX = 'FOR-TRACING';
 
 const EMPTY_FORM = {
   voucher_no: '',
@@ -120,7 +122,18 @@ function voucherStatusPillClass(voucher) {
 
 function voucherNoDisplay(value) {
   if (!value) return '';
+  if (isVoucherForTracing(value)) return 'For Tracing';
   return isNeedVoucherNumber(value) ? 'Need Voucher Number' : value;
+}
+
+function isVoucherForTracing(value = '') {
+  const text = String(value || '').trim();
+  return text.toLowerCase() === 'for tracing' || text.startsWith(`${VOUCHER_FOR_TRACING_PREFIX}-`);
+}
+
+function makeVoucherForTracingNumber(seed = '') {
+  const suffix = String(seed || Date.now()).replace(/[^A-Za-z0-9]/g, '').slice(0, 14);
+  return `${VOUCHER_FOR_TRACING_PREFIX}-${suffix}`;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -496,7 +509,11 @@ export default function VouchersPage() {
     }
     setEditTarget(voucher);
     setForm({
-      voucher_no: isNeedVoucherNumber(voucher.voucher_no) ? '' : (voucher.voucher_no || ''),
+      voucher_no: isNeedVoucherNumber(voucher.voucher_no)
+        ? ''
+        : isVoucherForTracing(voucher.voucher_no)
+          ? 'For Tracing'
+          : (voucher.voucher_no || ''),
       voucher_kind: voucher.voucher_kind || 'expense',
       date: voucher.date || '',
       payee: voucher.payee || '',
@@ -591,6 +608,8 @@ export default function VouchersPage() {
       const duplicate = vouchers.some(v =>
         v.id !== editTarget?.id &&
         !isNeedVoucherNumber(v.voucher_no) &&
+        !isVoucherForTracing(v.voucher_no) &&
+        !isVoucherForTracing(voucherNo) &&
         String(v.voucher_no || '').trim().toLowerCase() === voucherNo.toLowerCase()
       );
       if (duplicate) errs.voucher_no = 'This voucher number is already used.';
@@ -638,8 +657,14 @@ export default function VouchersPage() {
 
     setSaving(true);
     try {
+      const normalizedVoucherNo = isVoucherForTracing(form.voucher_no)
+        ? (editTarget && isVoucherForTracing(editTarget.voucher_no)
+          ? editTarget.voucher_no
+          : makeVoucherForTracingNumber(editTarget?.id || Date.now()))
+        : form.voucher_no.trim();
+
       const basePayload = {
-        voucher_no: form.voucher_no.trim(),
+        voucher_no: normalizedVoucherNo,
         date: form.date,
         payee: form.payee.trim(),
         purpose: form.purpose.trim(),
@@ -687,7 +712,8 @@ export default function VouchersPage() {
       } else {
         if (lockedExpenseVoucher) {
           const voucher = await updateVoucher(editTarget.id, {
-            voucher_no: form.voucher_no.trim(),
+            voucher_no: normalizedVoucherNo,
+            notes: form.notes.trim() || null,
           });
           await linkExpenseVoucher(form.expense_id, voucher.id, voucher.voucher_no);
           toast.success('Voucher number updated.');
@@ -727,7 +753,7 @@ export default function VouchersPage() {
       const isDuplicate = err.message?.includes('unique') || err.code === '23505';
       toast.error(
         isDuplicate
-          ? `Voucher number "${form.voucher_no}" already exists.`
+          ? `Voucher number "${voucherNoDisplay(form.voucher_no) || form.voucher_no}" already exists.`
           : err.message || 'Failed to save voucher.'
       );
     } finally {
@@ -751,8 +777,8 @@ export default function VouchersPage() {
     setApproving(true);
     try {
       await approveVoucher(approveTarget.id);
-      toast.success(`Voucher ${approveTarget.voucher_no} approved.`);
-      trackActivity({ userId: user?.id, module: 'voucher', action: 'approve', description: `Approved voucher ${approveTarget.voucher_no}` });
+      toast.success(`Voucher ${voucherNoDisplay(approveTarget.voucher_no)} approved.`);
+      trackActivity({ userId: user?.id, module: 'voucher', action: 'approve', description: `Approved voucher ${voucherNoDisplay(approveTarget.voucher_no)}` });
       setApproveTarget(null);
       fetchVouchers();
     } catch (err) {
@@ -1092,15 +1118,32 @@ export default function VouchersPage() {
             )}
           </div>
 
-          <Input
-            label="Voucher No."
-            required
-            type="text"
-            placeholder="Enter voucher number"
-            value={form.voucher_no}
-            onChange={e => setField('voucher_no', e.target.value)}
-            error={formErr.voucher_no}
-          />
+          <div className="space-y-2">
+            <Input
+              label="Voucher No."
+              required
+              type="text"
+              placeholder="Enter voucher number"
+              value={form.voucher_no}
+              onChange={e => setField('voucher_no', e.target.value)}
+              error={formErr.voucher_no}
+              disabled={isVoucherForTracing(form.voucher_no)}
+            />
+            <button
+              type="button"
+              onClick={() => setField('voucher_no', isVoucherForTracing(form.voucher_no) ? '' : 'For Tracing')}
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                isVoucherForTracing(form.voucher_no)
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-amber-200 hover:text-amber-700'
+              }`}
+            >
+              {isVoucherForTracing(form.voucher_no) ? 'For Tracing selected' : 'Mark as For Tracing'}
+            </button>
+            <p className="text-xs text-gray-400">
+              Use this only when the voucher number still needs audit tracing.
+            </p>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Input
@@ -1149,7 +1192,7 @@ export default function VouchersPage() {
                 disabled={lockedExpenseVoucher}
               />
 
-              <div className="flex flex-col gap-1">
+              <div className="hidden">
                 <label className="text-sm font-medium text-gray-700">
                   Linked Expense
                   <span className="ml-1.5 text-xs font-normal text-gray-400">(optional)</span>
@@ -1288,11 +1331,10 @@ export default function VouchersPage() {
               onChange={e => setField('notes', e.target.value)}
               className="px-3 py-2 text-sm border border-gray-200 rounded-lg
                 focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition resize-none disabled:bg-gray-50"
-              disabled={lockedExpenseVoucher}
             />
           </div>
 
-          <details className="rounded-lg border border-gray-200" open={false}>
+          <details className="hidden" open={false}>
             <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg">
               Cash Voucher slip details <span className="font-normal text-gray-400">(optional — for the printable slip)</span>
             </summary>
