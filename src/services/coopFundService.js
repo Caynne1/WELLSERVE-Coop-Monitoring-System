@@ -440,7 +440,7 @@ export async function computeCoopSummaryFromInvoices() {
       member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
       loan_id:     t.loan_id || null,
       created_by:  profileMap[t.created_by] || t.created_by || 'System',
-      created_at:  t.transaction_date || t.created_at,
+      created_at:  t.created_at,
       imported_at: t.created_at || null,
       transaction_date: t.transaction_date || null,
       source:      t.source || 'manual',
@@ -462,7 +462,7 @@ export async function computeCoopSummaryFromInvoices() {
     member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
     loan_id:     t.loan_id || null,
     created_by:  profileMap[t.created_by] || t.created_by || 'System',
-    created_at:  t.transaction_date || t.created_at,
+    created_at:  t.created_at,
     imported_at: t.created_at || null,
     transaction_date: t.transaction_date || null,
     source:      t.source || 'manual',
@@ -482,7 +482,7 @@ export async function computeCoopSummaryFromInvoices() {
     member_name: memberMap[t.member_id] || extractMemberNameFromHistoricalNotes(t.notes) || null,
     loan_id:     t.loan_id || null,
     created_by:  profileMap[t.created_by] || t.created_by || 'System',
-    created_at:  t.transaction_date || t.created_at,
+    created_at:  t.created_at,
     imported_at: t.created_at || null,
     transaction_date: t.transaction_date || null,
     source:      t.source || 'manual',
@@ -498,7 +498,7 @@ export async function computeCoopSummaryFromInvoices() {
     member_name: inv.payee || '—',
     ref_no:      inv.invoice_no,
     created_by:  profileMap[inv.created_by] || inv.created_by || 'System',
-    created_at:  inv.date || inv.created_at,
+    created_at:  inv.created_at,
     transaction_date: inv.date || null,
   }));
 
@@ -509,7 +509,7 @@ export async function computeCoopSummaryFromInvoices() {
     amount:      vch.amount,
     description: vch.purpose || vch.payee,
     ref_no:      vch.voucher_no,
-    created_at:  vch.date || vch.created_at,
+    created_at:  vch.created_at,
     transaction_date: vch.date || null,
   }));
 

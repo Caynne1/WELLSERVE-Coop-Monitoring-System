@@ -60,6 +60,43 @@ function txDisplayDate(tx) {
   return null;
 }
 
+function hasMeaningfulTime(value) {
+  const text = String(value || '').trim();
+  if (!text || /^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const match = text.match(/(?:T|\s)(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return false;
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  const seconds = Number(match[3] || 0);
+  return hours !== 0 || minutes !== 0 || seconds !== 0;
+}
+
+function formatTransactionDisplayDate(tx) {
+  const transactionDate = tx?.transaction_date;
+  const createdAt = tx?.created_at;
+
+  if (parseLedgerDate(transactionDate)) {
+    if (hasMeaningfulTime(transactionDate)) return formatDateTime(transactionDate);
+
+    if (tx?.source !== 'imported' && parseLedgerDate(createdAt)) {
+      const displayDate = parseLedgerDate(transactionDate);
+      const displayTime = parseLedgerDate(createdAt);
+      displayDate.setHours(
+        displayTime.getHours(),
+        displayTime.getMinutes(),
+        displayTime.getSeconds(),
+        displayTime.getMilliseconds()
+      );
+      return formatDateTime(displayDate);
+    }
+
+    return formatDate(transactionDate);
+  }
+
+  if (parseLedgerDate(createdAt)) return formatDateTime(createdAt);
+  return '—';
+}
+
 function normalizeCategoryText(value = '') {
   return String(value || '').trim().toLowerCase();
 }
@@ -895,11 +932,10 @@ function DateRangePicker({ from, to, onChange, years = [] }) {
 
 function TxRow({ tx }) {
   const isCashIn = tx.type === 'cash_in';
-  const displayDate = txDisplayDate(tx);
   return (
     <tr className="hover:bg-gray-50/60 transition-colors">
       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-        {displayDate ? formatDateTime(displayDate) : '—'}
+        {formatTransactionDisplayDate(tx)}
         {tx.source === 'imported' && tx.imported_at && (
           <div className="text-[10px] text-gray-400">
             Imported {formatDateTime(tx.imported_at)}
@@ -1366,9 +1402,8 @@ export default function CoopMonitoringPage() {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
   const reportTransactionRows = useCallback(rows => rows.map(tx => {
-    const displayDate = txDisplayDate(tx);
     return {
-      'Date & Time': displayDate ? formatDateTime(displayDate) : '',
+      'Date & Time': formatTransactionDisplayDate(tx),
       Type: tx.type === 'cash_in' ? 'IN' : 'OUT',
       Category: CATEGORY_LABEL[tx.category] || tx.category || '',
       Amount: Number(tx.amount || 0),
@@ -1379,9 +1414,8 @@ export default function CoopMonitoringPage() {
     };
   }), []);
   const printableTransactionRows = rows => rows.map(tx => {
-    const displayDate = txDisplayDate(tx);
     return `<tr>
-      <td style="white-space:nowrap">${escapeHtml(displayDate ? formatDateTime(displayDate) : '-')}</td>
+      <td style="white-space:nowrap">${escapeHtml(formatTransactionDisplayDate(tx))}</td>
       <td style="text-align:center">${escapeHtml(tx.type === 'cash_in' ? 'IN' : 'OUT')}</td>
       <td>${escapeHtml(CATEGORY_LABEL[tx.category] || tx.category || '-')}</td>
       <td style="text-align:right;font-weight:600;color:${tx.type === 'cash_in' ? '#065f46' : '#b91c1c'}">${escapeHtml(fmt(tx.amount))}</td>
