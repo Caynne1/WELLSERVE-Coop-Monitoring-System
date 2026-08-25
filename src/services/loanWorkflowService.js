@@ -397,9 +397,21 @@ export async function releaseLoanFromCheck(check, userId) {
       'Linked loan could not be found. Please make sure the linked voucher or expense contains the Loan No. in its Reference, Notes, or Purpose.'
     );
   }
-  if (loan.status === 'released') return loan;
+  const releaseDate =
+    dateOnly(check.date) ||
+    dateOnly(loan.release_date) ||
+    new Date().toISOString().split('T')[0];
 
-  const releaseDate = new Date().toISOString().split('T')[0];
+  if (loan.status === 'released') {
+    await supabase
+      .from('transactions')
+      .update({ transaction_date: releaseDate })
+      .eq('loan_id', loan.id)
+      .in('type', ['loan_release', 'loan_deduction']);
+
+    return updateLoan(loan.id, { release_date: releaseDate });
+  }
+
   const { data: existingRelease, error: releaseLookupError } = await supabase
     .from('transactions')
     .select('id')
@@ -408,6 +420,12 @@ export async function releaseLoanFromCheck(check, userId) {
     .maybeSingle();
   if (releaseLookupError) throw releaseLookupError;
   if (existingRelease) {
+    await supabase
+      .from('transactions')
+      .update({ transaction_date: releaseDate })
+      .eq('loan_id', loan.id)
+      .in('type', ['loan_release', 'loan_deduction']);
+
     await postLoanMembershipDeduction(loan, userId, releaseDate);
     return updateLoan(loan.id, {
       status: 'released',
