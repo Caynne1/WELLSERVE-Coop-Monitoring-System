@@ -319,6 +319,16 @@ export default function MembersPage() {
       }
 
       return matchesSearch && matchesType && matchesStatus && matchesYear;
+    }).sort((a, b) => {
+      const aNo = formatMemberNo(a.member_no);
+      const bNo = formatMemberNo(b.member_no);
+      const aNum = /^\d+$/.test(aNo) ? Number(aNo) : null;
+      const bNum = /^\d+$/.test(bNo) ? Number(bNo) : null;
+
+      if (aNum !== null && bNum !== null) return aNum - bNum;
+      if (aNum !== null) return -1;
+      if (bNum !== null) return 1;
+      return aNo.localeCompare(bNo);
     });
   }, [members, search, typeFilter, statusTab, yearFilter, isClosedView, isKiddyView]);
 
