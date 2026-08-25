@@ -775,12 +775,17 @@ export async function createMultiCategoryInvoice({
         const entryAmount = Object.prototype.hasOwnProperty.call(breakdown, 'entry')
           ? Number(breakdown.entry || 0)
           : amount;
+        const adminRegulatoryAmount = Number(breakdown.admin_regulatory || 0) || 0;
+        const vipCardAmount = Number(breakdown.vip_card || 0) || 0;
         const cbuAmount = Number(breakdown.cbu || 0) || 0;
         const savingsAmount = Number(breakdown.savings || 0) || 0;
         const breakdownNotes = JSON.stringify({
           entry: entryAmount,
+          admin_regulatory: adminRegulatoryAmount,
+          vip_card: vipCardAmount,
           cbu: cbuAmount,
           savings: savingsAmount,
+          rows: Array.isArray(breakdown.rows) ? breakdown.rows : [],
           ...(notes ? { text: notes } : {}),
         });
         const membershipRequired = parseFloat(entry.membership.fee_required) || 0;
@@ -812,6 +817,42 @@ export async function createMultiCategoryInvoice({
           });
           rollbacks.push(async () => {
             await supabase.from('transactions').delete().eq('id', membershipTx.id);
+          });
+        }
+
+        if (adminRegulatoryAmount > 0) {
+          const adminTx = await createTransaction({
+            member_id: member.id,
+            category: 'membership',
+            type: 'membership_payment',
+            amount: adminRegulatoryAmount,
+            reference: invoiceReference,
+            notes: [entry.purpose || 'Membership Fee Payment', 'Admin & Regulatory Fees', notes].filter(Boolean).join(' - '),
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', adminTx.id);
+          });
+        }
+
+        if (vipCardAmount > 0) {
+          const vipTx = await createTransaction({
+            member_id: member.id,
+            category: 'membership',
+            type: 'membership_payment',
+            amount: vipCardAmount,
+            reference: invoiceReference,
+            notes: [entry.purpose || 'Membership Fee Payment', 'WELLife VIP Card', notes].filter(Boolean).join(' - '),
+            created_by,
+            transaction_date: effectivePaymentDate,
+            payment_mode,
+            payment_mode_note,
+          });
+          rollbacks.push(async () => {
+            await supabase.from('transactions').delete().eq('id', vipTx.id);
           });
         }
 

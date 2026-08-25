@@ -4,8 +4,8 @@ import {
   LayoutDashboard, Plus, AlertTriangle, Calendar,
   X, Printer, Download,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import PesoSign from '../../components/shared/PesoSign';
-import { exportToCSV } from '../../utils/csvExport';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
@@ -39,8 +39,25 @@ const PAYMENT_MODE_OPTIONS = [
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+const MIN_LEDGER_YEAR = 2023;
+const MAX_VISIBLE_FUND_ROWS = 250;
+
+function parseLedgerDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const maxYear = new Date().getFullYear() + 10;
+  if (year < MIN_LEDGER_YEAR || year > maxYear) return null;
+
+  return date;
+}
+
 function txDisplayDate(tx) {
-  return tx?.transaction_date || tx?.created_at || null;
+  if (parseLedgerDate(tx?.transaction_date)) return tx.transaction_date;
+  if (parseLedgerDate(tx?.created_at)) return tx.created_at;
+  return null;
 }
 
 function normalizeCategoryText(value = '') {
@@ -631,8 +648,8 @@ function CashInBreakdown({ transactions, incomeData }) {
 function DashboardCharts({ transactions, incomeData }) {
   const now = new Date();
   const txDates = transactions
-    .map(tx => new Date(txDisplayDate(tx)))
-    .filter(d => !Number.isNaN(d.getTime()));
+    .map(tx => parseLedgerDate(txDisplayDate(tx)))
+    .filter(Boolean);
 
   const firstMonth = txDates.length
     ? new Date(Math.min(...txDates.map(d => new Date(d.getFullYear(), d.getMonth(), 1).getTime())))
@@ -658,7 +675,8 @@ function DashboardCharts({ transactions, incomeData }) {
   }
 
   const bucket = (tx) => {
-    const d = new Date(txDisplayDate(tx));
+    const d = parseLedgerDate(txDisplayDate(tx));
+    if (!d) return -1;
     return months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
   };
 
@@ -675,25 +693,40 @@ function DashboardCharts({ transactions, incomeData }) {
   const labels = months.map(m => m.label);
   const chartMinWidth = Math.max(640, labels.length * 72);
 
+  const cashInTx   = transactions.filter(tx => tx.type === 'cash_in');
   const breakdownDefs = [
     { key: 'loan_payment', label: 'Loan Payments', color: '#f97316' },
     { key: 'cbu',          label: 'CBU Deposits',  color: '#22c55e' },
     { key: 'membership_cbu', label: 'Membership CBU', color: '#16a34a' },
     { key: 'savings',      label: 'Savings',        color: '#3b82f6' },
     { key: 'membership_savings', label: 'Membership Savings', color: '#0284c7' },
-    { key: 'membership',   label: 'Membership',     color: '#a855f7' },
+    { key: 'membership',   label: 'Membership/Admin & Regulatory Fees', color: '#a855f7' },
+    { key: 'vip_card',     label: 'WELLife VIP Card', color: '#ec4899' },
+    { key: 'loan_interest', label: 'Loan Interest', color: '#16a34a' },
+    { key: 'service_fee',  label: 'Service Fee',    color: '#fb923c' },
+    { key: 'cbu_retention', label: 'CBU Retention', color: '#059669' },
+    { key: 'regular_savings', label: 'Regular Savings', color: '#2563eb' },
+    { key: 'legal_fees',   label: 'Legal Fees',     color: '#475569' },
+    { key: 'clpi_insurance', label: 'CLPI/Insurance', color: '#dc2626' },
+    { key: 'annual_dues',  label: 'Annual Due',     color: '#9333ea' },
+    { key: 'penalty_due',  label: 'Penalty Due',    color: '#d97706' },
+    { key: 'petty_cash',   label: 'Petty Cash',     color: '#65a30d' },
     { key: 'capital',      label: 'Capital',        color: '#6366f1' },
     { key: 'time_deposit', label: 'Time Deposits',  color: '#8b5cf6' },
+    { key: 'savings_booster', label: 'Savings Booster', color: '#0f766e' },
     { key: 'invoice',      label: 'Other',          color: '#9ca3af' },
   ];
-
-  const cashInTx   = transactions.filter(tx => tx.type === 'cash_in');
+  const knownBreakdownKeys = new Set(breakdownDefs.map(def => def.key));
+  const extraBreakdownDefs = [...new Set(cashInTx.map(tx => tx.category).filter(Boolean))]
+    .filter(key => !knownBreakdownKeys.has(key))
+    .map(key => ({ key, label: displayCategoryLabel(key), color: '#64748b' }));
   const membershipTotals = {
-    membership: Number(incomeData?.membership_fee || 0),
+    membership: Number(incomeData?.membership_fee || 0) + Number(incomeData?.admin_regulatory_fees || 0),
     membership_cbu: Number(incomeData?.membership_cbu || 0),
     membership_savings: Number(incomeData?.membership_savings || 0),
+    vip_card: Number(incomeData?.vip_card || 0),
   };
-  const donutSlices = breakdownDefs.map(d => ({
+  const donutSlices = [...breakdownDefs, ...extraBreakdownDefs].map(d => ({
     ...d,
     value: Object.prototype.hasOwnProperty.call(membershipTotals, d.key)
       ? membershipTotals[d.key]
@@ -1156,8 +1189,8 @@ export default function CoopMonitoringPage() {
     const currentYear = new Date().getFullYear();
     const baseYears = Array.from({ length: Math.max(8, currentYear - 2024 + 5) }, (_, i) => 2024 + i);
     const transactionYears = transactions
-      .map(tx => new Date(txDisplayDate(tx)))
-      .filter(d => !Number.isNaN(d.getTime()))
+      .map(tx => parseLedgerDate(txDisplayDate(tx)))
+      .filter(Boolean)
       .map(d => d.getFullYear());
 
     return [...new Set([...baseYears, ...transactionYears])].sort((a, b) => b - a);
@@ -1165,8 +1198,8 @@ export default function CoopMonitoringPage() {
 
   const dateFilteredTransactions = useMemo(() => {
     return transactions.filter(tx => {
-      const txDate = new Date(txDisplayDate(tx));
-      if (Number.isNaN(txDate.getTime())) return !dateRange.from && !dateRange.to;
+      const txDate = parseLedgerDate(txDisplayDate(tx));
+      if (!txDate) return !dateRange.from && !dateRange.to;
       if (dateRange.from && txDate < new Date(dateRange.from)) return false;
       if (dateRange.to) {
         const toDate = new Date(dateRange.to);
@@ -1200,6 +1233,11 @@ export default function CoopMonitoringPage() {
       return true;
     });
   }, [dateFilteredTransactions, typeFilter, catFilter]);
+
+  const visibleTransactions = useMemo(
+    () => filtered.slice(0, MAX_VISIBLE_FUND_ROWS),
+    [filtered]
+  );
 
   const loanPaymentTotal = useMemo(() => {
     return dateFilteredTransactions
@@ -1292,6 +1330,78 @@ export default function CoopMonitoringPage() {
   const hasFilters   = typeFilter || catFilter || dateRange.from || dateRange.to;
   const hasDateFilter = dateRange.from || dateRange.to;
 
+  const cashInRows = useMemo(() => filtered.filter(tx => tx.type === 'cash_in'), [filtered]);
+  const cashOutRows = useMemo(() => filtered.filter(tx => tx.type === 'cash_out'), [filtered]);
+  const incomeMonitoringRows = useMemo(() => (incomeData ? [
+    ['Loan Interest', incomeData.loan_interest || 0],
+    ['Service Fee', incomeData.service_fee || 0],
+    ['CBU Retention', incomeData.cbu_retention || 0],
+    ['Membership CBU', incomeData.membership_cbu || 0],
+    ['Legal Fees', incomeData.legal_fees || 0],
+    ['CLPI/Insurance', incomeData.clpi_insurance || 0],
+    ['Regular Savings', incomeData.regular_savings || 0],
+    ['Membership Savings', incomeData.membership_savings || 0],
+    ['Penalty Due', incomeData.penalty_due || 0],
+    ['Annual Due', incomeData.annual_dues || 0],
+    ['CBU Completion', incomeData.cbu_completion || 0],
+    ['Petty Cash', incomeData.petty_cash || 0],
+    ['Membership/Admin & Regulatory Fees', Number(incomeData.membership_fee || 0) + Number(incomeData.admin_regulatory_fees || 0)],
+    ['WELLife VIP Card', incomeData.vip_card || 0],
+    ['Total Coop Income', incomeData.total_income || 0],
+  ] : []), [incomeData]);
+  const expenseMonitoringRows = useMemo(() => [
+    ['Loan Releases', expenseMonitoring.loanReleases || 0],
+    ...expenseMonitoring.cards.map(card => [card.label, card.value || 0]),
+    ['Other Expenses', expenseMonitoring.otherExpenses || 0],
+    ['Total Expense', expenseMonitoring.total || 0],
+  ], [expenseMonitoring]);
+  const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const escapeHtml = value => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const reportTransactionRows = useCallback(rows => rows.map(tx => {
+    const displayDate = txDisplayDate(tx);
+    return {
+      'Date & Time': displayDate ? formatDateTime(displayDate) : '',
+      Type: tx.type === 'cash_in' ? 'IN' : 'OUT',
+      Category: CATEGORY_LABEL[tx.category] || tx.category || '',
+      Amount: Number(tx.amount || 0),
+      Member: tx.member_name || '',
+      Reference: tx.ref_no || '',
+      Description: tx.description || '',
+      'Created By': tx.created_by || '',
+    };
+  }), []);
+  const printableTransactionRows = rows => rows.map(tx => {
+    const displayDate = txDisplayDate(tx);
+    return `<tr>
+      <td style="white-space:nowrap">${escapeHtml(displayDate ? formatDateTime(displayDate) : '-')}</td>
+      <td style="text-align:center">${escapeHtml(tx.type === 'cash_in' ? 'IN' : 'OUT')}</td>
+      <td>${escapeHtml(CATEGORY_LABEL[tx.category] || tx.category || '-')}</td>
+      <td style="text-align:right;font-weight:600;color:${tx.type === 'cash_in' ? '#065f46' : '#b91c1c'}">${escapeHtml(fmt(tx.amount))}</td>
+      <td>${escapeHtml(tx.member_name || '-')}</td>
+      <td style="font-family:monospace">${escapeHtml(tx.ref_no || '-')}</td>
+      <td>${escapeHtml(tx.description || '-')}</td>
+      <td>${escapeHtml(tx.created_by || '-')}</td>
+    </tr>`;
+  }).join('');
+  const printableSummaryRows = rows => rows.map(([label, value]) => `<tr>
+    <td>${escapeHtml(label)}</td>
+    <td style="text-align:right;font-weight:600">${escapeHtml(fmt(value))}</td>
+  </tr>`).join('');
+  function appendSheet(workbook, rows, sheetName) {
+    const sheet = Array.isArray(rows?.[0])
+      ? XLSX.utils.aoa_to_sheet(rows)
+      : XLSX.utils.json_to_sheet(rows.length ? rows : [{}]);
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName.slice(0, 31));
+  }
+
   function handlePrint() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
     const rows = filtered.map(tx => {
@@ -1305,19 +1415,9 @@ export default function CoopMonitoringPage() {
       <td style="text-align:center">${tx.type==='cash_in'?'Cash In':'Cash Out'}</td>
     </tr>`;
     }).join('');
-    const totalIn  = filtered.filter(t=>t.type==='cash_in').reduce((s,t)=>s+(t.amount||0),0);
-    const totalOut = filtered.filter(t=>t.type==='cash_out').reduce((s,t)=>s+(t.amount||0),0);
-    const reportLoanRelease = filtered
-      .filter(t => t.type === 'cash_out' && isLoanReleaseCategory(t.category))
-      .reduce((s, t) => s + (t.amount || 0), 0);
     const html = `
       <h1 class="report-title">Cooperative Fund Monitoring</h1>
       <div class="report-meta">Fund transactions &nbsp;|&nbsp; ${filtered.length} records &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-PH')}</div>
-      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:5mm">
-        <div class="stat-box"><div class="stat-label">Total Cash In</div><div class="stat-value" style="font-size:10pt;color:#065f46">${fmt(totalIn)}</div></div>
-        <div class="stat-box"><div class="stat-label">Loan Release</div><div class="stat-value" style="font-size:10pt;color:#b91c1c">${fmt(reportLoanRelease)}</div></div>
-        <div class="stat-box"><div class="stat-label">Net</div><div class="stat-value" style="font-size:10pt">${fmt(totalIn-totalOut)}</div></div>
-      </div>
       <table>
         <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Ref No.</th><th style="text-align:right">Amount</th><th style="text-align:center">Flow</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -1346,17 +1446,138 @@ export default function CoopMonitoringPage() {
           created_by:  tx.created_by || '',
         };
       });
-      exportToCSV('coop_monitoring_transactions.csv', rows);
-      toast.success('CSV exported successfully');
+      handleExportFundMonitoring();
     } catch (err) {
       toast.error(err.message || 'Failed to export CSV');
+    }
+  }
+
+  function handlePrintFundMonitoring() {
+    const generatedAt = new Date().toLocaleString('en-PH');
+    const emptyTransactionRow = '<tr><td colspan="8" style="text-align:center;color:#64748b">No transactions found.</td></tr>';
+    const transactionRows = printableTransactionRows(filtered) || emptyTransactionRow;
+    const cashInPrintRows = printableTransactionRows(cashInRows) || emptyTransactionRow;
+    const cashOutPrintRows = printableTransactionRows(cashOutRows) || emptyTransactionRow;
+
+    const html = `
+      <h1 class="report-title">Fund Monitoring</h1>
+      <div class="report-meta">Fund summary | ${filtered.length} transactions | Generated: ${escapeHtml(generatedAt)}</div>
+      <div class="summary-grid">
+        <div><strong>Current Fund Balance</strong><span>${escapeHtml(formatCurrency(scopedFund.balance))}</span></div>
+        <div><strong>Cash In</strong><span>${escapeHtml(formatCurrency(scopedFund.cash_in))}</span></div>
+        <div><strong>Cash Out</strong><span>${escapeHtml(formatCurrency(scopedFund.cash_out))}</span></div>
+        <div><strong>Net Cash Flow</strong><span>${escapeHtml(formatCurrency(scopedFund.cash_in - scopedFund.cash_out))}</span></div>
+      </div>
+
+      <h2>Income Monitoring</h2>
+      <table>
+        <thead><tr><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${printableSummaryRows(incomeMonitoringRows)}</tbody>
+      </table>
+
+      <h2>Expense Monitoring</h2>
+      <table>
+        <thead><tr><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${printableSummaryRows(expenseMonitoringRows)}</tbody>
+      </table>
+
+      <h2>Cash In</h2>
+      <table>
+        <thead><tr><th>Date & Time</th><th>Type</th><th>Category</th><th style="text-align:right">Amount</th><th>Member</th><th>Reference</th><th>Description</th><th>Created By</th></tr></thead>
+        <tbody>${cashInPrintRows}</tbody>
+      </table>
+
+      <h2>Cash Out</h2>
+      <table>
+        <thead><tr><th>Date & Time</th><th>Type</th><th>Category</th><th style="text-align:right">Amount</th><th>Member</th><th>Reference</th><th>Description</th><th>Created By</th></tr></thead>
+        <tbody>${cashOutPrintRows}</tbody>
+      </table>
+
+      <h2>All Fund Transactions</h2>
+      <table>
+        <thead><tr><th>Date & Time</th><th>Type</th><th>Category</th><th style="text-align:right">Amount</th><th>Member</th><th>Reference</th><th>Description</th><th>Created By</th></tr></thead>
+        <tbody>${transactionRows}</tbody>
+      </table>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
+    `;
+
+    const printDocument = `<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Fund Monitoring - WELLSERVE</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 28px; background: #fff; color: #0f172a; font-family: Arial, sans-serif; font-size: 12px; }
+          .print-header { border-bottom: 2px solid #059669; margin-bottom: 18px; padding-bottom: 12px; }
+          .brand { font-size: 18px; font-weight: 800; letter-spacing: .12em; color: #0f172a; }
+          .brand-sub { color: #059669; font-size: 10px; font-weight: 700; letter-spacing: .16em; margin-top: 2px; }
+          h1.report-title { margin: 18px 0 4px; font-size: 20px; color: #0f172a; }
+          .report-meta { color: #64748b; margin-bottom: 16px; }
+          h2 { margin: 22px 0 8px; font-size: 14px; color: #0f172a; }
+          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0 20px; }
+          .summary-grid div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
+          .summary-grid strong { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+          .summary-grid span { display: block; margin-top: 4px; font-size: 14px; font-weight: 700; color: #0f172a; }
+          table { table-layout: fixed; width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+          th { background: #f8fafc; color: #64748b; text-align: left; font-size: 10px; text-transform: uppercase; padding: 8px; border-bottom: 1px solid #e5e7eb; }
+          td { padding: 8px; border-bottom: 1px solid #eef2f7; vertical-align: top; word-break: break-word; }
+          .confidential { color: #64748b; font-size: 10px; font-style: italic; margin-top: 20px; text-align: center; }
+          @media print { body { padding: 18px; } }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <div class="brand">WELLSERVE</div>
+          <div class="brand-sub">CREDIT COOPERATIVE</div>
+        </div>
+        ${html}
+      </body>
+      </html>`;
+
+    const win = window.open('', '_blank', 'width=1100,height=900');
+    if (!win) {
+      toast.error('Pop-up blocked. Please allow pop-ups and try again.');
+      return;
+    }
+
+    win.document.open();
+    win.document.write(printDocument);
+    win.document.close();
+    win.focus();
+
+    window.setTimeout(() => {
+      if (!win.closed) win.print();
+    }, 500);
+    toast.success('Print preview opened.');
+  }
+
+  function handleExportFundMonitoring() {
+    try {
+      const workbook = XLSX.utils.book_new();
+      appendSheet(workbook, [
+        ['Metric', 'Amount'],
+        ['Current Fund Balance', scopedFund.balance],
+        ['Cash In', scopedFund.cash_in],
+        ['Cash Out', scopedFund.cash_out],
+        ['Net Cash Flow', scopedFund.cash_in - scopedFund.cash_out],
+      ], 'Summary');
+      appendSheet(workbook, [['Category', 'Amount'], ...incomeMonitoringRows], 'Income Monitoring');
+      appendSheet(workbook, [['Category', 'Amount'], ...expenseMonitoringRows], 'Expense Monitoring');
+      appendSheet(workbook, reportTransactionRows(cashInRows), 'Cash In');
+      appendSheet(workbook, reportTransactionRows(cashOutRows), 'Cash Out');
+      appendSheet(workbook, reportTransactionRows(filtered), 'All Transactions');
+      XLSX.writeFile(workbook, `fund_monitoring_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Excel workbook exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export fund monitoring workbook');
     }
   }
 
   return (
     <div className="p-6">
       <PageHeader
-        title="Account Monitoring"
+        title="Fund Monitoring"
         subtitle="Cooperative fund — cash inflow and outflow overview"
         action={
           <div className="flex items-center gap-2">
@@ -1365,6 +1586,12 @@ export default function CoopMonitoringPage() {
               Add Fund
             </Button>
             )}
+            <Button variant="outline" icon={<Printer size={14} />} onClick={handlePrintFundMonitoring}>
+              Print
+            </Button>
+            <Button variant="outline" icon={<Download size={14} />} onClick={handleExportFundMonitoring}>
+              Export
+            </Button>
             <Button
               variant="outline"
               icon={<RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />}
@@ -1419,7 +1646,7 @@ export default function CoopMonitoringPage() {
               icon={<TrendingUp size={22} className="text-green-600" />}
               label="Loan Interest"
               value={formatCurrency(incomeData?.loan_interest || 0)}
-              sub="Interest earned from loan payments"
+              sub="Interest earned from loan"
               bg="bg-green-50"
               textColor="text-green-700"
               accentColor="bg-green-400"
@@ -1437,7 +1664,7 @@ export default function CoopMonitoringPage() {
               icon={<ArrowDownRight size={22} className="text-slate-600" />}
               label="Total Expense"
               value={formatCurrency(totalExpenseAmount)}
-              sub="Recorded cooperative expenses"
+              sub="Cooperative expenses"
               bg="bg-slate-50"
               textColor="text-slate-700"
               accentColor="bg-slate-400"
@@ -1448,8 +1675,6 @@ export default function CoopMonitoringPage() {
           <DashboardCharts transactions={dateFilteredTransactions} incomeData={incomeData} />
 
           {/* ── Cash-In Breakdown ── */}
-          <CashInBreakdown transactions={dateFilteredTransactions} incomeData={incomeData} />
-
           {/* ── Income Monitoring Breakdown ── */}
           <section className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
@@ -1536,7 +1761,7 @@ export default function CoopMonitoringPage() {
                   </div>
 
                   {/* Income cards grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     {[
                       { label: 'Service Fee', value: incomeData.service_fee, color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
                       { label: 'CBU Retention', value: incomeData.cbu_retention, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Capital build-up deductions' },
@@ -1549,9 +1774,8 @@ export default function CoopMonitoringPage() {
                       { label: 'Annual Due', value: incomeData.annual_dues, color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
                       { label: 'CBU Completion', value: incomeData.cbu_completion, color: 'bg-teal-50 border-teal-100', text: 'text-teal-700', sub: 'CBU completion deductions' },
                       { label: 'Petty Cash', value: incomeData.petty_cash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Petty cash deductions' },
-                      { label: 'Membership Fee', value: incomeData.membership_fee, color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Registration fees' },
+                      { label: 'Membership/Admin & Regulatory Fees', value: Number(incomeData.membership_fee || 0) + Number(incomeData.admin_regulatory_fees || 0), color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Old membership fees and new admin fees' },
                       { label: 'WELLife VIP Card', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'VIP card collections' },
-                      { label: 'Admin & Regulatory Fees', value: incomeData.admin_regulatory_fees, color: 'bg-cyan-50 border-cyan-100', text: 'text-cyan-700', sub: 'Administrative charges' },
                     ].map(card => (
                       <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
                         <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
@@ -1593,6 +1817,7 @@ export default function CoopMonitoringPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {[
+                  { label: 'Loan Releases', value: expenseMonitoring.loanReleases, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Released loan net proceeds' },
                   ...expenseMonitoring.cards,
                   { label: 'Other Expenses', value: expenseMonitoring.otherExpenses, color: 'bg-gray-50 border-gray-100', text: 'text-gray-700', sub: 'Uncategorized or manual-review expenses' },
                 ].map(card => (
@@ -1636,19 +1861,6 @@ export default function CoopMonitoringPage() {
                 Clear all filters
               </button>
             )}
-
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
-            >
-              <Printer size={14} /> Print
-            </button>
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
-            >
-              <Download size={14} /> Export CSV
-            </button>
 
             <p className="ml-auto self-center text-xs text-gray-400">
               {filtered.length} of {dateFilteredTransactions.length} transactions
@@ -1699,7 +1911,7 @@ export default function CoopMonitoringPage() {
                       </td>
                     </tr>
                   ) : (
-                    filtered.map(tx => <TxRow key={tx.id} tx={tx} />)
+                    visibleTransactions.map(tx => <TxRow key={tx.id} tx={tx} />)
                   )}
                 </tbody>
               </table>
@@ -1708,7 +1920,8 @@ export default function CoopMonitoringPage() {
             {filtered.length > 0 && (
               <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between">
                 <p className="text-xs text-gray-400">
-                  Showing <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
+                  Showing <span className="font-medium text-gray-600">{visibleTransactions.length}</span> of{' '}
+                  <span className="font-medium text-gray-600">{filtered.length}</span> filtered /{' '}
                   <span className="font-medium text-gray-600">{dateFilteredTransactions.length}</span> transactions
                 </p>
                 <div className="flex items-center gap-4 text-xs">

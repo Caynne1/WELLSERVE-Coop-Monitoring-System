@@ -1264,14 +1264,30 @@ const CATEGORY_LABEL = {
 
 const OLD_MEMBERSHIP_BREAKDOWN = {
   associate: [
-    ['Membership Entry', 300, 'membership'],
-    ['Initial CBU', 1000, 'membership_initial_cbu'],
-    ['Initial Savings', 500, 'membership_initial_savings'],
+    { label: 'Membership Entry', amount: 300, key: 'membership', bucket: 'entry' },
+    { label: 'Initial CBU', amount: 1000, key: 'membership_initial_cbu', bucket: 'cbu' },
+    { label: 'Initial Savings', amount: 500, key: 'membership_initial_savings', bucket: 'savings' },
   ],
   regular: [
-    ['Membership Entry', 1800, 'membership'],
-    ['Initial CBU', 4000, 'membership_initial_cbu'],
-    ['Initial Savings', 1000, 'membership_initial_savings'],
+    { label: 'Membership Entry', amount: 1800, key: 'membership', bucket: 'entry' },
+    { label: 'Initial CBU', amount: 4000, key: 'membership_initial_cbu', bucket: 'cbu' },
+    { label: 'Initial Savings', amount: 1000, key: 'membership_initial_savings', bucket: 'savings' },
+  ],
+};
+
+const NEW_MEMBERSHIP_BREAKDOWN = {
+  associate: [
+    { label: 'Membership Fee', amount: 100, key: 'membership', bucket: 'entry' },
+    { label: 'WELLife VIP Card', amount: 300, key: 'membership_wellife_vip', bucket: 'vip' },
+    { label: 'Initial CBU', amount: 500, key: 'membership_initial_cbu', bucket: 'cbu' },
+  ],
+  regular: [
+    { label: 'Membership Fee', amount: 100, key: 'membership', bucket: 'entry' },
+    { label: 'WELLife VIP Card', amount: 300, key: 'membership_wellife_vip', bucket: 'vip' },
+    { label: 'Initial CBU', amount: 500, key: 'membership_initial_cbu', bucket: 'cbu' },
+    { label: 'Admin & Regulatory Fees', amount: 1000, key: 'membership_admin_regulatory', bucket: 'admin' },
+    { label: 'Initial Savings Deposit', amount: 500, key: 'membership_initial_savings', bucket: 'savings' },
+    { label: 'Minimum CBU', amount: 3500, key: 'membership_minimum_cbu', bucket: 'cbu' },
   ],
 };
 
@@ -1293,7 +1309,7 @@ function getLoanInterestDue(loan) {
   return Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) || 0;
 }
 
-function getOldMembershipBreakdown(member, membershipInfo) {
+function getMembershipBreakdown(member, membershipInfo) {
   const membership = membershipInfo?.record || null;
   const type = membership?.membership_type || member?.membership_type || '';
   const required = Number(membership?.fee_required || 0);
@@ -1301,12 +1317,21 @@ function getOldMembershipBreakdown(member, membershipInfo) {
     member?.record_type === 'old_member' ||
     (type === 'associate' && required === 1800) ||
     (type === 'regular' && required === 6800);
+  const isNewMembership =
+    !isOldMembership &&
+    ((type === 'associate' && required === 900) ||
+      (type === 'regular' && required === 5900));
 
-  if (!isOldMembership || !OLD_MEMBERSHIP_BREAKDOWN[type]) return null;
+  const rows = isOldMembership
+    ? OLD_MEMBERSHIP_BREAKDOWN[type]
+    : isNewMembership
+      ? NEW_MEMBERSHIP_BREAKDOWN[type]
+      : null;
 
-  const rows = OLD_MEMBERSHIP_BREAKDOWN[type];
-  const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
-  return { rows, total };
+  if (!rows) return null;
+
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  return { rows, total, structure: isOldMembership ? 'old' : 'new' };
 }
 
 function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
@@ -1391,7 +1416,10 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const totalAmount = useMemo(() => {
     return CATEGORY_ORDER.reduce((s, c) => s + (parseFloat(amounts[c]) || 0), 0)
       + (parseFloat(amounts.membership_initial_cbu) || 0)
-      + (parseFloat(amounts.membership_initial_savings) || 0);
+      + (parseFloat(amounts.membership_minimum_cbu) || 0)
+      + (parseFloat(amounts.membership_initial_savings) || 0)
+      + (parseFloat(amounts.membership_wellife_vip) || 0)
+      + (parseFloat(amounts.membership_admin_regulatory) || 0);
   }, [amounts]);
 
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
@@ -1432,10 +1460,20 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     const selectedBooster = summary.savings_booster.records?.find(b => b.id === selectedBoosterId) || null;
 
     const entries = [];
+    const membershipBreakdown = getMembershipBreakdown(member, summary.membership);
     const membershipEntryAmount = parseFloat(amounts.membership) || 0;
-    const membershipInitialCbuAmount = parseFloat(amounts.membership_initial_cbu) || 0;
+    const membershipAdminRegulatoryAmount = parseFloat(amounts.membership_admin_regulatory) || 0;
+    const membershipVipAmount = parseFloat(amounts.membership_wellife_vip) || 0;
+    const membershipInitialCbuAmount =
+      (parseFloat(amounts.membership_initial_cbu) || 0) +
+      (parseFloat(amounts.membership_minimum_cbu) || 0);
     const membershipInitialSavingsAmount = parseFloat(amounts.membership_initial_savings) || 0;
-    const membershipTotalAmount = membershipEntryAmount + membershipInitialCbuAmount + membershipInitialSavingsAmount;
+    const membershipTotalAmount =
+      membershipEntryAmount +
+      membershipAdminRegulatoryAmount +
+      membershipVipAmount +
+      membershipInitialCbuAmount +
+      membershipInitialSavingsAmount;
     if (membershipTotalAmount > 0) {
       if (!summary.membership.record) {
         showSaveError('Membership record not found for this member.');
@@ -1455,8 +1493,16 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
         membership: summary.membership.record,
         membership_breakdown: {
           entry: membershipEntryAmount,
+          admin_regulatory: membershipAdminRegulatoryAmount,
+          vip_card: membershipVipAmount,
           cbu: membershipInitialCbuAmount,
           savings: membershipInitialSavingsAmount,
+          rows: membershipBreakdown?.rows?.map(row => ({
+            label: row.label,
+            key: row.key,
+            bucket: row.bucket,
+            amount: parseFloat(amounts[row.key]) || 0,
+          })) || [],
         },
         cbuAccount: summary.cbu.record,
         savingsAccount: summary.savings.record,
@@ -1616,13 +1662,13 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                     : info.valueType === 'optional'
                       ? valueLabel
                       : `${valueLabel}: ${formatCurrency(info.value)}`;
-                  const oldMembershipBreakdown = cat === 'membership'
-                    ? getOldMembershipBreakdown(member, info)
+                  const membershipBreakdown = cat === 'membership'
+                    ? getMembershipBreakdown(member, info)
                     : null;
 
-                  if (oldMembershipBreakdown) {
-                    const paidNowTotal = oldMembershipBreakdown.rows.reduce(
-                      (sum, [, , key]) => sum + (parseFloat(amounts[key]) || 0),
+                  if (membershipBreakdown) {
+                    const paidNowTotal = membershipBreakdown.rows.reduce(
+                      (sum, row) => sum + (parseFloat(amounts[row.key]) || 0),
                       0
                     );
 
@@ -1650,16 +1696,16 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                                 <span className="text-right">Amount Paid Now</span>
                               </div>
                               <div className="divide-y divide-gray-100">
-                                {oldMembershipBreakdown.rows.map(([label, target, key]) => (
-                                  <div key={key} className="grid grid-cols-[1fr_140px_160px] gap-3 items-center px-3 py-2">
-                                    <span className="text-sm text-gray-700">{label}</span>
-                                    <span className="text-sm text-right font-medium text-gray-700">{formatCurrency(target)}</span>
+                                {membershipBreakdown.rows.map(row => (
+                                  <div key={row.key} className="grid grid-cols-[1fr_140px_160px] gap-3 items-center px-3 py-2">
+                                    <span className="text-sm text-gray-700">{row.label}</span>
+                                    <span className="text-sm text-right font-medium text-gray-700">{formatCurrency(row.amount)}</span>
                                     <input
                                       type="text"
                                       inputMode="decimal"
                                       placeholder="0.00"
-                                      value={formatAmountInput(amounts[key] || '')}
-                                      onChange={e => setAmount(key, cleanAmountInput(e.target.value))}
+                                      value={formatAmountInput(amounts[row.key] || '')}
+                                      onChange={e => setAmount(row.key, cleanAmountInput(e.target.value))}
                                       className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                                     />
                                   </div>
@@ -1667,7 +1713,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                               </div>
                               <div className="grid grid-cols-[1fr_140px_160px] gap-3 items-center bg-gray-50 px-3 py-2 text-sm font-semibold">
                                 <span className="text-gray-800">Total</span>
-                                <span className="text-right text-gray-800">{formatCurrency(oldMembershipBreakdown.total)}</span>
+                                <span className="text-right text-gray-800">{formatCurrency(membershipBreakdown.total)}</span>
                                 <span className="text-right text-emerald-700">{formatCurrency(paidNowTotal)}</span>
                               </div>
                             </div>
