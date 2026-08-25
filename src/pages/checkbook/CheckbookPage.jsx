@@ -28,9 +28,26 @@ import { getVouchers } from '../../services/voucherService';
 import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
+const CHECK_FOR_TRACING_PREFIX = 'CHECK-FOR-TRACING';
+
 function voucherNoDisplay(value) {
   if (!value) return '';
   return String(value || '').startsWith('FOR-TRACING-') ? 'For Tracing' : value;
+}
+
+function isCheckForTracing(value = '') {
+  const text = String(value || '').trim();
+  return text.toLowerCase() === 'for tracing' || text.startsWith(`${CHECK_FOR_TRACING_PREFIX}-`);
+}
+
+function checkNoDisplay(value) {
+  if (!value) return '';
+  return isCheckForTracing(value) ? 'For Tracing' : value;
+}
+
+function makeCheckForTracingNumber(seed = '') {
+  const suffix = String(seed || Date.now()).replace(/[^A-Za-z0-9]/g, '').slice(0, 14);
+  return `${CHECK_FOR_TRACING_PREFIX}-${suffix}`;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -230,7 +247,7 @@ export default function CheckbookPage() {
     }
     setEditTarget(entry);
     setForm({
-      check_no:   entry.check_no   || '',
+      check_no:   isCheckForTracing(entry.check_no) ? 'For Tracing' : (entry.check_no || ''),
       date:       entry.date       || '',
       payee:      entry.payee      || '',
       amount:     entry.amount?.toString() || '',
@@ -250,7 +267,7 @@ export default function CheckbookPage() {
 
   function validateForm() {
     const errs = {};
-    if (!form.voucher_id)       errs.voucher_id = 'Linked voucher is required.';
+    if (!editTarget && !form.voucher_id) errs.voucher_id = 'Linked voucher is required.';
     if (form.voucher_id && linkedVoucherIds.has(form.voucher_id)) {
       errs.voucher_id = 'This voucher already has a recorded check.';
     }
@@ -278,8 +295,14 @@ export default function CheckbookPage() {
 
     setSaving(true);
     try {
+      const normalizedCheckNo = isCheckForTracing(form.check_no)
+        ? (editTarget && isCheckForTracing(editTarget.check_no)
+          ? editTarget.check_no
+          : makeCheckForTracingNumber(editTarget?.id || Date.now()))
+        : form.check_no.trim();
+
       const payload = {
-        check_no:   form.check_no.trim(),
+        check_no:   normalizedCheckNo,
         date:       form.date,
         payee:      form.payee.trim(),
         amount:     parseFloat(form.amount),
@@ -293,11 +316,11 @@ export default function CheckbookPage() {
       if (editTarget) {
         await updateCheckbookEntry(editTarget.id, payload);
         toast.success('Checkbook entry updated.');
-        trackActivity({ userId: user?.id, module: 'checkbook', action: 'update', description: `Updated check #${form.check_no.trim()} payable to ${form.payee.trim()}` });
+        trackActivity({ userId: user?.id, module: 'checkbook', action: 'update', description: `Updated check #${checkNoDisplay(normalizedCheckNo)} payable to ${form.payee.trim()}` });
       } else {
         await createCheckbookEntry(payload);
         toast.success('Check recorded.');
-        trackActivity({ userId: user?.id, module: 'checkbook', action: 'create', description: `Recorded check #${form.check_no.trim()} — ₱${form.amount} to ${form.payee.trim()}` });
+        trackActivity({ userId: user?.id, module: 'checkbook', action: 'create', description: `Recorded check #${checkNoDisplay(normalizedCheckNo)} - ${form.amount} to ${form.payee.trim()}` });
       }
 
       setFormOpen(false);
@@ -306,7 +329,7 @@ export default function CheckbookPage() {
       const isDuplicate = err.message?.includes('unique') || err.code === '23505';
       toast.error(
         isDuplicate
-          ? `Check number "${form.check_no}" already exists.`
+          ? `Check number "${checkNoDisplay(form.check_no) || form.check_no}" already exists.`
           : err.message || 'Failed to save entry.'
       );
     } finally {
@@ -326,8 +349,8 @@ export default function CheckbookPage() {
     setClearing(true);
     try {
       await clearCheck(clearTarget.id);
-      toast.success(`Check ${clearTarget.check_no} approved and waiting for release.`);
-      trackActivity({ userId: user?.id, module: 'checkbook', action: 'approve', description: `Approved check #${clearTarget.check_no}` });
+      toast.success(`Check ${checkNoDisplay(clearTarget.check_no)} approved and waiting for release.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'approve', description: `Approved check #${checkNoDisplay(clearTarget.check_no)}` });
       setClearTarget(null);
       fetchEntries();
     } catch (err) {
@@ -347,8 +370,8 @@ export default function CheckbookPage() {
     setReleasing(true);
     try {
       await releaseCheck(releaseTarget.id, user?.id ?? null);
-      toast.success(`Check ${releaseTarget.check_no} released.`);
-      trackActivity({ userId: user?.id, module: 'checkbook', action: 'release', description: `Released check #${releaseTarget.check_no}` });
+      toast.success(`Check ${checkNoDisplay(releaseTarget.check_no)} released.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'release', description: `Released check #${checkNoDisplay(releaseTarget.check_no)}` });
       setReleaseTarget(null);
       fetchEntries();
     } catch (err) {
@@ -370,8 +393,8 @@ export default function CheckbookPage() {
     setVoiding(true);
     try {
       await voidCheck(voidTarget.id);
-      toast.success(`Check ${voidTarget.check_no} voided.`);
-      trackActivity({ userId: user?.id, module: 'checkbook', action: 'void', description: `Voided check #${voidTarget.check_no}` });
+      toast.success(`Check ${checkNoDisplay(voidTarget.check_no)} voided.`);
+      trackActivity({ userId: user?.id, module: 'checkbook', action: 'void', description: `Voided check #${checkNoDisplay(voidTarget.check_no)}` });
       setVoidTarget(null);
       fetchEntries();
     } catch (err) {
@@ -385,7 +408,7 @@ export default function CheckbookPage() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
     const statusLabel = {issued:'Issued',cleared:'Cleared',voided:'Voided'};
     const rows = filtered.map(e => `<tr>
-      <td style="font-family:monospace">${e.check_no||'—'}</td>
+      <td style="font-family:monospace">${checkNoDisplay(e.check_no)||'—'}</td>
       <td style="white-space:nowrap">${e.date||'—'}</td>
       <td>${e.payee||'—'}</td>
       <td>${e.purpose||'—'}</td>
@@ -414,7 +437,7 @@ export default function CheckbookPage() {
     try {
       if (filtered.length === 0) { toast.error('No entries to export.'); return; }
       const rows = filtered.map(e => ({
-        check_no: e.check_no || '',
+        check_no: checkNoDisplay(e.check_no) || '',
         date: e.date || '',
         payee: e.payee || '',
         purpose: e.purpose || '',
@@ -562,7 +585,7 @@ export default function CheckbookPage() {
                     <td className="px-4 py-3 text-center">
                       <span className="font-mono text-xs font-semibold text-gray-700
                         bg-gray-100 px-2 py-0.5 rounded">
-                        {entry.check_no}
+                        {checkNoDisplay(entry.check_no)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-center">
@@ -601,7 +624,7 @@ export default function CheckbookPage() {
                         >
                           <Eye size={15} />
                         </button>
-                        {canEdit && entry.status === 'issued' && (
+                        {canEdit && entry.status !== 'voided' && (
                           <button
                             onClick={() => openEdit(entry)}
                             title="Edit Entry"
@@ -689,16 +712,29 @@ export default function CheckbookPage() {
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Check No."
-              required
-              type="text"
-              placeholder="e.g. 001234"
-              value={form.check_no}
-              onChange={e => setField('check_no', e.target.value)}
-              error={formErr.check_no}
-              disabled={!!editTarget}
-            />
+            <div className="space-y-2">
+              <Input
+                label="Check No."
+                required
+                type="text"
+                placeholder="e.g. 001234"
+                value={form.check_no}
+                onChange={e => setField('check_no', e.target.value)}
+                error={formErr.check_no}
+                disabled={isCheckForTracing(form.check_no)}
+              />
+              <button
+                type="button"
+                onClick={() => setField('check_no', isCheckForTracing(form.check_no) ? '' : 'For Tracing')}
+                className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  isCheckForTracing(form.check_no)
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-amber-200 hover:text-amber-700'
+                }`}
+              >
+                {isCheckForTracing(form.check_no) ? 'For Tracing selected' : 'Mark as For Tracing'}
+              </button>
+            </div>
             <Input
               label="Date"
               required
@@ -763,7 +799,6 @@ export default function CheckbookPage() {
               placeholder="Optional"
               value={form.bank}
               onChange={e => setField('bank', e.target.value)}
-              disabled={!editTarget}
             />
           </div>
 
@@ -793,7 +828,7 @@ export default function CheckbookPage() {
 
           {editTarget && (
             <p className="text-xs text-gray-400">
-              Check number cannot be changed after recording.
+              Record-only edits do not repost or duplicate fund transactions.
             </p>
           )}
         </div>
@@ -825,7 +860,7 @@ export default function CheckbookPage() {
             <div className="flex items-center justify-between mb-5">
               <span className="font-mono text-sm font-bold text-gray-800
                 bg-gray-100 px-3 py-1 rounded-lg">
-                {viewTarget.check_no}
+                {checkNoDisplay(viewTarget.check_no)}
               </span>
               <span className={`inline-flex min-w-[92px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[viewTarget.status] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
                 {STATUS_LABEL[viewTarget.status] || viewTarget.status}
@@ -874,7 +909,7 @@ export default function CheckbookPage() {
               )}
             </div>
 
-            {viewTarget.status === 'issued' && (
+            {viewTarget.status !== 'voided' && (
               <div className="flex justify-end gap-3 mt-5">
                 <Button
                   variant="outline"
@@ -884,6 +919,8 @@ export default function CheckbookPage() {
                 >
                   Edit
                 </Button>
+                {viewTarget.status === 'issued' && (
+                  <>
                 <Button
                   variant="success"
                   size="sm"
@@ -900,6 +937,8 @@ export default function CheckbookPage() {
                 >
                   Void
                 </Button>
+                  </>
+                )}
               </div>
             )}
           </>
@@ -920,7 +959,7 @@ export default function CheckbookPage() {
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-mono text-xs font-bold text-gray-600 mb-1">
-                {clearTarget.check_no}
+                {checkNoDisplay(clearTarget.check_no)}
               </p>
               <p className="font-medium text-gray-900 text-sm">{clearTarget.payee}</p>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -964,7 +1003,7 @@ export default function CheckbookPage() {
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-mono text-xs font-bold text-gray-600 mb-1">
-                {releaseTarget.check_no}
+                {checkNoDisplay(releaseTarget.check_no)}
               </p>
               <p className="font-medium text-gray-900 text-sm">{releaseTarget.payee}</p>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -1008,7 +1047,7 @@ export default function CheckbookPage() {
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-mono text-xs font-bold text-gray-600 mb-1">
-                {voidTarget.check_no}
+                {checkNoDisplay(voidTarget.check_no)}
               </p>
               <p className="font-medium text-gray-900 text-sm">{voidTarget.payee}</p>
               <p className="text-xs text-gray-400 mt-0.5">

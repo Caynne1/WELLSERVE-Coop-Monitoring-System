@@ -215,12 +215,10 @@ export async function createCheckbookEntry(payload) {
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
-// Only safe to call on issued entries. The page enforces this.
-// check_no and status are stripped so they can never be overwritten via edit.
+// Record-only edits; status transitions are handled by the dedicated functions below.
 
 export async function updateCheckbookEntry(id, payload) {
   const clean = sanitizeCheckbookPayload(payload);
-  delete clean.check_no;
   delete clean.status;
 
   const { data, error } = await supabase
