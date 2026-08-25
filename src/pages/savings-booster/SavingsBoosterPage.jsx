@@ -15,35 +15,35 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import {
+  SAVINGS_BOOSTER_DEFAULTS,
+  buildSavingsBoosterSchedule,
+  buildSavingsBoosterUpdate,
+  calculateSavingsBoosterLedger,
+  getBoosterMaturityDate,
+} from '../../services/savingsBoosterService';
 
 // ── Product Constants ──────────────────────────────────────────────────────────
 
-const WEEKLY_DEPOSIT   = 70;
-const MONTHLY_DEPOSIT  = 280;
-const TOTAL_MONTHS     = 12;
-const INTEREST_RATE    = 0.08;
+const WEEKLY_DEPOSIT   = SAVINGS_BOOSTER_DEFAULTS.weeklyDeposit;
+const INITIAL_DEPOSIT  = SAVINGS_BOOSTER_DEFAULTS.initialDeposit;
+const TOTAL_MONTHS     = SAVINGS_BOOSTER_DEFAULTS.months;
 const TOTAL_SLOTS      = 100;
 const MAX_SLOTS_MEMBER = 5;
-const MATURITY_MONTHS  = 13;
 
 // ── Computation ────────────────────────────────────────────────────────────────
 
 function computeSavingsBooster() {
-  const rows = [];
-  let totalInterest = 0;
-  for (let month = 1; month <= TOTAL_MONTHS; month++) {
-    const interestPerPeriod = MONTHLY_DEPOSIT * INTEREST_RATE;
-    const remainingMonths   = TOTAL_MONTHS - month + 1;
-    const interestCols = {};
-    for (let m = month; m <= TOTAL_MONTHS; m++) interestCols[`m${m}`] = interestPerPeriod;
-    totalInterest += interestPerPeriod * remainingMonths;
-    rows.push({ month, interestCols, interestPerPeriod });
-  }
+  const totalSaved = INITIAL_DEPOSIT + ((SAVINGS_BOOSTER_DEFAULTS.weeksRequired - 5) * WEEKLY_DEPOSIT);
+  const rows = buildSavingsBoosterSchedule(totalSaved);
+  const ledger = calculateSavingsBoosterLedger({ total_deposited: totalSaved, status: 'active' });
   return {
     rows,
-    totalInterest,
-    totalSaved:        MONTHLY_DEPOSIT * TOTAL_MONTHS,
-    totalWithdrawable: MONTHLY_DEPOSIT * TOTAL_MONTHS + totalInterest,
+    totalInterest: ledger.grossInterest,
+    transactionFee: ledger.transactionFee,
+    netInterest: ledger.netInterest,
+    totalSaved,
+    totalWithdrawable: ledger.withdrawableAmount,
   };
 }
 
@@ -142,9 +142,7 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
   // Compute maturity date
   const maturityDate = useMemo(() => {
     if (!startDate) return null;
-    const d = new Date(startDate);
-    d.setMonth(d.getMonth() + MATURITY_MONTHS);
-    return d.toISOString().split('T')[0];
+    return getBoosterMaturityDate(startDate);
   }, [startDate]);
 
   async function handleEnroll() {
@@ -155,7 +153,7 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
     if (!selected || !eligibility?.eligible) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('savings_booster').insert({
+      const basePayload = {
         member_id:         selected.id,
         slot_number:       eligibility.nextSlot,
         start_date:        startDate,
@@ -166,6 +164,10 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
         last_deposit_date: null,
         notes:             notes.trim() || null,
         created_by:        user?.id || null,
+      };
+      const { error } = await supabase.from('savings_booster').insert({
+        ...basePayload,
+        ...buildSavingsBoosterUpdate(basePayload),
       });
       if (error) throw error;
       toast.success(`${selected.first_name} ${selected.last_name} enrolled in Savings Booster (Slot #${eligibility.nextSlot})!`);
@@ -297,10 +299,11 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-gray-600">
                 <span>Member: <strong>{selected.first_name} {selected.last_name}</strong></span>
                 <span>Slot: <strong>#{eligibility.nextSlot}</strong></span>
-                <span>Weekly Deposit: <strong>₱{WEEKLY_DEPOSIT}/week</strong></span>
+                <span>Initial Deposit: <strong>{formatCurrency(INITIAL_DEPOSIT)}</strong></span>
+                <span>Weekly Deposit: <strong>{formatCurrency(WEEKLY_DEPOSIT)}/week</strong></span>
                 <span>Duration: <strong>52 weeks (1 year)</strong></span>
-                <span>Total to Save: <strong>{formatCurrency(MONTHLY_DEPOSIT * TOTAL_MONTHS)}</strong></span>
-                <span>Total Withdrawable: <strong className="text-emerald-700">{formatCurrency(MONTHLY_DEPOSIT * TOTAL_MONTHS + 1747.20)}</strong></span>
+                <span>Total to Save: <strong>{formatCurrency(calculateSavingsBoosterLedger().expectedTotal)}</strong></span>
+                <span>Total Withdrawable: <strong className="text-emerald-700">{formatCurrency(calculateSavingsBoosterLedger({ total_deposited: calculateSavingsBoosterLedger().expectedTotal }).withdrawableAmount)}</strong></span>
               </div>
             </div>
           </>
@@ -340,7 +343,7 @@ export default function SavingsBoosterPage() {
 
   const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(enrollments, { pageSize: 25 });
 
-  const { rows, totalInterest, totalSaved, totalWithdrawable } = useMemo(computeSavingsBooster, []);
+  const { rows, totalInterest, transactionFee, netInterest, totalSaved, totalWithdrawable } = useMemo(computeSavingsBooster, []);
 
   const fetchEnrollments = useCallback(async () => {
     try {
@@ -363,7 +366,8 @@ export default function SavingsBoosterPage() {
 
   const activeCount     = enrollments.filter(e => e.status === 'active').length;
   const matureCount     = enrollments.filter(e => e.status === 'matured').length;
-  const totalDeposited  = enrollments.reduce((s, e) => s + (e.total_deposited || 0), 0);
+  const totalDeposited  = enrollments.reduce((s, e) => s + calculateSavingsBoosterLedger(e).totalDeposited, 0);
+  const totalWithdrawableNow = enrollments.reduce((s, e) => s + calculateSavingsBoosterLedger(e).withdrawableAmount, 0);
   const usedSlots       = enrollments.filter(e => e.status !== 'withdrawn').length;
 
   return (
@@ -381,12 +385,13 @@ export default function SavingsBoosterPage() {
       />
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           { label: 'Total Enrollments', value: enrollments.length, color: 'bg-emerald-50', text: 'text-emerald-700', icon: <Users size={20} /> },
           { label: 'Active',            value: activeCount,         color: 'bg-blue-50',    text: 'text-blue-700',    icon: <Sprout size={20} /> },
           { label: 'Matured',           value: matureCount,         color: 'bg-violet-50',  text: 'text-violet-700',  icon: <CheckCircle size={20} /> },
           { label: 'Total Deposited',   value: formatCurrency(totalDeposited), color: 'bg-amber-50', text: 'text-amber-700', icon: <TrendingUp size={20} /> },
+          { label: 'Withdrawable',      value: formatCurrency(totalWithdrawableNow), color: 'bg-teal-50', text: 'text-teal-700', icon: <TrendingUp size={20} /> },
         ].map(card => (
           <div key={card.label} className={`rounded-xl p-4 flex items-center gap-3 ${card.color} border border-gray-100`}>
             <span className={card.text}>{card.icon}</span>
@@ -427,7 +432,7 @@ export default function SavingsBoosterPage() {
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-emerald-600" />
             <span className="text-sm font-semibold text-gray-700">P10/day Savings Booster Computation Table</span>
-            <span className="text-xs text-gray-400 ml-1">— 8% monthly interest for 12 months</span>
+            <span className="text-xs text-gray-400 ml-1">- Excel-style computation with 15% interest fee</span>
           </div>
           {showTable ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
         </button>
@@ -452,12 +457,16 @@ export default function SavingsBoosterPage() {
                 {rows.map(row => (
                   <tr key={row.month} className="hover:bg-emerald-50/30">
                     <td className="px-3 py-2 font-medium text-gray-700">{row.month}{['st','nd','rd'][row.month-1]||'th'} month</td>
-                    {[70,70,70,70].map((v,i) => <td key={i} className="px-3 py-2 text-right text-gray-600">{v}</td>)}
-                    <td className="px-3 py-2 text-right font-semibold text-gray-800 border-l border-gray-100">{formatCurrency(MONTHLY_DEPOSIT)}</td>
+                    {(row.month === 1
+                      ? [INITIAL_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT]
+                      : [WEEKLY_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT]
+                    ).map((v,i) => <td key={i} className="px-3 py-2 text-right text-gray-600">{v}</td>)}
+                    <td className="px-3 py-2 text-right font-semibold text-gray-800 border-l border-gray-100">{formatCurrency(row.amount)}</td>
                     {Array.from({ length: TOTAL_MONTHS }, (_, i) => {
                       const m = i + 1;
-                      const earned = row.interestCols[`m${m}`];
-                      return <td key={m} className={`px-2 py-2 text-right ${earned ? 'text-emerald-600' : 'text-gray-200'}`}>{earned ? earned.toFixed(2) : '—'}</td>;
+                      const weight = row.month === 1 ? TOTAL_MONTHS : row.month - 1;
+                      const earned = m <= weight ? row.amount * SAVINGS_BOOSTER_DEFAULTS.monthlyInterestRate : 0;
+                      return <td key={m} className={`px-2 py-2 text-right ${earned ? 'text-emerald-600' : 'text-gray-200'}`}>{earned ? earned.toFixed(2) : '-'}</td>;
                     })}
                     <td className="px-3 py-2 text-right border-l border-gray-100">
                       {row.month === TOTAL_MONTHS && <span className="font-bold text-emerald-700">{formatCurrency(totalWithdrawable)}</span>}
@@ -469,7 +478,7 @@ export default function SavingsBoosterPage() {
                 <tr className="bg-gray-50 border-t-2 border-gray-200 font-bold text-gray-700">
                   <td className="px-3 py-2.5" colSpan={5}>Total</td>
                   <td className="px-3 py-2.5 text-right border-l border-gray-200">{formatCurrency(totalSaved)}</td>
-                  <td className="px-3 py-2.5 text-right text-xs text-gray-500 font-normal" colSpan={TOTAL_MONTHS - 1}>Interest earned (12 months completed):</td>
+                  <td className="px-3 py-2.5 text-right text-xs text-gray-500 font-normal" colSpan={TOTAL_MONTHS - 1}>Gross interest:</td>
                   <td className="px-3 py-2.5 text-right text-emerald-700">{formatCurrency(totalInterest)}</td>
                   <td className="px-3 py-2.5 text-right border-l border-gray-200">
                     <span className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold whitespace-nowrap">
@@ -478,7 +487,7 @@ export default function SavingsBoosterPage() {
                   </td>
                 </tr>
                 <tr className="bg-emerald-50 text-xs text-gray-500">
-                  <td className="px-3 py-2" colSpan={6}>Interest/month: <strong>8%</strong> · Total: <strong>52%</strong></td>
+                  <td className="px-3 py-2" colSpan={6}>Monthly interest: <strong>{(SAVINGS_BOOSTER_DEFAULTS.monthlyInterestRate * 100).toFixed(2)}%</strong> - Less 15% interest fee: <strong>{formatCurrency(transactionFee)}</strong> - Net interest: <strong>{formatCurrency(netInterest)}</strong></td>
                   <td className="px-3 py-2 text-right" colSpan={TOTAL_MONTHS + 1}>
                     <strong className="text-emerald-700">TOTAL WITHDRAWABLE: {formatCurrency(totalWithdrawable)}</strong>
                   </td>
@@ -527,9 +536,8 @@ export default function SavingsBoosterPage() {
               <tbody className="divide-y divide-gray-50">
                 {pageItems.map(e => {
                   const m = e.members;
-                  const maturityDate = e.start_date
-                    ? (() => { const d = new Date(e.start_date); d.setMonth(d.getMonth() + MATURITY_MONTHS); return d.toISOString().split('T')[0]; })()
-                    : null;
+                  const ledger = calculateSavingsBoosterLedger(e);
+                  const maturityDate = ledger.maturityDate;
                   return (
                     <tr key={e.id} className="hover:bg-gray-50/60">
                       <td className="px-4 py-3 font-medium text-gray-800">{m ? `${m.first_name} ${m.last_name}` : '—'}</td>
@@ -537,9 +545,9 @@ export default function SavingsBoosterPage() {
                       <td className="px-4 py-3 text-gray-600">#{e.slot_number || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{formatDate(e.start_date)}</td>
                       <td className="px-4 py-3 text-gray-600">{formatDate(maturityDate)}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800">{formatCurrency(e.total_deposited || 0)}</td>
-                      <td className="px-4 py-3 text-emerald-600 font-medium">{formatCurrency(e.interest_earned || 0)}</td>
-                      <td className="px-4 py-3 font-bold text-emerald-700">{formatCurrency((e.total_deposited || 0) + (e.interest_earned || 0))}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">{formatCurrency(ledger.totalDeposited)}</td>
+                      <td className="px-4 py-3 text-emerald-600 font-medium">{formatCurrency(ledger.netInterest)}</td>
+                      <td className="px-4 py-3 font-bold text-emerald-700">{formatCurrency(ledger.withdrawableAmount)}</td>
                       <td className="px-4 py-3"><Badge variant={statusVariant[e.status] || 'default'}>{e.status || 'active'}</Badge></td>
                     </tr>
                   );

@@ -2,6 +2,7 @@
 
 import { supabase } from './supabase';
 import { getIncomeBreakdown } from './coopFundService';
+import { calculateSavingsBoosterLedger } from './savingsBoosterService';
 import {
   subMonths, format, startOfMonth, endOfMonth,
   startOfDay, endOfDay, startOfWeek, endOfWeek,
@@ -245,12 +246,15 @@ function isIncomeTransaction(t) {
 }
 
 function productTransactionFlow(transactions, category, range = null) {
-  const target = String(category || '').toLowerCase();
+  const categories = category instanceof Set
+    ? category
+    : new Set([String(category || '').toLowerCase()]);
+  const withdrawalTypes = new Set([...categories].map(c => `${c}_withdrawal`));
   const scoped = inRange(
     transactions.filter(t => {
       const type = String(t?.type || '').toLowerCase();
       const cat = String(t?.category || '').toLowerCase();
-      return cat === target || type === target || type === `${target}_withdrawal`;
+      return categories.has(cat) || categories.has(type) || withdrawalTypes.has(type);
     }),
     range
   );
@@ -312,9 +316,8 @@ export async function getDashboardStats(period = 'month') {
         .select('id, account_type, balance')
         .eq('account_type', 'kiddy_savings'),
       supabase
-        .from('accounts')
-        .select('id, account_type, balance')
-        .eq('account_type', 'savings_booster'),
+        .from('savings_booster')
+        .select('*'),
     ]);
 
     const memberData = membersRes.data || [];
@@ -426,7 +429,7 @@ export async function getDashboardStats(period = 'month') {
       timeDepositCount: tdData.filter(td => td.status === 'active').length,
       totalKiddySavings: kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),
       kiddySavingsCount: kiddySavingsData.length,
-      totalSavingsBooster: savingsBoosterData.reduce((s, a) => s + (a.balance || 0), 0),
+      totalSavingsBooster: savingsBoosterData.reduce((s, a) => s + calculateSavingsBoosterLedger(a).withdrawableAmount, 0),
       savingsBoosterCount: savingsBoosterData.length,
 
       // ── Charts ──────────────────────────────────────────────────────────────
@@ -493,9 +496,8 @@ export async function getDashboardStats(period = 'month') {
       .select('id, account_type, balance')
       .eq('account_type', 'kiddy_savings'),
     supabase
-      .from('accounts')
-      .select('id, account_type, balance')
-      .eq('account_type', 'savings_booster'),
+      .from('savings_booster')
+      .select('*'),
   ]);
 
   const memberData        = membersRes.data        || [];
@@ -666,7 +668,7 @@ export async function getDashboardStats(period = 'month') {
     timeDepositCount:     tdData.filter(td => td.status === 'active').length,
     totalKiddySavings:    kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),
     kiddySavingsCount:    kiddySavingsData.length,
-    totalSavingsBooster:  savingsBoosterData.reduce((s, a) => s + (a.balance || 0), 0),
+    totalSavingsBooster:  savingsBoosterData.reduce((s, a) => s + calculateSavingsBoosterLedger(a).withdrawableAmount, 0),
     savingsBoosterCount:  savingsBoosterData.length,
 
     // ── Period product flow ──────────────────────────────────────────────────

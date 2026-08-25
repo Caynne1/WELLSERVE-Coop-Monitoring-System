@@ -49,6 +49,7 @@ import {
 } from '../../services/timeDepositService';
 import { exportMemberReport } from '../../utils/excelExport.js';
 import { createInvoiceForPayment, createInvoice, checkInvoiceNoExists } from '../../services/invoiceService';
+import { calculateSavingsBoosterLedger } from '../../services/savingsBoosterService';
 import { trackActivity } from '../../services/logService';
 
 import { formatDate, formatCurrency, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
@@ -278,7 +279,10 @@ export default function MemberDetailPage() {
   const totalCurrentLoanAmount = activeLoans.reduce((sum, loan) => sum + getLoanPayableAmount(loan), 0);
   const totalCurrentLoanBalance = activeLoans.reduce((sum, loan) => sum + Number(loan.balance || 0), 0);
   const totalTimeDepositAmount = memberTimeDeposits.reduce((sum, td) => sum + Number(td.amount || 0), 0);
-  const totalSavingsBoosterAmount = memberBoosterSlots.reduce((sum, slot) => sum + Number(slot.total_deposited || slot.balance || 0), 0);
+  const totalSavingsBoosterAmount = memberBoosterSlots.reduce(
+    (sum, slot) => sum + calculateSavingsBoosterLedger(slot).withdrawableAmount,
+    0
+  );
   const displayMembershipType = membership?.membership_type || member?.membership_type || null;
 
   const loanTransactions = useMemo(
@@ -1188,7 +1192,7 @@ function SavingsBoosterSlotCard({ slot }) {
     withdrawn: 'bg-gray-50 text-gray-500 border-gray-200',
   }[slot.status] || 'bg-gray-50 text-gray-500 border-gray-200';
 
-  const withdrawable = (slot.total_deposited || 0) + (slot.interest_earned || 0);
+  const ledger = calculateSavingsBoosterLedger(slot);
 
   return (
     <div className="rounded-xl border border-gray-200 p-4">
@@ -1201,10 +1205,13 @@ function SavingsBoosterSlotCard({ slot }) {
       <div className="grid grid-cols-2 gap-3 text-sm">
         <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : 'â€”'} />
         <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : 'â€”'} />
-        <AccountInfoCell label="Total Deposited" value={formatCurrency(slot.total_deposited || 0)} />
-        <AccountInfoCell label="Interest Earned" value={formatCurrency(slot.interest_earned || 0)} />
-        <AccountInfoCell label="Weeks Deposited" value={`${slot.weeks_deposited || 0} wk(s)`} />
-        <AccountInfoCell label="Total Withdrawable" value={formatCurrency(withdrawable)} />
+        <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '—'} />
+        <AccountInfoCell label="Total Deposited" value={formatCurrency(ledger.totalDeposited)} />
+        <AccountInfoCell label="Net Interest" value={formatCurrency(ledger.netInterest)} />
+        <AccountInfoCell label="Interest Fee" value={formatCurrency(ledger.transactionFee)} />
+        <AccountInfoCell label="Weeks Deposited" value={`${ledger.weeksDeposited || 0} wk(s)`} />
+        <AccountInfoCell label="Remaining Deposit" value={formatCurrency(ledger.remainingDeposit)} />
+        <AccountInfoCell label="Total Withdrawable" value={formatCurrency(ledger.withdrawableAmount)} />
       </div>
     </div>
   );

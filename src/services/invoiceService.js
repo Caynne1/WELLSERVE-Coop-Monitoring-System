@@ -12,6 +12,10 @@ import {
   getTimeDepositsByMemberId,
   recordTimeDepositPayment,
 } from './timeDepositService';
+import {
+  buildSavingsBoosterUpdate,
+  getBoosterDepositWeeks,
+} from './savingsBoosterService';
 
 const INVOICE_COLUMNS = [
   'invoice_no',
@@ -362,18 +366,23 @@ export async function deleteInvoiceAndLinkedRecords(id, { deleted_by = null } = 
   if (invoice.payment_type === 'savings_booster' && invoice.ref_id && amount > 0) {
     const { data: booster, error: boosterError } = await supabase
       .from('savings_booster')
-      .select('id, total_deposited, weeks_deposited')
+      .select('*')
       .eq('id', invoice.ref_id)
       .maybeSingle();
 
     if (boosterError) throw boosterError;
     if (booster) {
+      const nextTotalDeposited = Math.max(0, Number(booster.total_deposited || 0) - amount);
+      const nextWeeksDeposited = Math.max(
+        0,
+        Number(booster.weeks_deposited || 0) - getBoosterDepositWeeks(amount, booster)
+      );
       await supabase
         .from('savings_booster')
-        .update({
-          total_deposited: Math.max(0, Number(booster.total_deposited || 0) - amount),
-          weeks_deposited: Math.max(0, Number(booster.weeks_deposited || 0) - 1),
-        })
+        .update(buildSavingsBoosterUpdate(booster, {
+          total_deposited: nextTotalDeposited,
+          weeks_deposited: nextWeeksDeposited,
+        }))
         .eq('id', booster.id);
     }
   }
@@ -1050,11 +1059,17 @@ export async function createMultiCategoryInvoice({
         const priorTotalDeposited = entry.booster.total_deposited || 0;
         const priorWeeksDeposited = entry.booster.weeks_deposited || 0;
         const priorLastDepositDate = entry.booster.last_deposit_date || null;
+        const weekCount = getBoosterDepositWeeks(amount, entry.booster);
+        const nextTotalDeposited = priorTotalDeposited + amount;
+        const nextWeeksDeposited = priorWeeksDeposited + weekCount;
         const { data: updatedBooster, error: boosterErr } = await supabase
           .from('savings_booster')
           .update({
-            total_deposited: priorTotalDeposited + amount,
-            weeks_deposited: priorWeeksDeposited + 1,
+            ...buildSavingsBoosterUpdate(entry.booster, {
+              total_deposited: nextTotalDeposited,
+              weeks_deposited: nextWeeksDeposited,
+              last_deposit_date: effectivePaymentDate,
+            }),
             last_deposit_date: effectivePaymentDate,
           })
           .eq('id', entry.booster.id)
@@ -1087,6 +1102,24 @@ export async function createMultiCategoryInvoice({
         rollbacks.push(async () => {
           await supabase.from('transactions').delete().eq('id', boosterTx.id);
         });
+        const { error: boosterPaymentErr } = await supabase
+          .from('savings_booster_payments')
+          .insert({
+            booster_id: entry.booster.id,
+            member_id: member.id,
+            invoice_id: savedInvoice.id,
+            transaction_id: boosterTx.id,
+            amount,
+            week_count: weekCount,
+            payment_date: effectivePaymentDate,
+            payment_mode,
+            reference: invoiceReference,
+            notes,
+            created_by,
+          });
+        if (boosterPaymentErr && boosterPaymentErr.code !== '42P01') {
+          throw boosterPaymentErr;
+        }
         ref_id = updatedBooster?.id || entry.booster.id;
         purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
         invoiceLines.push({ label: purpose, amount, payment_type: 'savings_booster', ref_id, account_id });
