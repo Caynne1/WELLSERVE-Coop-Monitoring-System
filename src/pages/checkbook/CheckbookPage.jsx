@@ -542,16 +542,15 @@ export default function CheckbookPage() {
               <colgroup>
                 <col className="w-[12%]" />
                 <col className="w-[12%]" />
-                <col className="w-[17%]" />
                 <col className="w-[20%]" />
+                <col className="w-[24%]" />
                 <col className="w-[12%]" />
-                <col className="w-[11%]" />
-                <col className="w-[10%]" />
-                <col className="w-[6%]" />
+                <col className="w-[12%]" />
+                <col className="w-[8%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
-                  {['Check No.', 'Date', 'Payee', 'Purpose', 'Bank', 'Amount', 'Status', 'Actions'].map(h => (
+                  {['Check No.', 'Date', 'Payee', 'Purpose', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
                       className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
@@ -568,7 +567,7 @@ export default function CheckbookPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-gray-400">
+                    <td colSpan={7} className="text-center py-12 text-gray-400">
                       <BookOpen size={32} className="mx-auto mb-2 text-gray-200" />
                       {search || statFilter
                         ? 'No entries match your filters.'
@@ -592,19 +591,16 @@ export default function CheckbookPage() {
                       {formatDate(entry.date)}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {entry.payee}
+                      <p className="truncate">{entry.payee}</p>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      <p className="truncate max-w-[180px]">{entry.purpose}</p>
+                      <p className="truncate">{entry.purpose}</p>
                       {/* [ADDED] Show linked voucher number below purpose when present */}
                       {entry.vouchers && (
                         <p className="text-xs font-mono text-[#07A04E] mt-0.5">
                           {voucherNoDisplay(entry.vouchers.voucher_no)}
                         </p>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {entry.bank || '—'}
                     </td>
                     <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap text-center">
                       {formatCurrency(entry.amount)}
@@ -681,21 +677,22 @@ export default function CheckbookPage() {
               <p className="text-xs font-medium text-gray-700">
                 Filtered issued:{' '}
                 <span className="text-amber-600">
-                  {formatCurrency(
-                    filtered
-                      .filter(e => e.status === 'issued')
-                      .reduce((s, e) => s + (e.amount || 0), 0)
-                  )}
+                  {filtered.filter(e => e.status === 'issued').length}
                 </span>
               </p>
             </div>
           )}
+        </div>
+      )}
 
+      {/* â”€â”€ Pagination â”€â”€ */}
+      {!loading && filtered.length > 0 && (
+        <div className="mt-4">
           <Pagination
             page={page}
             totalPages={totalPages}
-            totalItems={filtered.length}
             pageSize={pageSize}
+            totalItems={filtered.length}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
             itemLabel="entries"
