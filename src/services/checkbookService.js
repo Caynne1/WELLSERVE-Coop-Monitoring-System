@@ -44,10 +44,28 @@ export async function getCheckbookEntries(filters = {}) {
   if (voucherIds.length > 0) {
     const { data: vouchers } = await supabase
       .from('vouchers')
-      .select('id, voucher_no, payee, amount, status')
+      .select('id, voucher_no, payee, amount, status, purpose, voucher_kind, expense_id')
       .in('id', voucherIds);
 
-    const voucherMap = Object.fromEntries((vouchers || []).map(v => [v.id, v]));
+    const expenseIds = [...new Set((vouchers || []).map(v => v.expense_id).filter(Boolean))];
+    let expenseMap = {};
+
+    if (expenseIds.length > 0) {
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('id, category, category_other')
+        .in('id', expenseIds);
+
+      expenseMap = Object.fromEntries((expenses || []).map(expense => [expense.id, expense]));
+    }
+
+    const voucherMap = Object.fromEntries((vouchers || []).map(voucher => [
+      voucher.id,
+      {
+        ...voucher,
+        expenses: voucher.expense_id ? (expenseMap[voucher.expense_id] || null) : null,
+      },
+    ]));
     enriched = entryRows.map(e => ({
       ...e,
       vouchers: e.voucher_id ? (voucherMap[e.voucher_id] || null) : null,

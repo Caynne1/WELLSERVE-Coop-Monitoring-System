@@ -186,11 +186,13 @@ export default function ExpensesPage() {
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 
-  useEffect(() => {
-    getLoansForExpenseCreation()
+  const fetchEligibleLoans = useCallback(() => {
+    return getLoansForExpenseCreation()
       .then(setLoanList)
       .catch(() => setLoanList([]));
   }, []);
+
+  useEffect(() => { fetchEligibleLoans(); }, [fetchEligibleLoans]);
 
   // ── Client-side filtering ────────────────────────────────────────────────────
 
@@ -403,6 +405,7 @@ export default function ExpensesPage() {
       }
       setApproveTarget(null);
       fetchExpenses();
+      fetchEligibleLoans();
     } catch (err) {
       toast.error(err.message || 'Failed to approve expense.');
     } finally {
@@ -429,6 +432,7 @@ export default function ExpensesPage() {
       trackActivity({ userId: user?.id, module: 'expense', action: 'void', description: `Voided expense ID: ${voidTarget.id}` });
       setVoidTarget(null);
       fetchExpenses();
+      fetchEligibleLoans();
     } catch (err) {
       toast.error(err.message || 'Failed to void expense.');
     } finally {

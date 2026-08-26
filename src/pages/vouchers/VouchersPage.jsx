@@ -105,6 +105,26 @@ function voucherKindLabel(kind) {
   return 'Expense';
 }
 
+function formatCategoryLabel(value = '') {
+  const normalized = String(value || '').trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+  if (!normalized) return '';
+  if (normalized === normalized.toUpperCase()) return normalized;
+  return normalized.replace(/\b\w/g, character => character.toUpperCase());
+}
+
+function voucherCategoryLabel(voucher) {
+  if (voucher?.voucher_kind === 'member_withdrawal') {
+    const accountType = formatCategoryLabel(voucher.account_type);
+    return accountType ? `${accountType} Withdrawal` : 'Member Withdrawal';
+  }
+
+  const expense = voucher?.expenses;
+  if (expense?.category === 'others') return expense.category_other || 'Other Expenses';
+  if (expense?.category) return formatCategoryLabel(expense.category);
+  if (voucher?.category) return formatCategoryLabel(voucher.category);
+  return 'Expense';
+}
+
 function needsVoucherNumber(voucher) {
   return voucher?.status === 'draft' && (!voucher.voucher_no?.trim() || isNeedVoucherNumber(voucher.voucher_no));
 }
@@ -155,6 +175,9 @@ export default function VouchersPage() {
   const [search, setSearch] = useState('');
   const [statFilter, setStatFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // Add / Edit modal
   const [formOpen, setFormOpen] = useState(false);
@@ -242,8 +265,15 @@ export default function VouchersPage() {
     );
     const matchStat = !statFilter || v.status === statFilter;
     const matchKind = !kindFilter || (v.voucher_kind || 'expense') === kindFilter;
-    return matchSearch && matchStat && matchKind;
+    const matchCategory = !categoryFilter || voucherCategoryLabel(v) === categoryFilter;
+    const matchFrom = !dateFrom || (v.date && v.date >= dateFrom);
+    const matchTo = !dateTo || (v.date && v.date <= dateTo);
+    return matchSearch && matchStat && matchKind && matchCategory && matchFrom && matchTo;
   });
+
+  const categoryOptions = useMemo(() => (
+    [...new Set(vouchers.map(voucherCategoryLabel).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  ), [vouchers]);
 
   // ── Summary stats ───────────────────────────────────────────────────────────
 
@@ -251,7 +281,7 @@ export default function VouchersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statFilter, kindFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, statFilter, kindFilter, categoryFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = vouchers.filter(v => v.status !== 'voided');
   const approvedList = vouchers.filter(v => v.status === 'approved');
@@ -854,8 +884,8 @@ export default function VouchersPage() {
         />
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="relative w-full md:w-64">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -879,6 +909,18 @@ export default function VouchersPage() {
         </select>
 
         <select
+          value={categoryFilter}
+          onChange={e => setCategoryFilter(e.target.value)}
+          className="min-w-[210px] flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg
+            focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+        >
+          <option value="">All Categories</option>
+          {categoryOptions.map(category => (
+            <option key={category} value={category}>{category}</option>
+          ))}
+        </select>
+
+        <select
           value={statFilter}
           onChange={e => setStatFilter(e.target.value)}
           className="px-3 py-2 text-sm border border-gray-200 rounded-lg
@@ -889,6 +931,23 @@ export default function VouchersPage() {
           <option value="approved">Approved</option>
           <option value="voided">Voided</option>
         </select>
+        <input
+          type="date"
+          aria-label="Voucher date from"
+          value={dateFrom}
+          onChange={e => setDateFrom(e.target.value)}
+          className="w-[150px] px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700
+            focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+        />
+        <span className="text-sm text-gray-300">–</span>
+        <input
+          type="date"
+          aria-label="Voucher date to"
+          value={dateTo}
+          onChange={e => setDateTo(e.target.value)}
+          className="w-[150px] px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700
+            focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+        />
         <button
           onClick={handlePrint}
           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
@@ -1133,9 +1192,9 @@ export default function VouchersPage() {
               type="button"
               onClick={() => setField('voucher_no', isVoucherForTracing(form.voucher_no) ? '' : 'For Tracing')}
               className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                isVoucherForTracing(form.voucher_no)
-                  ? 'border-amber-200 bg-amber-50 text-amber-700'
-                  : 'border-gray-200 bg-white text-gray-500 hover:border-amber-200 hover:text-amber-700'
+              isVoucherForTracing(form.voucher_no)
+                  ? 'border-[#07A04E]/25 bg-[#D6FADC] text-[#07A04E]'
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-[#07A04E]/30 hover:bg-[#D6FADC]/40 hover:text-[#07A04E]'
               }`}
             >
               {isVoucherForTracing(form.voucher_no) ? 'For Tracing selected' : 'Mark as For Tracing'}

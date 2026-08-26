@@ -70,7 +70,7 @@ export async function getVouchers(filters = {}) {
 
   const [expensesRes, membersRes, accountsRes] = await Promise.all([
     expenseIds.length
-      ? supabase.from('expenses').select('id, description, date, amount').in('id', expenseIds)
+      ? supabase.from('expenses').select('id, description, date, amount, category, category_other').in('id', expenseIds)
       : Promise.resolve({ data: [] }),
     memberIds.length
       ? supabase.from('members').select('id, member_no, first_name, last_name').in('id', memberIds)

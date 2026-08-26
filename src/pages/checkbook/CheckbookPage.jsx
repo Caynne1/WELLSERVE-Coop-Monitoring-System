@@ -50,10 +50,31 @@ function makeCheckForTracingNumber(seed = '') {
   return `${CHECK_FOR_TRACING_PREFIX}-${suffix}`;
 }
 
+function formatCategoryLabel(value = '') {
+  const normalized = String(value || '').trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+  if (!normalized) return '';
+  if (normalized === normalized.toUpperCase()) return normalized;
+  return normalized.replace(/\b\w/g, character => character.toUpperCase());
+}
+
+function getCheckCategory(entry) {
+  const expense = entry?.vouchers?.expenses;
+
+  if (expense?.category === 'others') return expense.category_other || 'Other Expenses';
+  if (expense?.category) return formatCategoryLabel(expense.category);
+  if (entry?.category) return formatCategoryLabel(entry.category);
+  if (entry?.vouchers?.voucher_kind === 'member_withdrawal') return 'Member Withdrawal';
+
+  const purpose = `${entry?.purpose || ''} ${entry?.vouchers?.purpose || ''}`;
+  if (/loan\s*(net\s*proceeds|release)/i.test(purpose)) return 'Loan Releases';
+
+  return 'Expense';
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STATUS_LABEL = {
-  issued:  'For Check Approval',
+  issued:  'For Approval',
   waiting_release: 'Waiting for Release',
   released: 'Released',
   cleared: 'Released',
@@ -96,6 +117,9 @@ export default function CheckbookPage() {
   // Filters
   const [search, setSearch]           = useState('');
   const [statFilter, setStatFilter]   = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [dateFrom, setDateFrom]       = useState('');
+  const [dateTo, setDateTo]           = useState('');
 
   // Add / Edit modal
   const [formOpen, setFormOpen]       = useState(false);
@@ -160,11 +184,18 @@ export default function CheckbookPage() {
       e.check_no?.toLowerCase().includes(q) ||
       e.payee?.toLowerCase().includes(q)    ||
       e.purpose?.toLowerCase().includes(q)  ||
-      e.bank?.toLowerCase().includes(q)
+      e.bank?.toLowerCase().includes(q)     ||
+      getCheckCategory(e).toLowerCase().includes(q)
     );
     const matchStat = !statFilter || e.status === statFilter;
-    return matchSearch && matchStat;
+    const matchCategory = !categoryFilter || getCheckCategory(e) === categoryFilter;
+    const matchFrom = !dateFrom || (e.date && e.date >= dateFrom);
+    const matchTo = !dateTo || (e.date && e.date <= dateTo);
+    return matchSearch && matchStat && matchCategory && matchFrom && matchTo;
   });
+
+  const categoryOptions = [...new Set(entries.map(getCheckCategory).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
 
   // ── Summary stats ────────────────────────────────────────────────────────────
 
@@ -172,7 +203,7 @@ export default function CheckbookPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, statFilter, categoryFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const issuedList   = entries.filter(e => e.status === 'issued');
   const clearedList  = entries.filter(e => e.status === 'released' || e.status === 'cleared');
@@ -406,7 +437,7 @@ export default function CheckbookPage() {
 
   function handlePrint() {
     const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
-    const statusLabel = {issued:'Issued',cleared:'Cleared',voided:'Voided'};
+    const statusLabel = STATUS_LABEL;
     const rows = filtered.map(e => `<tr>
       <td style="font-family:monospace">${checkNoDisplay(e.check_no)||'—'}</td>
       <td style="white-space:nowrap">${e.date||'—'}</td>
@@ -492,8 +523,8 @@ export default function CheckbookPage() {
       </div>
 
       {/* ── Filters ── */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="relative w-full md:w-64">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -505,17 +536,45 @@ export default function CheckbookPage() {
           />
         </div>
         <select
+          value={categoryFilter}
+          onChange={e => setCategoryFilter(e.target.value)}
+          className="min-w-[210px] flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg
+            focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
+        >
+          <option value="">All Categories</option>
+          {categoryOptions.map(category => (
+            <option key={category} value={category}>{category}</option>
+          ))}
+        </select>
+        <select
           value={statFilter}
           onChange={e => setStatFilter(e.target.value)}
           className="px-3 py-2 text-sm border border-gray-200 rounded-lg
             focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
         >
           <option value="">All Status</option>
-          <option value="issued">Issued</option>
+          <option value="issued">For Approval</option>
           <option value="waiting_release">Waiting for Release</option>
           <option value="released">Released</option>
           <option value="voided">Voided</option>
         </select>
+        <input
+          type="date"
+          aria-label="Check date from"
+          value={dateFrom}
+          onChange={e => setDateFrom(e.target.value)}
+          className="w-[150px] px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700
+            focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+        />
+        <span className="text-sm text-gray-300">–</span>
+        <input
+          type="date"
+          aria-label="Check date to"
+          value={dateTo}
+          onChange={e => setDateTo(e.target.value)}
+          className="w-[150px] px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700
+            focus:outline-none focus:ring-2 focus:ring-[#7EB751] transition"
+        />
         <button
           onClick={handlePrint}
           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 whitespace-nowrap"
@@ -540,21 +599,22 @@ export default function CheckbookPage() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm">
               <colgroup>
-                <col className="w-[12%]" />
-                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[16%]" />
                 <col className="w-[20%]" />
-                <col className="w-[24%]" />
+                <col className="w-[14%]" />
+                <col className="w-[11%]" />
                 <col className="w-[12%]" />
-                <col className="w-[12%]" />
-                <col className="w-[8%]" />
+                <col className="w-[6%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
-                  {['Check No.', 'Date', 'Payee', 'Purpose', 'Amount', 'Status', 'Actions'].map(h => (
+                  {['Check No.', 'Date', 'Payee', 'Purpose', 'Category', 'Amount', 'Status', 'Actions'].map(h => (
                     <th
                       key={h}
                       className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                        ['Check No.', 'Date', 'Amount', 'Status', 'Actions'].includes(h)
+                        ['Check No.', 'Date', 'Category', 'Amount', 'Status', 'Actions'].includes(h)
                           ? 'text-center'
                           : 'text-left'
                       }`}
@@ -567,7 +627,7 @@ export default function CheckbookPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-gray-400">
+                    <td colSpan={8} className="text-center py-12 text-gray-400">
                       <BookOpen size={32} className="mx-auto mb-2 text-gray-200" />
                       {search || statFilter
                         ? 'No entries match your filters.'
@@ -601,6 +661,11 @@ export default function CheckbookPage() {
                           {voucherNoDisplay(entry.vouchers.voucher_no)}
                         </p>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex max-w-full items-center justify-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-600">
+                        <span className="truncate">{getCheckCategory(entry)}</span>
+                      </span>
                     </td>
                     <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap text-center">
                       {formatCurrency(entry.amount)}
@@ -675,7 +740,7 @@ export default function CheckbookPage() {
                 Showing {filtered.length} of {entries.length} entr{entries.length !== 1 ? 'ies' : 'y'}
               </p>
               <p className="text-xs font-medium text-gray-700">
-                Filtered issued:{' '}
+                Filtered for approval:{' '}
                 <span className="text-amber-600">
                   {filtered.filter(e => e.status === 'issued').length}
                 </span>
@@ -725,8 +790,8 @@ export default function CheckbookPage() {
                 onClick={() => setField('check_no', isCheckForTracing(form.check_no) ? '' : 'For Tracing')}
                 className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                   isCheckForTracing(form.check_no)
-                    ? 'border-amber-200 bg-amber-50 text-amber-700'
-                    : 'border-gray-200 bg-white text-gray-500 hover:border-amber-200 hover:text-amber-700'
+                    ? 'border-[#07A04E]/25 bg-[#D6FADC] text-[#07A04E]'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-[#07A04E]/30 hover:bg-[#D6FADC]/40 hover:text-[#07A04E]'
                 }`}
               >
                 {isCheckForTracing(form.check_no) ? 'For Tracing selected' : 'Mark as For Tracing'}

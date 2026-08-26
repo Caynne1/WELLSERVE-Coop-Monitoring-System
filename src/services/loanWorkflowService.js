@@ -323,19 +323,58 @@ export async function getLoansForExpenseCreation() {
   if (!loans?.length) return [];
 
   const memberIds = [...new Set(loans.map(l => l.member_id).filter(Boolean))];
-  const { data: members } = memberIds.length
-    ? await supabase
-        .from('members')
-        .select('id, first_name, last_name, middle_initial, member_no')
-        .in('id', memberIds)
-    : { data: [] };
+  const [membersResult, expensesResult, vouchersResult] = await Promise.all([
+    memberIds.length
+      ? supabase
+          .from('members')
+          .select('id, first_name, last_name, middle_initial, member_no')
+          .in('id', memberIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from('expenses')
+      .select('description, notes')
+      .eq('status', 'approved')
+      .not('voucher_id', 'is', null),
+    supabase
+      .from('vouchers')
+      .select('reference')
+      .not('expense_id', 'is', null)
+      .neq('status', 'voided'),
+  ]);
 
-  const memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
-  return loans.map(loan => ({
-    ...loan,
-    members: memberMap[loan.member_id] || null,
-    net_proceeds: getLoanNetProceeds(loan),
-  }));
+  if (membersResult.error) throw membersResult.error;
+  if (expensesResult.error) throw expensesResult.error;
+  if (vouchersResult.error) throw vouchersResult.error;
+
+  const completedLoanReferences = new Set();
+  const addReference = value => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized) completedLoanReferences.add(normalized);
+  };
+
+  for (const expense of expensesResult.data || []) {
+    const text = `${expense.description || ''}\n${expense.notes || ''}`;
+    const loanNo = text.match(/Loan No:\s*([^\s\n]+)/i)?.[1];
+    const loanId = text.match(/Loan ID:\s*([0-9a-f-]{20,})/i)?.[1];
+    const descriptionReference = text.match(/Loan net proceeds\s*-\s*([^\s\n]+)/i)?.[1];
+    addReference(loanNo);
+    addReference(loanId);
+    addReference(descriptionReference);
+  }
+
+  for (const voucher of vouchersResult.data || []) addReference(voucher.reference);
+
+  const memberMap = Object.fromEntries((membersResult.data || []).map(m => [m.id, m]));
+  return loans
+    .filter(loan => (
+      !completedLoanReferences.has(String(loan.id || '').toLowerCase()) &&
+      !completedLoanReferences.has(String(loan.loan_no || '').trim().toLowerCase())
+    ))
+    .map(loan => ({
+      ...loan,
+      members: memberMap[loan.member_id] || null,
+      net_proceeds: getLoanNetProceeds(loan),
+    }));
 }
 
 export async function getLoanByLoanNo(loanNo) {
