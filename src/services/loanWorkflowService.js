@@ -597,10 +597,12 @@ async function findLoanByReleaseContext({ check, voucher, expense }) {
 
 function extractLoanReferences(value = '') {
   const text = String(value || '');
+  const uuidPattern = /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/gi;
   const refs = [
-    ...text.matchAll(/Loan No\.?\s*:\s*([^\n\r;|]+)/gi),
+    ...text.matchAll(uuidPattern),
     ...text.matchAll(/Loan ID\s*:\s*([0-9a-f-]{20,})/gi),
-    ...text.matchAll(/Loan net proceeds\s*-\s*([^\n\r;|]+)/gi),
+    ...text.matchAll(/Loan No\.?\s*:\s*(?!Loan ID\b)([^\s\n\r;|]+)/gi),
+    ...text.matchAll(/Loan net proceeds\s*-\s*([^\s\n\r;|]+)/gi),
     ...text.matchAll(/\b(LN[-_/ A-Za-z0-9]+)\b/gi),
   ].map(match => cleanReference(match[1])).filter(Boolean);
 

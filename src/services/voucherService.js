@@ -183,11 +183,16 @@ export async function createVoucherFromExpense(expense, createdBy) {
 
 function extractLoanReference(value = '') {
   const text = String(value || '');
-  const match =
-    text.match(/Loan No:\s*([A-Za-z0-9-]+)/i) ||
-    text.match(/Loan ID:\s*([0-9a-f-]{20,})/i) ||
-    text.match(/Loan net proceeds\s*-\s*([A-Za-z0-9-]+)/i);
-  return match?.[1] || null;
+  const loanId =
+    text.match(/Loan ID\s*:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1] ||
+    text.match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i)?.[1];
+
+  if (loanId) return loanId;
+
+  const loanNo = text.match(/Loan No\.?\s*:\s*(?!Loan ID\b)([^\s\n;|]+)/i)?.[1];
+  if (loanNo) return loanNo;
+
+  return text.match(/Loan net proceeds\s*-\s*([^\s\n;|]+)/i)?.[1] || null;
 }
 
 // helper specifically for member-account withdrawals
