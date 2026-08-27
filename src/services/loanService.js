@@ -143,6 +143,7 @@ const LOAN_COLUMNS = [
   'member_id', 'loan_no', 'amount', 'balance', 'interest_rate', 'term_months',
   'monthly_amortization', 'release_date', 'due_date', 'status', 'purpose', 'notes',
   'repayment_frequency', 'loan_method', 'source', 'advance_payment',
+  'funding_source', 'financing_note',
 
   'loan_proposal', 'service_fee', 'share_capital', 'loan_insurance', 'regular_savings',
   'regular_savings_percent',

@@ -503,6 +503,7 @@ export default function LoanFormPage() {
     setValue,
     control,
     getValues,
+    watch,
     formState: { errors },
   } = useForm({
     defaultValues: {
@@ -518,6 +519,8 @@ export default function LoanFormPage() {
       status: 'draft',
       purpose: '',
       notes: '',
+      funding_source: 'cooperative',
+      financing_note: '',
       repayment_frequency: 'weekly_fixed4',
       loan_method: 'diminishing',
 
@@ -1037,6 +1040,8 @@ export default function LoanFormPage() {
           status: data.status || 'active',
           purpose: data.purpose || '',
           notes: data.notes || '',
+          funding_source: data.funding_source || 'cooperative',
+          financing_note: data.financing_note || '',
           repayment_frequency: data.repayment_frequency || 'weekly',
           loan_method: data.loan_method || 'diminishing',
 
@@ -1786,6 +1791,31 @@ export default function LoanFormPage() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <Select
+                label="Funding Source"
+                options={[
+                  { value: 'cooperative', label: 'Cooperative Fund' },
+                  { value: 'financing', label: 'Financing' },
+                ]}
+                {...register('funding_source')}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">For audit identification only</p>
+            </div>
+
+            {watch('funding_source') === 'financing' && (
+              <div className="sm:col-span-2">
+                <Input
+                  label="Financing Note"
+                  placeholder="e.g. Funded through financing - Ma'am Lynie"
+                  {...register('financing_note')}
+                />
+                <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Optional financing reference or owner</p>
+              </div>
+            )}
+          </div>
+
           {/* Row 4: Preview Payment / Period */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
@@ -2214,6 +2244,10 @@ export default function LoanFormPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 <div className="space-y-4">
                   <PreviewGroup title="Terms">
+                    <PreviewRow label="Funding Source" value={watch('funding_source') === 'financing' ? 'Financing' : 'Cooperative Fund'} />
+                    {watch('funding_source') === 'financing' && (
+                      <PreviewRow label="Financing Note" value={watch('financing_note') || '—'} />
+                    )}
                     <PreviewRow label="Method" value={watchedMethod === 'straight' ? 'Straight' : 'Diminishing'} />
                     <PreviewRow label="Frequency" value={frequencyDisplayLabel(watchedFrequency)} />
                     <PreviewRow label="First Payment Due Date" value={formatDate(preview.summary.first_payment_due_date)} />

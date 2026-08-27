@@ -508,6 +508,8 @@ export default function LoanDetailPage() {
             ${kvRow('Member No.', loan.members?.member_no || '—')}
             ${kvRow('Loan No.', loan.loan_no || '—')}
             ${kvRow('Purpose', loan.purpose || '—')}
+            ${kvRow('Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund')}
+            ${loan.funding_source === 'financing' ? kvRow('Financing Note', loan.financing_note || '—') : ''}
             ${kvRow('Status', titleCase(loan.status || '—'))}
           </div>
           <div class="col">
@@ -913,6 +915,8 @@ export default function LoanDetailPage() {
               ['Member', memberName || '—'],
               ['Member No.', loan.members?.member_no || '—'],
               ['Loan Type', <Badge key="loan_type" variant={loan.loan_type === 'existing' ? 'warning' : 'success'}>{loan.loan_type === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
+              ['Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund'],
+              ...(loan.funding_source === 'financing' ? [['Financing Note', loan.financing_note || '—']] : []),
               ['Loan Principal', formatCurrency(loan.amount)],
               ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(loan.balance ?? loan.amount)}</span>],
               ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
