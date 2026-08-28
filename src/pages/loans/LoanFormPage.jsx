@@ -444,6 +444,7 @@ export default function LoanFormPage() {
   }
 
   const [chargeTypeMode, setChargeTypeMode] = useState({
+    insurance: 'loan_term',
     regular_savings: 'percent',
     penalty_due: 'fixed',
     annual_dues: 'fixed',
@@ -622,8 +623,14 @@ export default function LoanFormPage() {
     const amount = parseMoneyInput(watchedProposal);
     const termMonths = parseInt(watchedTerm || 0, 10);
     const monthlyInterestRate = parseFloat(watchedRate || 0);
+    const requiresOldRate = watchedLoanType === 'existing';
 
-    if (amount <= 0 || termMonths <= 0 || monthlyInterestRate < 0) {
+    if (
+      amount <= 0
+      || termMonths <= 0
+      || monthlyInterestRate < 0
+      || (requiresOldRate && monthlyInterestRate <= 0)
+    ) {
       return null;
     }
 
@@ -678,6 +685,7 @@ export default function LoanFormPage() {
     watchedProposal,
     watchedTerm,
     watchedRate,
+    watchedProduct,
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
@@ -699,6 +707,9 @@ export default function LoanFormPage() {
   ]);
 
   const proposalAmount = parseMoneyInput(watchedProposal);
+  const insuranceMonths = chargeTypeMode.insurance === 'standard'
+    ? 12
+    : (parseInt(watchedTerm || 0, 10) || 0);
 
   const chargeRows = useMemo(() => {
     const rows = [
@@ -736,11 +747,17 @@ export default function LoanFormPage() {
         key: 'insurance',
         label: 'CLPI (Insurance)',
         subtitle: 'Coop loan protection — (Loan Amount ÷ 1000) × 1.1 × Months',
-        typeLabel: 'Formula',
+        typeLabel: chargeTypeMode.insurance === 'standard' ? 'Standard' : 'Loan Term',
+        typeSelectable: true,
+        typeOptions: [
+          { value: 'loan_term', label: 'Loan Term' },
+          { value: 'standard', label: 'Standard' },
+        ],
+        inputField: 'insurance_manual_amount',
         isPercent: false,
         rateValue: watchedInsuranceManualAmount,
         amount: parseFloat(watchedInsuranceManualAmount || 0) || 0,
-        calcText: `(${formatCurrency(proposalAmount)} ÷ 1,000) × 1.1 × ${parseInt(watchedTerm || 0, 10) || 0} mo`,
+        calcText: `(${formatCurrency(proposalAmount)} ÷ 1,000) × 1.1 × ${insuranceMonths} mo`,
       },
       {
         key: 'regular_savings',
@@ -846,6 +863,7 @@ export default function LoanFormPage() {
     return rows.filter(row => !String(row.key).startsWith('membership_'));
   }, [
     proposalAmount,
+    insuranceMonths,
     watchedTerm,
     watchedServiceFeePercent,
     watchedServiceFee,
@@ -895,6 +913,12 @@ export default function LoanFormPage() {
     setPreviewReady(false);
   }, [watchedProduct, watchedLoanType, setValue]);
 
+  useEffect(() => {
+    if (isEdit || watchedLoanType !== 'existing' || watchedProduct !== 'custom') return;
+    setValue('interest_rate', '');
+    setPreviewReady(false);
+  }, [isEdit, watchedLoanType, watchedProduct, setValue]);
+
   // Payment Frequency options are scoped to the selected Loan Type — Old/
   // Existing loans only offer frequencies still using the old formula
   // (currently just Weekly), New loans only offer frequencies with the new
@@ -932,8 +956,7 @@ export default function LoanFormPage() {
     const cbuRetention = proposal * ((parseFloat(watchedCbuRetentionPercent || 0) || 0) / 100);
     setValue('share_capital', cbuRetention ? round2(cbuRetention).toFixed(2) : '');
 
-    const termMonths = parseInt(watchedTerm || 0, 10) || 0;
-    const clpi = (proposal / 1000) * 1.1 * termMonths;
+    const clpi = (proposal / 1000) * 1.1 * insuranceMonths;
     setValue('insurance_manual_amount', clpi ? round2(clpi).toFixed(2) : '');
 
     if (chargeTypeMode.regular_savings === 'percent') {
@@ -967,6 +990,7 @@ export default function LoanFormPage() {
     watchedServiceFeePercent,
     watchedRate,
     watchedTerm,
+    insuranceMonths,
     watchedFrequency,
     watchedMethod,
     watchedReleaseDate,
@@ -1208,6 +1232,11 @@ export default function LoanFormPage() {
 
     if (monthlyInterestRate < 0) {
       toast.error('Interest rate cannot be negative.');
+      return;
+    }
+
+    if (values.loan_type === 'existing' && monthlyInterestRate <= 0) {
+      toast.error('Please enter the monthly interest rate for this old loan.');
       return;
     }
 
@@ -1820,7 +1849,7 @@ export default function LoanFormPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <Input
-                label="Loan Payment / Period"
+                label={watchedLoanType === 'existing' ? 'Total Payment / Period' : 'Loan Payment / Period'}
                 readOnly
                 value={preview ? formatCurrency(preview.summary.loan_payment_per_period) : ''}
               />
@@ -2063,8 +2092,12 @@ export default function LoanFormPage() {
                             disabled={!included}
                             className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 disabled:opacity-60"
                           >
-                            <option value="fixed">Fixed Amount</option>
-                            <option value="percent">Percentage</option>
+                            {(row.typeOptions || [
+                              { value: 'fixed', label: 'Fixed Amount' },
+                              { value: 'percent', label: 'Percentage' },
+                            ]).map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
                           </select>
                         ) : (
                           <span className="inline-flex items-center text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
@@ -2085,9 +2118,9 @@ export default function LoanFormPage() {
                               row.key === 'service_fee' ? 'service_fee_percent' :
                               row.key === 'cbu_retention' ? 'cbu_retention_percent' :
                               row.key === 'notarial_fee' ? 'notarial_fee' :
-                              row.key === 'insurance' ? 'insurance_manual_amount' :
-                              row.typeSelectable ? (row.isPercent ? row.percentField : row.key) :
-                              row.key
+                              row.inputField || (
+                                row.typeSelectable ? (row.isPercent ? row.percentField : row.key) : row.key
+                              )
                             )}
                           />
                           {row.isPercent && (
