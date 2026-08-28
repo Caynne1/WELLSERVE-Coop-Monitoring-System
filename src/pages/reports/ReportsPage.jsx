@@ -4,6 +4,7 @@ import {
   TrendingUp, TrendingDown, Download, RefreshCw,
   Calendar, ChevronDown, Printer,
   ArrowUpRight, ArrowDownRight, Minus, ToggleLeft, ToggleRight,
+  Search, Pencil, FileSearch,
 } from 'lucide-react';
 import {
   startOfWeek, endOfWeek, startOfMonth, endOfMonth,
@@ -16,13 +17,17 @@ import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
+import Modal from '../../components/ui/Modal';
+import Input from '../../components/ui/Input';
+import { useAuth } from '../../context/AuthContext';
 import { getMemberStats } from '../../services/memberService';
 import { getLoanStats } from '../../services/loanService';
 import { getAccountStats } from '../../services/accountService';
-import { getFundLedgerSummary } from '../../services/coopFundService';
+import { computeCoopSummaryFromInvoices, getIncomeBreakdown } from '../../services/coopFundService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
+import { getDocumentsForTracing, traceDocumentNumber } from '../../services/documentTracingService';
 
 // â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -56,12 +61,18 @@ function isCountedLedgerRow(tx) {
 
 function isLoanRelease(tx) {
   const category = normalized(tx.category);
-  const text = normalized(`${tx.description || ''} ${tx.ref_no || ''}`);
   return tx.type === 'cash_out' && (
     category === 'loan_release' ||
     category === 'loan_net_proceeds' ||
-    (category === 'capital' && text.includes('loan'))
+    category === 'capital'
   );
+}
+
+function isFundExpense(tx) {
+  const category = normalized(tx.category);
+  return tx.type === 'cash_out' &&
+    !isLoanRelease(tx) &&
+    !category.includes('withdrawal');
 }
 
 function isLoanPayment(tx) {
@@ -81,30 +92,16 @@ function isLoanInterest(tx) {
   );
 }
 
-function isCbuDeposit(tx) {
-  return tx.type === 'cash_in' && normalized(tx.category) === 'cbu';
+function isCbuContribution(tx) {
+  return tx.type === 'cash_in' && [
+    'cbu', 'membership_cbu', 'cbu_retention', 'cbu_completion',
+  ].includes(normalized(tx.category));
 }
 
-function isSavingsDeposit(tx) {
-  return tx.type === 'cash_in' && normalized(tx.category) === 'savings';
-}
-
-function isCbuWithdrawal(tx) {
-  return tx.type === 'cash_out' && normalized(tx.category) === 'cbu_withdrawal';
-}
-
-function isSavingsWithdrawal(tx) {
-  return tx.type === 'cash_out' && normalized(tx.category) === 'savings_withdrawal';
-}
-
-function isMembershipCollection(tx) {
-  const category = normalized(tx.category);
-  const rawType = normalized(tx.raw_type);
-  return tx.type === 'cash_in' && (
-    category === 'membership' ||
-    category === 'membership_fee' ||
-    rawType === 'membership_payment'
-  );
+function isSavingsContribution(tx) {
+  return tx.type === 'cash_in' && [
+    'savings', 'membership_savings', 'regular_savings',
+  ].includes(normalized(tx.category));
 }
 
 function isLoanDeduction(tx) {
@@ -156,10 +153,6 @@ function isReportIncome(tx) {
     'others',
     'other_payment',
   ].includes(category);
-}
-
-function isExpense(tx) {
-  return tx.type === 'cash_out' && !isLoanRelease(tx) && !normalized(tx.category).includes('withdrawal');
 }
 
 // â”€â”€ Date helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -216,10 +209,10 @@ function buildTimeSeries(transactions, from, to, preset) {
           ? `W${i + 1}`
           : format(periodStart, preset === 'annual' ? 'MMM' : 'MMM yy'),
       loans:   inPeriod.filter(t => isCountedLedgerRow(t) && isLoanRelease(t)).reduce((s, t) => s + (t.amount || 0), 0),
-      savings: inPeriod.filter(isSavingsDeposit).reduce((s, t) => s + (t.amount || 0), 0),
-      cbu:     inPeriod.filter(isCbuDeposit).reduce((s, t) => s + (t.amount || 0), 0),
+      savings: inPeriod.filter(isSavingsContribution).reduce((s, t) => s + (t.amount || 0), 0),
+      cbu:     inPeriod.filter(isCbuContribution).reduce((s, t) => s + (t.amount || 0), 0),
       income:  inPeriod.filter(t => isCountedLedgerRow(t) && isReportIncome(t)).reduce((s, t) => s + (t.amount || 0), 0),
-      expense: inPeriod.filter(t => isCountedLedgerRow(t) && isExpense(t)).reduce((s, t) => s + (t.amount || 0), 0),
+      expense: inPeriod.filter(t => isCountedLedgerRow(t) && isFundExpense(t)).reduce((s, t) => s + (t.amount || 0), 0),
     };
   });
 }
@@ -227,8 +220,9 @@ function buildTimeSeries(transactions, from, to, preset) {
 // â”€â”€ SVG Trend Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TrendChart({ title, current, previous, color, showComparison, labels }) {
-  const H = 130, W = 100;
+  const H = 150, W = 100;
   const max = Math.max(...current, ...(showComparison ? previous : []), 1);
+  const currentTotal = current.reduce((sum, value) => sum + Number(value || 0), 0);
 
   const toPoints = arr => arr.map((v, i) => [
     arr.length < 2 ? W / 2 : (i / (arr.length - 1)) * W,
@@ -250,9 +244,13 @@ function TrendChart({ title, current, previous, color, showComparison, labels })
   const gradId = `cg-${title.replace(/\s+/g, '')}`;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{title}</span>
+    <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{title}</span>
+          <p className="mt-1 text-xl font-bold text-gray-900 tabular-nums">{formatCurrency(currentTotal)}</p>
+          <p className="text-[10px] text-gray-400">Total for selected period</p>
+        </div>
         {pctChange !== null && showComparison && (
           <span className={`flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full ${
             pctChange > 0 ? 'bg-emerald-50 text-emerald-600' : pctChange < 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-500'
@@ -286,7 +284,12 @@ function TrendChart({ title, current, previous, color, showComparison, labels })
               strokeWidth="0.7" strokeLinecap="round" strokeLinejoin="round" />
           )}
           {currPts.map((p, i) => (
-            <circle key={i} cx={p[0]} cy={p[1]} r="1" fill={color.stroke} />
+            <g key={i}>
+              <circle cx={p[0]} cy={p[1]} r="3.2" fill="transparent">
+                <title>{`${labels[i] || ''}: ${formatCurrency(current[i] || 0)}`}</title>
+              </circle>
+              <circle cx={p[0]} cy={p[1]} r="1.15" fill={color.stroke} pointerEvents="none" />
+            </g>
           ))}
         </svg>
       </div>
@@ -297,6 +300,15 @@ function TrendChart({ title, current, previous, color, showComparison, labels })
           return i % step === 0 || i === labels.length - 1;
         }).map((l, i) => (
           <span key={i} className="text-[9px] text-gray-400 font-medium">{l}</span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-gray-100 pt-3 sm:grid-cols-3">
+        {labels.map((label, index) => (
+          <div key={`${label}-${index}`} className="flex items-center justify-between gap-2 text-[10px]">
+            <span className="truncate text-gray-400">{label}</span>
+            <span className="font-semibold text-gray-700 tabular-nums">{formatCurrency(current[index] || 0)}</span>
+          </div>
         ))}
       </div>
 
@@ -544,7 +556,6 @@ function buildReportHtml({
   totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
   totalIncome, totalExpense, loanInterest, membershipCollections,
   loanDeductions, totalCBUBalance, totalSavingsBalance,
-  cbuDeposits, savingsDeposits,
 }) {
   const fmt = (n) =>
     'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -570,7 +581,7 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Active</div><div class="stat-value">${num(memberStats?.active)}</div></div>
       <div class="stat-box"><div class="stat-label">Inactive</div><div class="stat-value">${num(memberStats?.inactive)}</div></div>
       <div class="stat-box"><div class="stat-label">Closed Accounts</div><div class="stat-value">${num(memberStats?.closed)}</div></div>
-      <div class="stat-box"><div class="stat-label">Membership Collections</div><div class="stat-value" style="font-size:10pt">${fmt(membershipCollections)}</div></div>
+      <div class="stat-box"><div class="stat-label">Membership/Admin & Regulatory Fees</div><div class="stat-value" style="font-size:10pt">${fmt(membershipCollections)}</div></div>
     </div>
 
     <div class="section-heading">Loan Portfolio</div>
@@ -592,8 +603,6 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Coop Income</div><div class="stat-value" style="font-size:10pt">${fmt(totalIncome)}</div></div>
       <div class="stat-box"><div class="stat-label">Expenses</div><div class="stat-value" style="font-size:10pt">${fmt(totalExpense)}</div></div>
       <div class="stat-box"><div class="stat-label">Loan Deductions</div><div class="stat-value" style="font-size:10pt">${fmt(loanDeductions)}</div></div>
-      <div class="stat-box"><div class="stat-label">CBU Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(cbuDeposits)}</div></div>
-      <div class="stat-box"><div class="stat-label">Savings Deposits</div><div class="stat-value" style="font-size:10pt">${fmt(savingsDeposits)}</div></div>
     </div>
 
     <div class="confidential">
@@ -605,11 +614,19 @@ function buildReportHtml({
 // â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ReportsPage() {
+  const { user } = useAuth();
   const [memberStats, setMemberStats]       = useState(null);
   const [loanStats, setLoanStats]           = useState(null);
   const [accountStats, setAccountStats]     = useState(null);
   const [allTransactions, setAllTransactions] = useState([]);
+  const [incomeBreakdown, setIncomeBreakdown] = useState(null);
   const [loading, setLoading]               = useState(true);
+  const [tracingDocuments, setTracingDocuments] = useState([]);
+  const [tracingSearch, setTracingSearch] = useState('');
+  const [tracingType, setTracingType] = useState('all');
+  const [traceTarget, setTraceTarget] = useState(null);
+  const [tracedNumber, setTracedNumber] = useState('');
+  const [traceSaving, setTraceSaving] = useState(false);
 
   const [preset, setPreset]             = useState('monthly');
   const [customFrom, setCustomFrom]     = useState(null);
@@ -627,16 +644,20 @@ export default function ReportsPage() {
   async function fetchAll() {
     setLoading(true);
     try {
-      const [ms, ls, as, fundSummary] = await Promise.all([
+      const [ms, ls, as, fundSummary, incomeSummary, documents] = await Promise.all([
         getMemberStats(),
         getLoanStats(),
         getAccountStats(),
-        getFundLedgerSummary(),
+        computeCoopSummaryFromInvoices(),
+        getIncomeBreakdown(),
+        getDocumentsForTracing(),
       ]);
       setMemberStats(ms);
       setLoanStats(ls);
       setAccountStats(as);
       setAllTransactions(fundSummary?.transactions || []);
+      setIncomeBreakdown(incomeSummary);
+      setTracingDocuments(documents);
     } catch {
       toast.error(
         (t) => (
@@ -659,6 +680,43 @@ export default function ReportsPage() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  const filteredTracingDocuments = useMemo(() => {
+    const query = tracingSearch.trim().toLowerCase();
+    return tracingDocuments.filter(document => {
+      if (tracingType !== 'all' && document.document_type !== tracingType) return false;
+      if (!query) return true;
+      return [
+        document.document_label,
+        document.party,
+        document.current_number,
+        document.status,
+      ].some(value => String(value || '').toLowerCase().includes(query));
+    });
+  }, [tracingDocuments, tracingSearch, tracingType]);
+
+  function openTraceModal(document) {
+    setTraceTarget(document);
+    setTracedNumber('');
+  }
+
+  async function handleTraceDocument() {
+    if (!traceTarget) return;
+    setTraceSaving(true);
+    try {
+      await traceDocumentNumber(traceTarget, tracedNumber, user?.id);
+      setTracingDocuments(current => current.filter(document => (
+        document.document_type !== traceTarget.document_type || document.id !== traceTarget.id
+      )));
+      setTraceTarget(null);
+      setTracedNumber('');
+      toast.success(`${traceTarget.document_label} number updated. The original page now shows the traced number.`);
+    } catch (error) {
+      toast.error(error.message || 'Unable to update the document number.');
+    } finally {
+      setTraceSaving(false);
+    }
+  }
+
   // Filter by period
   const filterByRange = (txs, rangeFrom, rangeTo) => txs.filter(tx => {
     const dateValue = ledgerDate(tx);
@@ -680,27 +738,25 @@ export default function ReportsPage() {
   const totalWithdrawn  = sum(countedTransactions, t => t.type === 'cash_out');
   const totalRepaid     = sum(countedTransactions, isLoanPayment);
   const totalReleased   = sum(countedTransactions, isLoanRelease);
-  const totalExpense    = sum(countedTransactions, isExpense);
+  const totalExpense    = sum(allTransactions.filter(isCountedLedgerRow), isFundExpense);
   const totalIncome     = sum(countedTransactions, isReportIncome);
   const loanInterest    = sum(countedTransactions, isLoanInterest);
-  const membershipCollections = sum(countedTransactions, isMembershipCollection);
+  const membershipCollections = Number(incomeBreakdown?.membership_fee || 0) +
+    Number(incomeBreakdown?.admin_regulatory_fees || 0);
   const loanDeductions = sum(countedTransactions, isLoanDeduction);
-  const cbuDeposits     = sum(transactions, isCbuDeposit);
-  const savingsDeposits = sum(transactions, isSavingsDeposit);
-  const totalCBUBalance = Number(accountStats?.totalCBU || 0);
-  const totalSavingsBalance = Number(accountStats?.totalSavings || 0);
+  const totalCBUBalance = Number(incomeBreakdown?.membership_cbu || 0) +
+    Number(incomeBreakdown?.cbu_retention || 0) +
+    Number(incomeBreakdown?.cbu_completion || 0);
+  const totalSavingsBalance = Number(incomeBreakdown?.membership_savings || 0) +
+    Number(incomeBreakdown?.regular_savings || 0);
 
   const prevDeposited   = sum(countedPrevTransactions, t => t.type === 'cash_in');
   const prevWithdrawn   = sum(countedPrevTransactions, t => t.type === 'cash_out');
   const prevRepaid      = sum(countedPrevTransactions, isLoanPayment);
   const prevReleased    = sum(countedPrevTransactions, isLoanRelease);
-  const prevExpense     = sum(countedPrevTransactions, isExpense);
   const prevIncome      = sum(countedPrevTransactions, isReportIncome);
   const prevLoanInterest = sum(countedPrevTransactions, isLoanInterest);
-  const prevMembershipCollections = sum(countedPrevTransactions, isMembershipCollection);
   const prevLoanDeductions = sum(countedPrevTransactions, isLoanDeduction);
-  const prevCbuDep      = sum(prevTransactions, isCbuDeposit);
-  const prevSavingsDep  = sum(prevTransactions, isSavingsDeposit);
 
   // Time series
   const currSeries = useMemo(() => buildTimeSeries(transactions, from, to, preset), [transactions, from, to, preset]);
@@ -736,14 +792,12 @@ export default function ReportsPage() {
       { Metric: 'Outstanding Payable Balance (PHP)', Value: loanStats?.totalOutstanding ?? 0 },
       { Metric: 'Period: Loan Repayments (PHP)',  Value: totalRepaid },
       { Metric: 'Period: Cooperative Income (PHP)', Value: totalIncome },
-      { Metric: 'Period: Membership Collections (PHP)', Value: membershipCollections },
+      { Metric: 'Membership/Admin & Regulatory Fees (PHP)', Value: membershipCollections },
       { Metric: 'Period: Loan Deductions (PHP)', Value: loanDeductions },
       { Metric: 'Period: Loan Interest (PHP)',    Value: loanInterest },
       { Metric: 'Period: Cash In (PHP)',          Value: totalDeposited },
       { Metric: 'Period: Cash Out (PHP)',         Value: totalWithdrawn },
-      { Metric: 'Period: Expenses (PHP)',         Value: totalExpense },
-      { Metric: 'Period: CBU Deposits (PHP)',     Value: cbuDeposits },
-      { Metric: 'Period: Savings Deposits (PHP)', Value: savingsDeposits },
+      { Metric: 'Total Cash Out / Expenses (PHP)', Value: totalExpense },
       { Metric: 'Report Generated',               Value: format(new Date(), 'MMM d, yyyy h:mm a') },
     ];
     exportToCSV('wellserve_summary_report', rows);
@@ -767,8 +821,6 @@ export default function ReportsPage() {
       loanDeductions,
       totalCBUBalance,
       totalSavingsBalance,
-      cbuDeposits,
-      savingsDeposits,
     });
 
     const fullHtml = wrapWithLetterhead(contentHtml, {
@@ -801,13 +853,11 @@ export default function ReportsPage() {
     { group: 'Loans', label: 'Outstanding Payable Balance', curr: loanStats?.totalOutstanding ?? 0, prev: loanStats?.totalOutstanding ?? 0, fmt: formatCurrency },
     { group: 'Loans', label: 'Loan Interest Earned', curr: loanInterest, prev: prevLoanInterest, fmt: formatCurrency },
     { group: 'Funds', label: 'Cooperative Income', curr: totalIncome, prev: prevIncome, fmt: formatCurrency },
-    { group: 'Funds', label: 'Membership Collections', curr: membershipCollections, prev: prevMembershipCollections, fmt: formatCurrency },
+    { group: 'Funds', label: 'Membership/Admin & Regulatory Fees', curr: membershipCollections, prev: membershipCollections, fmt: formatCurrency },
     { group: 'Funds', label: 'Loan Deductions', curr: loanDeductions, prev: prevLoanDeductions, fmt: formatCurrency },
-    { group: 'Funds', label: 'Expenses', curr: totalExpense, prev: prevExpense, fmt: formatCurrency },
+    { group: 'Funds', label: 'Expenses', curr: totalExpense, prev: totalExpense, fmt: formatCurrency },
     { group: 'CBU & Savings', label: 'Total CBU Balance', curr: totalCBUBalance, prev: totalCBUBalance, fmt: formatCurrency },
     { group: 'CBU & Savings', label: 'Total Savings Balance', curr: totalSavingsBalance, prev: totalSavingsBalance, fmt: formatCurrency },
-    { group: 'CBU & Savings', label: 'CBU Cash In', curr: cbuDeposits, prev: prevCbuDep, fmt: formatCurrency },
-    { group: 'CBU & Savings', label: 'Savings Cash In', curr: savingsDeposits, prev: prevSavingsDep, fmt: formatCurrency },
   ];
 
   return (
@@ -910,13 +960,11 @@ export default function ReportsPage() {
             />
             <StatCard
               icon={<PiggyBank size={20} />}
-              label="Membership Collections"
+              label="Membership/Admin & Regulatory Fees"
               value={formatCurrency(membershipCollections)}
               sub="Membership payments"
               iconBg="bg-purple-50"
               iconColor="#7C3AED"
-              trend={showComparison ? pct(membershipCollections, prevMembershipCollections) : undefined}
-              trendLabel="vs prev"
             />
           </div>
 
@@ -965,18 +1013,14 @@ export default function ReportsPage() {
 
           {/* CBU & Savings */}
           <SectionTitle>CBU & Savings</SectionTitle>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <StatCard icon={<PiggyBank size={20} />} label="Total CBU Balance"     value={formatCurrency(totalCBUBalance)}    sub={`${accountStats?.cbuCount ?? 0} accounts`}    iconBg="bg-emerald-50" iconColor="#059669" />
             <StatCard icon={<Wallet size={20} />}    label="Total Savings Balance"  value={formatCurrency(totalSavingsBalance)} sub={`${accountStats?.savingsCount ?? 0} accounts`} iconBg="bg-blue-50"    iconColor="#2563EB" />
-            <StatCard icon={<TrendingUp size={20} />} label="CBU Cash In (Period)"     value={formatCurrency(cbuDeposits)}     iconBg="bg-emerald-50" iconColor="#059669"
-              trend={showComparison ? pct(cbuDeposits, prevCbuDep) : undefined} trendLabel="vs prev" />
-            <StatCard icon={<TrendingUp size={20} />} label="Savings Cash In (Period)" value={formatCurrency(savingsDeposits)} iconBg="bg-blue-50"    iconColor="#2563EB"
-              trend={showComparison ? pct(savingsDeposits, prevSavingsDep) : undefined} trendLabel="vs prev" />
           </div>
 
           {/* Trend Charts */}
           <SectionTitle>Trend Analysis</SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <TrendChart title="Coop Income" current={chartData.income.current} previous={chartData.income.previous} color={CHART_COLORS.income} showComparison={showComparison} labels={labels} />
             <TrendChart title="Expenses" current={chartData.expense.current} previous={chartData.expense.previous} color={CHART_COLORS.expense} showComparison={showComparison} labels={labels} />
             <TrendChart title="Loan Releases"    current={chartData.loans.current}   previous={chartData.loans.previous}   color={CHART_COLORS.loans}   showComparison={showComparison} labels={labels} />
@@ -1013,8 +1057,150 @@ export default function ReportsPage() {
               );
             })}
           </div>
+
+          <SectionTitle>Document Tracing</SectionTitle>
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FileSearch size={17} className="text-emerald-600" />
+                  <h3 className="text-sm font-semibold text-gray-800">Documents For Tracing</h3>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">Update missing SI, voucher, and check numbers without changing financial transactions.</p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={tracingSearch}
+                    onChange={event => setTracingSearch(event.target.value)}
+                    placeholder="Search document or payee"
+                    className="w-full sm:w-64 rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+                <select
+                  value={tracingType}
+                  onChange={event => setTracingType(event.target.value)}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="all">All Documents</option>
+                  <option value="invoice">Invoices</option>
+                  <option value="voucher">Vouchers</option>
+                  <option value="checkbook">Checks</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/80">
+                    {['Document', 'Current Number', 'Member / Payee', 'Date', 'Amount', 'Tracing Status', 'Actions'].map(header => (
+                      <th key={header} className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filteredTracingDocuments.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <FileSearch size={26} className="mx-auto mb-2 text-gray-200" />
+                        <p className="text-sm font-medium text-gray-500">No documents waiting for tracing.</p>
+                      </td>
+                    </tr>
+                  ) : filteredTracingDocuments.map(document => (
+                    <tr key={`${document.document_type}-${document.id}`} className="hover:bg-emerald-50/30">
+                      <td className="px-4 py-3 text-center font-medium text-gray-800">{document.document_label}</td>
+                      <td className="px-4 py-3 text-center font-mono text-xs text-gray-500">For Tracing</td>
+                      <td className="px-4 py-3 text-center font-medium text-gray-700 truncate" title={document.party}>{document.party}</td>
+                      <td className="px-4 py-3 text-center text-xs text-gray-500">{formatDate(document.date || document.created_at)}</td>
+                      <td className="px-4 py-3 text-center font-semibold text-gray-800">{formatCurrency(document.amount || 0)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                          For Tracing
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => openTraceModal(document)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                          title={`Enter actual ${document.document_label} number`}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/40 px-5 py-3 text-xs text-gray-400">
+              <span>{filteredTracingDocuments.length} unresolved document{filteredTracingDocuments.length !== 1 ? 's' : ''}</span>
+              <span>Number updates only</span>
+            </div>
+          </div>
         </>
       )}
+
+      <Modal
+        open={Boolean(traceTarget)}
+        onClose={() => !traceSaving && setTraceTarget(null)}
+        title={`Trace ${traceTarget?.document_label || 'Document'} Number`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            This updates the document number only. No payment, cash IN/OUT, approval, or release transaction will be created.
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm">
+            <div>
+              <p className="text-xs text-gray-400">Member / Payee</p>
+              <p className="mt-1 font-medium text-gray-800">{traceTarget?.party || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Amount</p>
+              <p className="mt-1 font-semibold text-gray-800">{formatCurrency(traceTarget?.amount || 0)}</p>
+            </div>
+          </div>
+
+          <Input
+            label={traceTarget?.document_type === 'invoice'
+              ? 'Actual SI No.'
+              : traceTarget?.document_type === 'voucher'
+                ? 'Actual Voucher No.'
+                : 'Actual Check No.'}
+            value={tracedNumber}
+            onChange={event => setTracedNumber(event.target.value)}
+            placeholder="Enter the traced document number"
+            autoFocus
+          />
+
+          <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
+            <Button variant="outline" onClick={() => setTraceTarget(null)} disabled={traceSaving}>Cancel</Button>
+            <Button onClick={handleTraceDocument} loading={traceSaving} disabled={!tracedNumber.trim()}>
+              Save Traced Number
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
+
+
+
