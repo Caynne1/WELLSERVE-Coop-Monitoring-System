@@ -278,18 +278,13 @@ function getNextDueInfo(loan) {
 
 export default function LoansPage() {
   const navigate = useNavigate();
-  const { user, profile, isAdmin, hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('loans', 'create');
   const canEdit = hasPermission('loans', 'edit');
   const canDelete = hasPermission('loans', 'delete');
-  // Approving/rejecting a loan is a Credit Committee decision, distinct from
-  // general "edit" access — admins, users with the credit_committee role, or
-  // anyone explicitly granted the loans "approve" permission can do it, even
-  // without the Loans "edit" checkbox turned on.
-  const canApproveLoan =
-    isAdmin ||
-    profile?.role === 'credit_committee' ||
-    hasPermission('loans', 'approve');
+  // Admins are allowed automatically; every other role requires an explicit
+  // Loans "approve" permission assigned by an administrator.
+  const canApproveLoan = hasPermission('loans', 'approve');
 
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);

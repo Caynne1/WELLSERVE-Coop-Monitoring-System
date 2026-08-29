@@ -22,6 +22,7 @@ import {
   DEFAULT_PERMISSIONS,
   PERMISSION_MODULES,
   PERMISSION_ACTIONS,
+  APPROVAL_MODULES,
 } from '../../services/userManagementService';
 import { trackActivity } from '../../services/logService';
 
@@ -35,20 +36,83 @@ function formatDate(str) {
 
 const ROLE_OPTIONS = [
   { value: 'staff',            label: 'Staff' },
-  { value: 'manager',          label: 'Manager' },
+  { value: 'manager',          label: 'General Manager' },
+  { value: 'auditor',          label: 'Auditor' },
+  { value: 'accountant',       label: 'Accountant / Treasurer' },
+  { value: 'committee',        label: 'Committee' },
   { value: 'credit_committee', label: 'Credit Committee' },
-  { value: 'admin',            label: 'Admin' },
+  { value: 'admin',            label: 'Administrator' },
 ];
+
+const ROLE_LABELS = Object.fromEntries(ROLE_OPTIONS.map(role => [role.value, role.label]));
+
+function buildPermissionPreset(overrides = {}) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_PERMISSIONS).map(([module, actions]) => [
+      module,
+      { ...actions, ...(overrides[module] || {}) },
+    ])
+  );
+}
 
 // Applied automatically when an admin picks "Credit Committee" as the role,
 // so the new user can see what they need out of the box. Still editable
 // afterward via the Permissions tab — this is just a sensible starting point.
-// Loan approval/rejection itself is governed by role === 'credit_committee'
-// (see canApproveLoan in LoansPage/LoanDetailPage), not by these checkboxes.
-const CREDIT_COMMITTEE_DEFAULT_PERMISSIONS = {
-  ...DEFAULT_PERMISSIONS,
+// Approval is never granted by role name alone. Administrators may enable the
+// Loans "approve" permission for the appropriate committee account.
+const CREDIT_COMMITTEE_DEFAULT_PERMISSIONS = buildPermissionPreset({
   loans:   { view: true, create: false, edit: false, delete: false },
   members: { view: true, create: false, edit: false, delete: false },
+});
+
+const READ_ONLY_PERMISSIONS = buildPermissionPreset({
+  logs: { view: true, create: false, edit: false, delete: false },
+});
+
+const ACCOUNTANT_DEFAULT_PERMISSIONS = buildPermissionPreset({
+  cbu:                { view: true, create: true, edit: true, delete: false },
+  savings:            { view: true, create: true, edit: true, delete: false },
+  time_deposit:       { view: true, create: true, edit: true, delete: false },
+  savings_booster:    { view: true, create: true, edit: true, delete: false },
+  account_monitoring: { view: true, create: true, edit: true, delete: false },
+  transactions:       { view: true, create: true, edit: true, delete: false },
+  checkbook:          { view: true, create: true, edit: true, delete: false },
+  invoices:           { view: true, create: true, edit: true, delete: false },
+  vouchers:           { view: true, create: true, edit: true, delete: false },
+  expenses:           { view: true, create: true, edit: true, delete: false },
+  reports:            { view: true, create: false, edit: false, delete: false },
+});
+
+const MANAGER_DEFAULT_PERMISSIONS = Object.fromEntries(
+  Object.keys(DEFAULT_PERMISSIONS).map(module => [
+    module,
+    module === 'settings'
+      ? { view: false, create: false, edit: false, delete: false }
+      : { view: true, create: true, edit: true, delete: false },
+  ])
+);
+
+const ADMIN_DEFAULT_PERMISSIONS = Object.fromEntries(
+  Object.keys(DEFAULT_PERMISSIONS).map(module => [
+    module,
+    {
+      view: true,
+      create: true,
+      edit: true,
+      delete: true,
+      approve: APPROVAL_MODULES.includes(module),
+    },
+  ])
+);
+
+const ROLE_PERMISSION_PRESETS = {
+  staff: DEFAULT_PERMISSIONS,
+  manager: MANAGER_DEFAULT_PERMISSIONS,
+  auditor: READ_ONLY_PERMISSIONS,
+  accountant: ACCOUNTANT_DEFAULT_PERMISSIONS,
+  committee: READ_ONLY_PERMISSIONS,
+  credit_committee: CREDIT_COMMITTEE_DEFAULT_PERMISSIONS,
+  admin: ADMIN_DEFAULT_PERMISSIONS,
 };
 
 const STATUS_META = {
@@ -59,6 +123,9 @@ const STATUS_META = {
 const ROLE_PILL_CLASS = {
   admin: 'border-indigo-200 bg-indigo-50 text-indigo-700',
   manager: 'border-purple-200 bg-purple-50 text-purple-700',
+  auditor: 'border-amber-200 bg-amber-50 text-amber-700',
+  accountant: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+  committee: 'border-teal-200 bg-teal-50 text-teal-700',
   credit_committee: 'border-blue-200 bg-blue-50 text-blue-700',
   staff: 'border-gray-200 bg-gray-50 text-gray-600',
 };
@@ -68,9 +135,43 @@ const STATUS_PILL_CLASS = {
   inactive: 'border-red-200 bg-red-50 text-red-700',
 };
 
+function UserAccessTabs({ tab, onChange }) {
+  const tabs = [
+    { key: 'info', label: 'Account Info', icon: UserCog },
+    { key: 'permissions', label: 'Permissions', icon: Shield },
+  ];
+
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1">
+      {tabs.map(({ key, label, icon: Icon }) => {
+        const active = tab === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            className={`flex min-h-[42px] items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${
+              active
+                ? 'bg-[#07A04E] text-white shadow-sm'
+                : 'text-gray-600 hover:bg-white hover:text-[#078B45]'
+            }`}
+          >
+            <Icon size={15} strokeWidth={2.2} />
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Permission Matrix Component ──────────────────────────────────────────────
 function PermissionMatrix({ permissions, onChange, readOnly = false }) {
   const groups = [...new Set(PERMISSION_MODULES.map(m => m.group))];
+
+  function actionsForModule(moduleKey) {
+    return PERMISSION_ACTIONS.filter(action => action !== 'approve' || APPROVAL_MODULES.includes(moduleKey));
+  }
 
   function toggle(moduleKey, action) {
     if (readOnly) return;
@@ -83,26 +184,33 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
     };
     // If un-viewing, clear all other actions
     if (action === 'view' && permissions[moduleKey]?.view) {
-      next[moduleKey] = { view: false, create: false, edit: false, delete: false };
+      next[moduleKey] = { view: false, create: false, edit: false, delete: false, approve: false };
     }
     onChange(next);
   }
 
   function toggleAll(moduleKey, checked) {
     if (readOnly) return;
+    const nextActions = Object.fromEntries(
+      PERMISSION_ACTIONS.map(action => [
+        action,
+        action === 'approve' && !APPROVAL_MODULES.includes(moduleKey) ? false : checked,
+      ])
+    );
     onChange({
       ...permissions,
-      [moduleKey]: { view: checked, create: checked, edit: checked, delete: checked },
+      [moduleKey]: nextActions,
     });
   }
 
   function isAllChecked(moduleKey) {
-    return PERMISSION_ACTIONS.every(a => permissions[moduleKey]?.[a]);
+    return actionsForModule(moduleKey).every(a => permissions[moduleKey]?.[a]);
   }
 
   function isIndeterminate(moduleKey) {
-    const checked = PERMISSION_ACTIONS.filter(a => permissions[moduleKey]?.[a]);
-    return checked.length > 0 && checked.length < PERMISSION_ACTIONS.length;
+    const actions = actionsForModule(moduleKey);
+    const checked = actions.filter(a => permissions[moduleKey]?.[a]);
+    return checked.length > 0 && checked.length < actions.length;
   }
 
   return (
@@ -114,7 +222,7 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
           </p>
           <div className="rounded-xl border border-gray-100 overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[1fr_repeat(4,_56px)] bg-gray-50 border-b border-gray-100">
+            <div className="grid grid-cols-[1fr_repeat(5,_60px)] bg-gray-50 border-b border-gray-100">
               <div className="px-4 py-2 text-xs font-semibold text-gray-500">Module</div>
               {PERMISSION_ACTIONS.map(a => (
                 <div key={a} className="py-2 text-center text-xs font-semibold text-gray-500 capitalize">
@@ -133,7 +241,7 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
                 <div
                   key={mod.key}
                   className={[
-                    'grid grid-cols-[1fr_repeat(4,_56px)] items-center',
+                    'grid grid-cols-[1fr_repeat(5,_60px)] items-center',
                     !isLast && 'border-b border-gray-50',
                     !readOnly && 'hover:bg-emerald-50/30 transition-colors',
                   ].filter(Boolean).join(' ')}
@@ -153,14 +261,15 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
 
                   {PERMISSION_ACTIONS.map(action => {
                     const isViewDisabled = action !== 'view' && !perms.view;
+                    const isNotApplicable = action === 'approve' && !APPROVAL_MODULES.includes(mod.key);
                     return (
                       <div key={action} className="flex justify-center">
                         <input
                           type="checkbox"
                           checked={!!perms[action]}
                           onChange={() => toggle(mod.key, action)}
-                          disabled={readOnly || isViewDisabled}
-                          title={isViewDisabled ? 'Enable "view" first' : ''}
+                          disabled={readOnly || isViewDisabled || isNotApplicable}
+                          title={isNotApplicable ? 'Approval is not applicable to this module' : isViewDisabled ? 'Enable "view" first' : ''}
                           className="w-3.5 h-3.5 rounded accent-emerald-600 cursor-pointer disabled:cursor-default disabled:opacity-40"
                         />
                       </div>
@@ -180,7 +289,7 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
 function CreateUserModal({ open, onClose, onCreated }) {
   const { user: currentUser } = useAuth();
   const [form, setForm] = useState({
-    full_name: '', email: '', password: '', role: 'staff',
+    full_name: '', email: '', password: '', role: 'staff', position_title: '',
   });
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
   const [permissionsTouched, setPermissionsTouched] = useState(false);
@@ -205,12 +314,12 @@ function CreateUserModal({ open, onClose, onCreated }) {
     setLoading(true);
     try {
       const user = await createUser({ ...form, permissions });
-      toast.success(`Staff account created for ${form.full_name}`);
+      toast.success(`User account created for ${form.full_name}`);
       trackActivity({
         userId: currentUser?.id,
         module: 'user_management',
         action: 'create',
-        description: `Created staff account "${form.full_name}" (role: ${form.role})`,
+        description: `Created user account "${form.full_name}" (role: ${form.role}${form.position_title ? `, position: ${form.position_title}` : ''})`,
         recordId: user?.id,
       });
       onCreated(user);
@@ -223,7 +332,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
   }
 
   function resetAndClose() {
-    setForm({ full_name: '', email: '', password: '', role: 'staff' });
+    setForm({ full_name: '', email: '', password: '', role: 'staff', position_title: '' });
     setPermissions(DEFAULT_PERMISSIONS);
     setPermissionsTouched(false);
     setErrors({});
@@ -237,27 +346,13 @@ function CreateUserModal({ open, onClose, onCreated }) {
     // see loans/members to do the job); leave it alone if the admin already
     // hand-edited the permission matrix.
     if (!permissionsTouched) {
-      setPermissions(role === 'credit_committee' ? CREDIT_COMMITTEE_DEFAULT_PERMISSIONS : DEFAULT_PERMISSIONS);
+      setPermissions(ROLE_PERMISSION_PRESETS[role] || DEFAULT_PERMISSIONS);
     }
   }
 
   return (
-    <Modal open={open} onClose={resetAndClose} title="Create Staff Account" size="lg">
-      {/* Tabs */}
-      <div className="flex gap-2 mb-5">
-        {[
-          { key: 'info', label: 'Account Info' },
-          { key: 'permissions', label: 'Permissions' },
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`ws-tab-button flex-1 ${tab === t.key ? 'ws-tab-button-active' : 'ws-tab-button-inactive'}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+    <Modal open={open} onClose={resetAndClose} title="Create User Account" size="lg">
+      <UserAccessTabs tab={tab} onChange={setTab} />
 
       {tab === 'info' && (
         <div className="space-y-4">
@@ -273,7 +368,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
             value={form.email}
             onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
             error={errors.email}
-            placeholder="staff@wellserve.coop"
+            placeholder="user@wellserve.coop"
           />
           <div className="relative">
             <Input
@@ -292,17 +387,26 @@ function CreateUserModal({ open, onClose, onCreated }) {
             </button>
           </div>
           <Select
-            label="Role" required
+            label="System Role" required
             value={form.role}
             onChange={e => handleRoleChange(e.target.value)}
             options={ROLE_OPTIONS}
           />
+          <Input
+            label="Position / Designation"
+            value={form.position_title}
+            onChange={e => setForm(p => ({ ...p, position_title: e.target.value }))}
+            placeholder="e.g. Bookkeeper, Loan Officer, Board Secretary"
+          />
+          <p className="-mt-2 text-xs text-gray-400">
+            Optional. This identifies the cooperative position; access is controlled by the system role and permissions.
+          </p>
           {form.role === 'credit_committee' && (
             <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 flex gap-2.5">
               <Shield size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-blue-700">
-                Credit Committee members can review and approve or reject loan applications
-                that are awaiting approval, in addition to whatever else is granted below.
+                This role starts with Loans and Members view access only. Enable the Loans
+                Approve permission when this account is authorized to decide applications.
               </p>
             </div>
           )}
@@ -341,7 +445,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
 // ─── Edit User Modal ──────────────────────────────────────────────────────────
 function EditUserModal({ open, onClose, user, onUpdated }) {
   const { user: currentUser, profile: currentProfile } = useAuth();
-  const [form, setForm] = useState({ full_name: '', role: 'staff' });
+  const [form, setForm] = useState({ full_name: '', role: 'staff', position_title: '' });
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -349,7 +453,11 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
 
   useEffect(() => {
     if (user) {
-      setForm({ full_name: user.full_name || '', role: user.role || 'staff' });
+      setForm({
+        full_name: user.full_name || '',
+        role: user.role || 'staff',
+        position_title: user.position_title || '',
+      });
       setPermissions(user.permissions || DEFAULT_PERMISSIONS);
       setTab('info');
     }
@@ -373,6 +481,7 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
       const updated = await updateUser(user.id, {
         full_name: form.full_name,
         role: form.role,
+        position_title: form.position_title.trim() || null,
         permissions,
       });
       toast.success('User updated successfully');
@@ -385,8 +494,8 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
         module: 'user_management',
         action: 'update',
         description: changeParts.length
-          ? `Updated staff account "${form.full_name}" — ${changeParts.join('; ')}`
-          : `Updated staff account "${form.full_name}"`,
+          ? `Updated user account "${form.full_name}" — ${changeParts.join('; ')}`
+          : `Updated user account "${form.full_name}"`,
         recordId: user.id,
       });
 
@@ -404,21 +513,7 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Edit User" size="lg">
-      {/* Tabs */}
-      <div className="flex gap-2 mb-5">
-        {[
-          { key: 'info', label: 'Account Info' },
-          { key: 'permissions', label: 'Permissions' },
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`ws-tab-button flex-1 ${tab === t.key ? 'ws-tab-button-active' : 'ws-tab-button-inactive'}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <UserAccessTabs tab={tab} onChange={setTab} />
 
       {tab === 'info' && (
         <div className="space-y-4">
@@ -436,11 +531,21 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
             <p className="text-xs text-gray-400 mt-1">Email cannot be changed here</p>
           </div>
           <Select
-            label="Role" required
+            label="System Role" required
             value={form.role}
-            onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
+            onChange={e => {
+              const role = e.target.value;
+              setForm(p => ({ ...p, role }));
+              setPermissions(ROLE_PERMISSION_PRESETS[role] || DEFAULT_PERMISSIONS);
+            }}
             options={ROLE_OPTIONS}
             disabled={isSelf}
+          />
+          <Input
+            label="Position / Designation"
+            value={form.position_title}
+            onChange={e => setForm(p => ({ ...p, position_title: e.target.value }))}
+            placeholder="e.g. Bookkeeper, Loan Officer, Board Secretary"
           />
           {isSelf && (
             <p className="text-xs text-amber-600 flex items-center gap-1.5">
@@ -452,8 +557,8 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
               <Shield size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
               <div className="text-xs text-blue-700">
                 <p>
-                  Credit Committee members can review and approve or reject loan applications
-                  that are awaiting approval, regardless of the Loans permissions below.
+                  The Credit Committee role does not automatically grant approval. Enable the
+                  Loans Approve permission below when this account is authorized to approve.
                 </p>
                 <button
                   type="button"
@@ -483,7 +588,7 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
             </p>
           )}
           <PermissionMatrix
-            permissions={readOnlyPerms ? DEFAULT_PERMISSIONS : permissions}
+            permissions={readOnlyPerms ? ADMIN_DEFAULT_PERMISSIONS : permissions}
             onChange={setPermissions}
             readOnly={readOnlyPerms}
           />
@@ -532,7 +637,7 @@ function PermissionsViewerModal({ open, onClose, user }) {
 function UserRow({ user, onEdit, onToggleStatus, onViewPermissions, isSelf }) {
   const { profile: currentProfile } = useAuth();
   const status = STATUS_META[user.status] || STATUS_META.active;
-  const roleLabel = user.role === 'credit_committee' ? 'Credit Committee' : (user.role || 'staff');
+  const roleLabel = ROLE_LABELS[user.role] || user.role || 'Staff';
 
   return (
     <tr className="hover:bg-gray-50/50 transition-colors">
@@ -562,6 +667,9 @@ function UserRow({ user, onEdit, onToggleStatus, onViewPermissions, isSelf }) {
             {roleLabel}
           </span>
         </div>
+      </td>
+      <td className="px-5 py-3 text-center text-sm text-gray-600">
+        {user.position_title || <span className="text-gray-300">Not specified</span>}
       </td>
       <td className="px-5 py-3">
         <div className="flex justify-center">
@@ -645,7 +753,8 @@ export default function UserManagementPage() {
     const q = search.toLowerCase();
     const matchSearch = !q ||
       u.full_name?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q);
+      u.email?.toLowerCase().includes(q) ||
+      u.position_title?.toLowerCase().includes(q);
     const matchRole   = filterRole   === 'all' || u.role   === filterRole;
     const matchStatus = filterStatus === 'all' || u.status === filterStatus;
     return matchSearch && matchRole && matchStatus;
@@ -679,7 +788,7 @@ export default function UserManagementPage() {
         userId: currentUser?.id,
         module: 'user_management',
         action: newStatus === 'active' ? 'reactivate' : 'deactivate',
-        description: `${newStatus === 'active' ? 'Activated' : 'Deactivated'} staff account "${toggleTarget.full_name || toggleTarget.email}"`,
+        description: `${newStatus === 'active' ? 'Activated' : 'Deactivated'} user account "${toggleTarget.full_name || toggleTarget.email}"`,
         recordId: toggleTarget.id,
       });
     } catch {
@@ -692,11 +801,11 @@ export default function UserManagementPage() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader
-        title="User Management"
-        subtitle="Create staff accounts, manage roles, and control access permissions"
+        title="User & Access Management"
+        subtitle="Manage system accounts, cooperative positions, roles, and access permissions"
         action={
           <Button icon={<Plus size={15} />} onClick={() => setCreateOpen(true)}>
-            Add Staff
+            Add User
           </Button>
         }
       />
@@ -729,7 +838,7 @@ export default function UserManagementPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
+            placeholder="Search by name, email, or position..."
             className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
@@ -767,11 +876,11 @@ export default function UserManagementPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['User', 'Role', 'Status', 'Created', 'Actions'].map(h => (
+                  {['User', 'System Role', 'Position / Designation', 'Status', 'Created', 'Actions'].map(h => (
                     <th
                       key={h}
                       className={`px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${
-                        ['Role', 'Status'].includes(h)
+                        ['System Role', 'Position / Designation', 'Status'].includes(h)
                           ? 'text-center'
                           : h === 'Actions'
                             ? 'text-right'
@@ -786,7 +895,7 @@ export default function UserManagementPage() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-14 text-gray-400">
+                    <td colSpan={6} className="text-center py-14 text-gray-400">
                       <UserCog size={36} className="mx-auto mb-2 text-gray-200" />
                       <p className="text-sm">No users found</p>
                     </td>

@@ -65,8 +65,7 @@ const NAV_ITEMS = [
   {
     key: 'admin', label: 'Admin Control', icon: ShieldCheck,
     children: [
-      { to: '/account-management', icon: ShieldCheck, label: 'Accounts', adminOnly: true },
-      { to: '/user-management',    icon: UserCog,     label: 'Users',    adminOnly: true },
+      { to: '/user-management',    icon: UserCog,     label: 'User & Access', adminOnly: true },
       { to: '/settings',           icon: Settings,    label: 'Settings', permKey: 'settings' },
     ],
   },

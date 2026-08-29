@@ -162,6 +162,7 @@ export default function VouchersPage() {
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('vouchers', 'create');
   const canEdit = hasPermission('vouchers', 'edit');
+  const canApprove = hasPermission('vouchers', 'approve');
 
   // Data
   const [vouchers, setVouchers] = useState([]);
@@ -795,8 +796,8 @@ export default function VouchersPage() {
 
   async function handleApprove() {
     if (!approveTarget) return;
-    if (!canEdit) {
-      toast.error('You do not have permission to edit vouchers');
+    if (!canApprove) {
+      toast.error('You do not have permission to approve vouchers');
       setApproveTarget(null);
       return;
     }
@@ -1095,7 +1096,7 @@ export default function VouchersPage() {
                           </button>
                         )}
 
-                        {canEdit && voucher.status === 'draft' && !needsVoucherNumber(voucher) && (
+                        {canApprove && voucher.status === 'draft' && !needsVoucherNumber(voucher) && (
                           <button
                             onClick={() => setApproveTarget(voucher)}
                             title="Approve Voucher"
@@ -1578,7 +1579,7 @@ export default function VouchersPage() {
                     >
                       Edit
                     </Button>
-                    {!needsVoucherNumber(viewTarget) && (
+                    {canApprove && !needsVoucherNumber(viewTarget) && (
                       <Button
                         variant="success"
                         size="sm"

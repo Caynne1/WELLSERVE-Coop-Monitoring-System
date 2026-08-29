@@ -21,7 +21,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, Users, CreditCard, Receipt, BookOpen,
   PiggyBank, ArrowLeftRight, FileText, TrendingUp, BarChart2,
-  ActivitySquare, Settings, Wallet, ShieldCheck, UserCog,
+  ActivitySquare, Settings, Wallet, UserCog,
   Landmark, Sprout,
 } from 'lucide-react';
 import WellserveLogo from '../shared/WellserveLogo';
@@ -65,8 +65,7 @@ const navGroups = [
   {
     label: 'SYSTEM ADMINISTRATION',
     items: [
-      { to: '/account-management', icon: ShieldCheck,     label: 'Accounts',           adminOnly: true },
-      { to: '/user-management',    icon: UserCog,         label: 'User Management',    adminOnly: true },
+      { to: '/user-management',    icon: UserCog,         label: 'User & Access',       adminOnly: true },
       { to: '/settings',           icon: Settings,        label: 'Settings',           permKey: 'settings' },
     ],
   },

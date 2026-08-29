@@ -295,7 +295,7 @@ function kvRow(label, value, highlight = false) {
 export default function LoanDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { profile, isAdmin, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const canEdit = hasPermission('loans', 'edit');
 
   const [loan, setLoan] = useState(null);
@@ -393,10 +393,7 @@ export default function LoanDetailPage() {
   }, [loan]);
 
   const scheduleRows = previewSchedule?.length ? previewSchedule : fallbackSchedule;
-  const canApproveLoan =
-    isAdmin ||
-    profile?.role === 'credit_committee' ||
-    hasPermission('loans', 'approve');
+  const canApproveLoan = hasPermission('loans', 'approve');
 
   if (loading) return <div className="flex justify-center py-24"><Spinner /></div>;
   if (!loan) return null;

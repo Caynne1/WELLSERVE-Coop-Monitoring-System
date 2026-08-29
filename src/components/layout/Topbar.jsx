@@ -10,7 +10,7 @@ import {
   X, Bell, LogOut, Search,
   LayoutDashboard, Users, CreditCard, Receipt, BookOpen,
   PiggyBank, ArrowLeftRight, FileText, TrendingUp, BarChart2,
-  ActivitySquare, Settings, Wallet, ShieldCheck, UserCog,
+  ActivitySquare, Settings, Wallet, UserCog,
   Landmark, Sprout,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -36,8 +36,7 @@ const ALL_NAV_ITEMS = [
   { to: '/reports',            icon: BarChart2,       label: 'Reports',            group: 'Analytics',  permKey: 'reports' },
   { to: '/logs',               icon: ActivitySquare,  label: 'Activity Logs',      group: 'Analytics',  permKey: 'logs' },
   { to: '/settings',           icon: Settings,        label: 'Settings',           group: 'Admin',      permKey: 'settings' },
-  { to: '/account-management', icon: ShieldCheck,     label: 'Accounts',           group: 'Admin',      adminOnly: true },
-  { to: '/user-management',    icon: UserCog,         label: 'User Management',    group: 'Admin',      adminOnly: true },
+  { to: '/user-management',    icon: UserCog,         label: 'User & Access',       group: 'Admin',      adminOnly: true },
 ];
 
 function Highlight({ text, query }) {

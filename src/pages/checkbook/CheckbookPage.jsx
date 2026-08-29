@@ -106,6 +106,7 @@ export default function CheckbookPage() {
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('checkbook', 'create');
   const canEdit = hasPermission('checkbook', 'edit');
+  const canApprove = hasPermission('checkbook', 'approve');
 
   // Data
   const [entries, setEntries]         = useState([]);
@@ -372,8 +373,8 @@ export default function CheckbookPage() {
 
   async function handleClear() {
     if (!clearTarget) return;
-    if (!canEdit) {
-      toast.error('You do not have permission to edit checkbook entries');
+    if (!canApprove) {
+      toast.error('You do not have permission to approve checks');
       setClearTarget(null);
       return;
     }
@@ -695,7 +696,7 @@ export default function CheckbookPage() {
                             <Pencil size={15} />
                           </button>
                         )}
-                        {canEdit && entry.status === 'issued' && (
+                        {canApprove && entry.status === 'issued' && (
                           <button
                             onClick={() => setClearTarget(entry)}
                             title="Approve Check"
@@ -981,7 +982,7 @@ export default function CheckbookPage() {
                 >
                   Edit
                 </Button>
-                {viewTarget.status === 'issued' && (
+                {canApprove && viewTarget.status === 'issued' && (
                   <>
                 <Button
                   variant="success"

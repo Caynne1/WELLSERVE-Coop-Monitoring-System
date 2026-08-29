@@ -127,6 +127,7 @@ export default function ExpensesPage() {
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('expenses', 'create');
   const canEdit = hasPermission('expenses', 'edit');
+  const canApprove = hasPermission('expenses', 'approve');
 
   // Data
   const [expenses, setExpenses]     = useState([]);
@@ -380,8 +381,8 @@ export default function ExpensesPage() {
 
   async function handleApprove() {
     if (!approveTarget) return;
-    if (!canEdit) {
-      toast.error('You do not have permission to edit expenses');
+    if (!canApprove) {
+      toast.error('You do not have permission to approve expenses');
       setApproveTarget(null);
       return;
     }
@@ -717,8 +718,9 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
-                        {canEdit && expense.status === 'pending' && (
+                        {(canEdit || canApprove) && expense.status === 'pending' && (
                           <>
+                            {canEdit && (
                             <button
                               onClick={() => openEdit(expense)}
                               title="Edit Expense"
@@ -726,6 +728,8 @@ export default function ExpensesPage() {
                             >
                               <Pencil size={15} />
                             </button>
+                            )}
+                            {canApprove && (
                             <button
                               onClick={() => setApproveTarget(expense)}
                               title="Approve Expense"
@@ -733,6 +737,7 @@ export default function ExpensesPage() {
                             >
                               <CheckCircle size={15} />
                             </button>
+                            )}
                           </>
                         )}
                         {canEdit && expense.status !== 'voided' && expense.source !== 'imported' && expense.record_type !== 'migrated_historical' && (

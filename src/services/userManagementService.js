@@ -13,7 +13,7 @@ function createIsolatedClient() {
 // ─── Default permission set for a new staff user ─────────────────────────────
 export const DEFAULT_PERMISSIONS = {
   members:            { view: true,  create: false, edit: false, delete: false },
-  loans:              { view: true,  create: false, edit: false, delete: false },
+  loans:              { view: true,  create: false, edit: false, delete: false, approve: false },
   cbu:                { view: true,  create: false, edit: false, delete: false },
   savings:            { view: true,  create: false, edit: false, delete: false },
   time_deposit:       { view: true,  create: false, edit: false, delete: false },
@@ -21,10 +21,10 @@ export const DEFAULT_PERMISSIONS = {
   passbook:           { view: true,  create: false, edit: false, delete: false },
   account_monitoring: { view: true,  create: false, edit: false, delete: false },
   transactions:       { view: true,  create: false, edit: false, delete: false },
-  checkbook:          { view: true,  create: false, edit: false, delete: false },
+  checkbook:          { view: true,  create: false, edit: false, delete: false, approve: false },
   invoices:           { view: true,  create: false, edit: false, delete: false },
-  vouchers:           { view: true,  create: false, edit: false, delete: false },
-  expenses:           { view: true,  create: false, edit: false, delete: false },
+  vouchers:           { view: true,  create: false, edit: false, delete: false, approve: false },
+  expenses:           { view: true,  create: false, edit: false, delete: false, approve: false },
   reports:            { view: true,  create: false, edit: false, delete: false },
   logs:               { view: false, create: false, edit: false, delete: false },
   settings:           { view: false, create: false, edit: false, delete: false },
@@ -49,7 +49,8 @@ export const PERMISSION_MODULES = [
   { key: 'settings',           label: 'Settings',           group: 'Admin' },
 ];
 
-export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'];
+export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
+export const APPROVAL_MODULES = ['loans', 'expenses', 'vouchers', 'checkbook'];
 
 // ─── Fetch all users (profiles table) ────────────────────────────────────────
 export async function getUsers() {
@@ -77,7 +78,7 @@ export async function getUserById(id) {
 // elevated privileges to create the auth user + profile in one transaction.
 // If the RPC doesn't exist, we fall back to inserting a pending profile row
 // that the staff member completes when they sign up via invite link.
-export async function createUser({ full_name, email, password, role, permissions }) {
+export async function createUser({ full_name, email, password, role, position_title, permissions }) {
   // Try calling a server-side RPC first (if you set one up)
   // For now: use the invite approach — create a profile row with a generated UUID
   // and send an invite. The profile row will be linked when they sign up.
@@ -119,13 +120,23 @@ export async function createUser({ full_name, email, password, role, permissions
       full_name,
       email,
       role: role || 'staff',
+      position_title: position_title?.trim() || null,
       status: 'active',
       permissions: permissions || DEFAULT_PERMISSIONS,
     });
 
   if (profileError) throw profileError;
 
-  return { id: userId, full_name, email, role: role || 'staff', status: 'active', created_at: new Date().toISOString() };
+  return {
+    id: userId,
+    full_name,
+    email,
+    role: role || 'staff',
+    position_title: position_title?.trim() || null,
+    permissions: permissions || DEFAULT_PERMISSIONS,
+    status: 'active',
+    created_at: new Date().toISOString(),
+  };
 }
 
 // ─── Update user profile (name, role, status, permissions) ───────────────────
