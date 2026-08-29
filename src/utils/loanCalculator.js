@@ -138,6 +138,7 @@ export function generateLoanPreview({
   extraDeductionItems = [],
   firstPaymentDate = null,
   firstPaymentDaysAfterStart = null,
+  numPayments = null,
 } = {}) {
   const scheduleResult = computeSchedule({
     amount,
@@ -148,6 +149,7 @@ export function generateLoanPreview({
     startDate,
     cbuPerPeriod,
     savingsPerPeriod,
+    numPayments,
     firstPaymentDate,
     firstPaymentDaysAfterStart,
   });

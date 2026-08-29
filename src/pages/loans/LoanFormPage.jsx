@@ -79,6 +79,18 @@ const LOAN_METHOD_OPTS = [
   { value: 'straight', label: 'Straight' },
 ];
 
+const OLD_CALCULATION_BASIS_OPTS = [
+  { value: 'term_based', label: 'Standard Term-Based (30 days / 7)' },
+  { value: 'exact_count', label: 'Exact Payment Count' },
+];
+
+function computeOldTermBasedPeriods(termMonths, frequency) {
+  const months = Number(termMonths) || 0;
+  if (frequency === 'weekly') return months * 30 / 7;
+  if (frequency === 'semi_monthly_old') return months * 2;
+  return months;
+}
+
 function addDaysToDateString(dateInput, days = 0) {
   if (!dateInput) return '';
   const [year, month, day] = String(dateInput).split('-').map(Number);
@@ -514,6 +526,8 @@ export default function LoanFormPage() {
       amount: '',
       interest_rate: '2.5',
       term_months: '',
+      old_calculation_basis: 'term_based',
+      old_number_of_payments: '',
       monthly_amortization: '',
       release_date: '',
       first_payment_due_date: '',
@@ -567,6 +581,8 @@ export default function LoanFormPage() {
   const watchedProduct = useWatch({ control, name: 'loan_product' });
   const watchedRate = useWatch({ control, name: 'interest_rate' });
   const watchedTerm = useWatch({ control, name: 'term_months' });
+  const watchedOldCalculationBasis = useWatch({ control, name: 'old_calculation_basis' });
+  const watchedOldNumberOfPayments = useWatch({ control, name: 'old_number_of_payments' });
   const watchedFrequency = useWatch({ control, name: 'repayment_frequency' });
   const watchedMethod = useWatch({ control, name: 'loan_method' });
   const watchedReleaseDate = useWatch({ control, name: 'release_date' });
@@ -624,12 +640,16 @@ export default function LoanFormPage() {
     const termMonths = parseInt(watchedTerm || 0, 10);
     const monthlyInterestRate = parseFloat(watchedRate || 0);
     const requiresOldRate = watchedLoanType === 'existing';
+    const usesExactOldPaymentCount = requiresOldRate && watchedOldCalculationBasis === 'exact_count';
+    const oldNumberOfPayments = Number(watchedOldNumberOfPayments);
+    const termBasedPaymentCount = computeOldTermBasedPeriods(termMonths, watchedFrequency);
 
     if (
       amount <= 0
       || termMonths <= 0
       || monthlyInterestRate < 0
       || (requiresOldRate && monthlyInterestRate <= 0)
+      || (usesExactOldPaymentCount && (!Number.isInteger(oldNumberOfPayments) || oldNumberOfPayments <= 0))
     ) {
       return null;
     }
@@ -663,12 +683,13 @@ export default function LoanFormPage() {
     });
     // Annual dues has its own named param below, so it isn't duplicated here.
 
-    return generateLoanPreview({
+    const generatedPreview = generateLoanPreview({
       amount,
       termMonths,
       monthlyInterestRate,
       paymentFrequency: watchedFrequency || 'monthly',
       loanMethod: watchedMethod || 'diminishing',
+      numPayments: usesExactOldPaymentCount ? oldNumberOfPayments : null,
       startDate: watchedReleaseDate || new Date(),
       cbuPerPeriod: parseFloat(watchedCbuPerPeriod || 0) || 0,
       savingsPerPeriod: parseFloat(watchedSavingsPerPeriod || 0) || 0,
@@ -681,9 +702,26 @@ export default function LoanFormPage() {
       annualDues: chargeIncluded.annual_dues ? (parseFloat(watchedAnnualDues || 0) || 0) : 0,
       extraDeductionItems,
     });
+
+    if (!requiresOldRate) return generatedPreview;
+
+    return {
+      ...generatedPreview,
+      summary: {
+        ...generatedPreview.summary,
+        old_calculation_basis: watchedOldCalculationBasis || 'term_based',
+        old_number_of_payments: usesExactOldPaymentCount ? oldNumberOfPayments : null,
+        worksheet_number_of_payments: usesExactOldPaymentCount
+          ? oldNumberOfPayments
+          : Math.round(termBasedPaymentCount),
+        exact_term_based_periods: usesExactOldPaymentCount ? null : termBasedPaymentCount,
+      },
+    };
   }, [
     watchedProposal,
     watchedTerm,
+    watchedOldCalculationBasis,
+    watchedOldNumberOfPayments,
     watchedRate,
     watchedProduct,
     watchedFrequency,
@@ -990,6 +1028,8 @@ export default function LoanFormPage() {
     watchedServiceFeePercent,
     watchedRate,
     watchedTerm,
+    watchedOldCalculationBasis,
+    watchedOldNumberOfPayments,
     insuranceMonths,
     watchedFrequency,
     watchedMethod,
@@ -1052,6 +1092,13 @@ export default function LoanFormPage() {
         const savedSummary = parseJSONSafe(data.preview_summary_json, {});
         const savedDeductions = parseJSONSafe(data.preview_deductions_json, {});
         const savedMembershipDeduction = savedDeductions.membership_deduction;
+        const savedPaymentCount = Number(savedSummary.old_number_of_payments ?? savedSummary.number_of_payments) || 0;
+        const expectedTermBasedRows = Math.ceil(computeOldTermBasedPeriods(
+          data.term_months,
+          data.repayment_frequency || 'weekly'
+        ));
+        const savedOldCalculationBasis = savedSummary.old_calculation_basis
+          || (savedPaymentCount > 0 && savedPaymentCount !== expectedTermBasedRows ? 'exact_count' : 'term_based');
 
         reset({
           member_id: data.member_id,
@@ -1061,6 +1108,8 @@ export default function LoanFormPage() {
           amount: data.amount || '',
           interest_rate: data.interest_rate || '2.5',
           term_months: data.term_months || '',
+          old_calculation_basis: savedOldCalculationBasis,
+          old_number_of_payments: savedOldCalculationBasis === 'exact_count' ? savedPaymentCount : '',
           monthly_amortization: data.monthly_amortization || '',
           release_date: data.release_date?.split('T')[0] || '',
           first_payment_due_date: firstPaymentDueDate,
@@ -1243,6 +1292,16 @@ export default function LoanFormPage() {
       return;
     }
 
+    const oldNumberOfPayments = Number(values.old_number_of_payments);
+    if (
+      values.loan_type === 'existing'
+      && values.old_calculation_basis === 'exact_count'
+      && (!Number.isInteger(oldNumberOfPayments) || oldNumberOfPayments <= 0)
+    ) {
+      toast.error('Please enter a valid whole number of payments for this old loan.');
+      return;
+    }
+
     if (!preview) {
       toast.error('Unable to generate preview.');
       return;
@@ -1313,7 +1372,7 @@ export default function LoanFormPage() {
         </div>
         <div class="col">
           <h3>Computed Summary</h3>
-          ${loanFormKvRow('No. of Payments', preview.summary.number_of_payments)}
+          ${loanFormKvRow('No. of Payments', preview.summary.worksheet_number_of_payments ?? preview.summary.number_of_payments)}
           ${loanFormKvRow('Monthly Interest Rate', `${preview.summary.monthly_interest_rate ?? values.interest_rate ?? 0}%`)}
           ${loanFormKvRow('Weekly Interest Rate', `${preview.summary.weekly_interest_rate ?? 0}%`)}
           ${loanFormKvRow('Loan Payment / Period', formatCurrency(preview.summary.loan_payment_per_period))}
@@ -1418,9 +1477,12 @@ export default function LoanFormPage() {
         .map(c => ({ label: c.label.trim(), amount: round2(parseFloat(c.amount) || 0) }));
       const otherChargesTotal = round2(otherChargesIncluded.reduce((s, c) => s + c.amount, 0));
       const membershipDeductionPayload = normalizeMembershipDeduction(membershipDeduction);
+      const persistedValues = { ...values };
+      delete persistedValues.old_calculation_basis;
+      delete persistedValues.old_number_of_payments;
 
       const payload = {
-        ...values,
+        ...persistedValues,
         source: 'manual',
         notes: values.notes?.trim() || null,
         amount: principalAmount,
@@ -1853,8 +1915,42 @@ export default function LoanFormPage() {
             )}
           </div>
 
-          {/* Row 4: Preview Payment / Period */}
+          {/* Row 4: Old calculation basis | Payment count | Preview Payment / Period */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            {watchedLoanType === 'existing' && (
+              <div>
+                <Select
+                  label="Calculation Basis"
+                  options={OLD_CALCULATION_BASIS_OPTS}
+                  {...register('old_calculation_basis')}
+                />
+                <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Choose how the historical worksheet calculated payments</p>
+              </div>
+            )}
+            {watchedLoanType === 'existing' && (
+              <div>
+                {watchedOldCalculationBasis === 'exact_count' ? (
+                  <Input
+                    label="Number of Payments"
+                    type="number"
+                    min="1"
+                    step="1"
+                    {...register('old_number_of_payments')}
+                  />
+                ) : (
+                  <Input
+                    label="Number of Payments"
+                    readOnly
+                    value={watchedTerm ? Math.round(computeOldTermBasedPeriods(watchedTerm, watchedFrequency)) : ''}
+                  />
+                )}
+                <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">
+                  {watchedOldCalculationBasis === 'exact_count'
+                    ? 'Enter the exact payment count from the old record'
+                    : 'Displayed as a whole number; calculation keeps the exact decimal value'}
+                </p>
+              </div>
+            )}
             <div>
               <Input
                 label={watchedLoanType === 'existing' ? 'Total Payment / Period' : 'Loan Payment / Period'}
@@ -2292,7 +2388,7 @@ export default function LoanFormPage() {
                     <PreviewRow label="Method" value={watchedMethod === 'straight' ? 'Straight' : 'Diminishing'} />
                     <PreviewRow label="Frequency" value={frequencyDisplayLabel(watchedFrequency)} />
                     <PreviewRow label="First Payment Due Date" value={formatDate(preview.summary.first_payment_due_date)} />
-                    <PreviewRow label="No. of Payments" value={String(preview.summary.number_of_payments)} />
+                    <PreviewRow label="No. of Payments" value={String(preview.summary.worksheet_number_of_payments ?? preview.summary.number_of_payments)} />
                     <PreviewRow label="Monthly Interest Rate" value={`${preview.summary.monthly_interest_rate ?? watchedRate ?? 0}%`} />
                     <PreviewRow label="Weekly Interest Rate" value={`${preview.summary.weekly_interest_rate ?? 0}%`} />
                     {coMakerRequired && (
