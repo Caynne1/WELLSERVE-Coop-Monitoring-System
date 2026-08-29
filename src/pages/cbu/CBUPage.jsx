@@ -389,7 +389,7 @@ export default function CBUPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader title="CBU Monitoring" subtitle="Capital Build-Up accounts across all members" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 mb-6">
@@ -408,7 +408,7 @@ export default function CBUPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative w-full sm:flex-1 sm:max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"

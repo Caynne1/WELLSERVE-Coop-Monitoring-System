@@ -491,10 +491,10 @@ export default function MemberDetailPage() {
         <div className="relative">
           <div className="h-3 bg-[#07A04E]" />
           
-          <div className="px-6 py-6">
+          <div className="px-4 py-5 sm:px-6 sm:py-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-4">
-                <div className={`relative w-20 h-20 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-center text-2xl font-bold
+              <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+                <div className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border border-emerald-100 shadow-sm flex flex-shrink-0 items-center justify-center text-xl sm:text-2xl font-bold
                   ${member.membership_type === 'kiddy' ? 'bg-teal-100 text-teal-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {(member.first_name?.[0] || '') + (member.last_name?.[0] || '')}
                   <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center
@@ -503,7 +503,7 @@ export default function MemberDetailPage() {
                   </div>
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-2xl font-bold text-gray-900">
+                  <h1 className="break-words text-xl font-bold text-gray-900 sm:text-2xl">
                     {member.first_name} {member.last_name}
                   </h1>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -524,7 +524,7 @@ export default function MemberDetailPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <div className="flex w-full items-center gap-2 flex-wrap lg:w-auto lg:shrink-0">
                 <button
                   onClick={handlePrint}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all"
@@ -909,7 +909,7 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-700">Loan Records</h3>
           <p className="text-xs text-gray-400 mt-1">Loan payment count: {paymentCount}</p>
@@ -1093,7 +1093,7 @@ function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center">
             <PiggyBank size={20} className="text-green-600" />
@@ -1116,7 +1116,7 @@ function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 text-sm">
+      <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
         <AccountInfoCell label="Account No." value={account.account_no || 'â€”'} mono />
         <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : 'â€”'} />
         <AccountInfoCell label="Total Deposits" value={formatCurrency(account.total_deposits ?? 0)} />
@@ -1142,7 +1142,7 @@ function SavingsTab({ account, transactions, displayBalance, paymentCount, onDep
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
             <Wallet size={20} className="text-blue-600" />
@@ -1165,7 +1165,7 @@ function SavingsTab({ account, transactions, displayBalance, paymentCount, onDep
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 text-sm">
+      <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
         <AccountInfoCell label="Account No." value={account.account_no || 'â€”'} mono />
         <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : 'â€”'} />
         <AccountInfoCell label="Total Deposits" value={formatCurrency(account.total_deposits ?? 0)} />
@@ -1202,7 +1202,7 @@ function SavingsBoosterSlotCard({ slot }) {
           {slot.status || 'active'}
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : 'â€”'} />
         <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : 'â€”'} />
         <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '—'} />
@@ -1282,7 +1282,7 @@ function WellifeVipTab({ transactions }) {
       ) : (
         <div className="divide-y divide-gray-50">
           {transactions.map(tx => (
-            <div key={tx.id} className="flex items-center justify-between py-3">
+            <div key={tx.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center">
                   <CreditCard size={14} className="text-purple-600" />
@@ -1327,7 +1327,7 @@ function TransactionsTab({ transactions }) {
             const style = typeStyles[tx.type] || { icon: Clock, color: 'text-gray-500' };
             const TxIcon = style.icon;
             return (
-              <div key={tx.id} className="flex items-center justify-between py-3">
+              <div key={tx.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
                     <TxIcon size={14} className={style.color} />
@@ -1424,7 +1424,7 @@ function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefres
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-700">Penalty Records</h3>
           <p className="text-xs text-gray-400 mt-1">
@@ -1602,7 +1602,7 @@ function CreditProfileTab({ loans, memberName }) {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {statItems.map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl border border-gray-200 p-3 text-center">
             <p className={`text-xl font-bold tabular-nums ${color}`}>{value}</p>
@@ -3280,7 +3280,7 @@ function MembershipTab({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
             <Shield size={20} className="text-emerald-600" />
@@ -3783,7 +3783,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-gray-700">Time Deposit Accounts</h3>
         {canCreate && (
         <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={openAdd}>
@@ -3814,7 +3814,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
 
           return (
             <div key={td.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
-              <div className="px-5 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex flex-col gap-3 bg-gray-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{td.name}</p>
                   <p className="text-xs text-gray-400 mt-0.5">Applied: {formatDate(td.date_applied)}</p>
@@ -3990,4 +3990,3 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
     </div>
   );
 }
-

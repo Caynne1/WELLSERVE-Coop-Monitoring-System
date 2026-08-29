@@ -595,7 +595,7 @@ export default function LoansPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Loans"
         subtitle="Manage and monitor member loans"
@@ -632,8 +632,8 @@ export default function LoansPage() {
       </div>
 
       <div className="mt-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative">
+        <div className="flex w-full items-center gap-3 flex-wrap lg:w-auto">
+          <div className="relative w-full sm:w-auto">
             <Search
               size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -645,7 +645,7 @@ export default function LoansPage() {
               onChange={e => setSearch(e.target.value)}
               className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl
                 focus:outline-none focus:ring-2 focus:ring-[#07A04E] focus:border-transparent
-                w-80 bg-white shadow-sm"
+                w-full sm:w-80 bg-white shadow-sm"
             />
           </div>
 
@@ -690,7 +690,7 @@ export default function LoansPage() {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           {!loading && (
             <p className="text-xs text-gray-400 mr-2">
               {filtered.length} of {loans.length} loans

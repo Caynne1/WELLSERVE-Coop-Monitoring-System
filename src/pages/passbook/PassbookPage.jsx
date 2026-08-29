@@ -393,7 +393,7 @@ export default function PassbookPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Passbook"
         subtitle="Manage passbook registry and member passbook records"

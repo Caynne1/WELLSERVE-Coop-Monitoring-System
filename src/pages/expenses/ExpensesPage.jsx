@@ -492,7 +492,7 @@ export default function ExpensesPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Expenses"
         subtitle="Track and manage cooperative operational expenses"

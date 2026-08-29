@@ -853,7 +853,7 @@ export default function LoanDetailPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
       <button
         onClick={() => navigate('/loans')}
         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 mb-4 transition-colors"

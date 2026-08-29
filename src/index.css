@@ -377,3 +377,72 @@
 .topnav-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+html,
+body,
+#root {
+  min-width: 0;
+}
+
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+@media (max-width: 640px) {
+  main > .p-6,
+  main > .p-8 {
+    padding: 1rem;
+  }
+
+  main button,
+  main a,
+  main input,
+  main select {
+    max-width: 100%;
+  }
+
+  main input,
+  main select,
+  main textarea {
+    font-size: 16px;
+  }
+
+  main .overflow-x-auto > table {
+    min-width: 720px;
+  }
+
+  main .overflow-x-auto {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  main .grid > * {
+    min-width: 0;
+  }
+
+  main .flex.flex-wrap > input,
+  main .flex.flex-wrap > select {
+    flex: 1 1 10rem;
+    min-width: 0;
+  }
+
+  main .flex.flex-wrap > .relative {
+    max-width: 100%;
+  }
+
+  main [role="tablist"],
+  main .tabs-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 400px) {
+  main .grid-cols-2,
+  main .grid-cols-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -171,6 +171,7 @@ export default function LoginPage() {
             grid-template-columns: 1fr 1fr;
             width: 100vw;
             height: 100vh;
+            height: 100dvh;
           }
 
           /* LEFT PANEL */
@@ -325,6 +326,8 @@ export default function LoginPage() {
             padding: 80px 72px;
             display: flex;
             align-items: center;
+            justify-content: center;
+            min-width: 0;
           }
 
           .ws-form-container {
@@ -449,10 +452,76 @@ export default function LoginPage() {
 
           /* Mobile */
           @media (max-width: 900px) {
-            .ws-shell { grid-template-columns: 1fr; }
+            .ws-root {
+              overflow-x: hidden;
+              overflow-y: auto;
+            }
+            .ws-shell {
+              grid-template-columns: minmax(0, 1fr);
+              width: 100%;
+              height: auto;
+              min-height: 100vh;
+              min-height: 100dvh;
+            }
             .ws-left { display: none; }
             .ws-mobile-brand { display: flex; }
-            .ws-right { padding: 60px 32px; }
+            .ws-right {
+              min-height: 100vh;
+              min-height: 100dvh;
+              padding: 48px 32px;
+            }
+          }
+
+          @media (max-width: 480px) {
+            .ws-right {
+              align-items: center;
+              padding: 28px 18px;
+            }
+            .ws-mobile-brand {
+              margin-bottom: 28px;
+            }
+            .ws-form-title {
+              font-size: 27px;
+            }
+            .ws-form {
+              margin-top: 32px;
+              gap: 20px;
+            }
+            .ws-input {
+              min-height: 52px;
+              font-size: 16px;
+            }
+            .ws-btn-primary {
+              height: 52px;
+            }
+            .ws-secure-notice {
+              margin-top: 24px;
+            }
+          }
+
+          @media (max-width: 900px) and (max-height: 600px) {
+            .ws-right {
+              align-items: flex-start;
+              padding-top: 24px;
+              padding-bottom: 24px;
+            }
+            .ws-mobile-brand {
+              margin-bottom: 20px;
+            }
+            .ws-form {
+              margin-top: 24px;
+              gap: 16px;
+            }
+            .ws-secure-notice {
+              margin-top: 18px;
+            }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .ws-grid,
+            .ws-circle {
+              animation: none;
+            }
           }
         `}</style>
       </div>

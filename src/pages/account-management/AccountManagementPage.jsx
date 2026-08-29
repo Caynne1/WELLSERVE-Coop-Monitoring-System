@@ -117,7 +117,7 @@ export default function AccountManagementPage() {
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Account Management"
         subtitle="Manage system user accounts and access"

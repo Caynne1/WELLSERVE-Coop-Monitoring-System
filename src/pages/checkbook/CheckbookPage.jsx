@@ -488,7 +488,7 @@ export default function CheckbookPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Checkbook"
         subtitle="Track issued checks and monitor clearings"

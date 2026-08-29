@@ -7,7 +7,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  X, Bell, LogOut, Search,
+  X, Bell, LogOut, Search, Menu,
   LayoutDashboard, Users, CreditCard, Receipt, BookOpen,
   PiggyBank, ArrowLeftRight, FileText, TrendingUp, BarChart2,
   ActivitySquare, Settings, Wallet, UserCog,
@@ -57,7 +57,7 @@ function Highlight({ text, query }) {
   );
 }
 
-export default function Topbar() {
+export default function Topbar({ onMenuClick }) {
   const { user, profile, signOut, hasPermission } = useAuth();
   const { unreadCount, panelOpen, setPanelOpen } = useNotifications();
   const navigate   = useNavigate();
@@ -118,10 +118,9 @@ export default function Topbar() {
 
   return (
     <>
-      <header style={{
+      <header className="px-3 sm:px-5" style={{
         height: '60px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
-        paddingLeft: '20px', paddingRight: '20px',
         background: '#ffffff', borderBottom: '1px solid #e5e7eb',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
         flexShrink: 0, position: 'sticky', top: 0, zIndex: 20, gap: '12px',
@@ -129,6 +128,14 @@ export default function Topbar() {
 
         {/* Left — brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="Open navigation menu"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-[#07A04E] md:hidden"
+          >
+            <Menu size={18} />
+          </button>
           <WellserveLogo size={32} variant="dark" />
           <div style={{ lineHeight: 1.1 }} className="hidden sm:block">
             <p style={{
@@ -150,7 +157,7 @@ export default function Topbar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginLeft: 'auto' }}>
 
           {/* Search */}
-          <div style={{ position: 'relative' }} ref={searchRef}>
+          <div className="hidden md:block" style={{ position: 'relative' }} ref={searchRef}>
             <div style={{
               display: 'flex', alignItems: 'center', gap: '7px',
               height: '36px', borderRadius: '10px',
@@ -338,7 +345,7 @@ export default function Topbar() {
           </div>
 
           {/* Divider */}
-          <div style={{ width: '1px', height: '22px', background: '#e5e7eb', margin: '0 4px' }} />
+          <div className="hidden sm:block" style={{ width: '1px', height: '22px', background: '#e5e7eb', margin: '0 4px' }} />
 
           {/* Avatar */}
           <div style={{

@@ -14,7 +14,7 @@ import {
   CreditCard, PiggyBank, Wallet, Landmark, Sprout,
   Receipt, ArrowLeftRight, TrendingUp, FileText, BookOpen,
   ActivitySquare, BarChart2, ShieldCheck, UserCog, Settings,
-  Wallet2, LineChart,
+  Wallet2, LineChart, X,
 } from 'lucide-react';
 
 // ── Nav model ───────────────────────────────────────────────────────────────
@@ -260,12 +260,13 @@ function NavCategory({ item, isOpen, isActive, onOpen, onClose, registerBtnRef }
   );
 }
 
-export default function TopNav() {
+export default function TopNav({ mobileOpen = false, onMobileClose }) {
   const { profile, hasPermission } = useAuth();
   const location = useLocation();
   const isAdmin = profile?.role === 'admin';
 
   const [openKey, setOpenKey] = useState(null);
+  const [mobileSection, setMobileSection] = useState(null);
   const navRef = useRef(null);
   const btnRefs = useRef({});
 
@@ -304,6 +305,25 @@ export default function TopNav() {
     return () => document.removeEventListener('keydown', handler);
   }, [openKey]);
 
+  useEffect(() => {
+    if (!mobileOpen) {
+      setMobileSection(null);
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') onMobileClose?.();
+    };
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [mobileOpen, onMobileClose]);
+
   const renderedItems = NAV_ITEMS
     .map(item => {
       if (item.children) {
@@ -315,42 +335,129 @@ export default function TopNav() {
     .filter(Boolean);
 
   return (
-    <nav
-      ref={navRef}
-      className="topnav-scroll"
-      style={{
-        display: 'flex', alignItems: 'center', gap: '4px',
+    <>
+      <nav
+        ref={navRef}
+        className="topnav-scroll hidden md:flex"
+        style={{
+        alignItems: 'center', gap: '4px',
         height: '52px', padding: '0 16px',
         background: '#ffffff', borderBottom: '1px solid #e5e7eb',
         overflowX: 'auto', overflowY: 'visible',
         position: 'sticky', top: '60px', zIndex: 15,
       }}
-    >
-      {renderedItems.map(item => {
-        if (item.children) {
-          const isActive = item.children.some(c => location.pathname.startsWith(c.to));
+      >
+        {renderedItems.map(item => {
+          if (item.children) {
+            const isActive = item.children.some(c => location.pathname.startsWith(c.to));
+            return (
+              <NavCategory
+                key={item.key}
+                item={item}
+                isOpen={openKey === item.key}
+                isActive={isActive}
+                onOpen={setOpenKey}
+                onClose={() => setOpenKey(null)}
+                registerBtnRef={registerBtnRef}
+              />
+            );
+          }
           return (
-            <NavCategory
-              key={item.key}
-              item={item}
-              isOpen={openKey === item.key}
-              isActive={isActive}
-              onOpen={setOpenKey}
-              onClose={() => setOpenKey(null)}
-              registerBtnRef={registerBtnRef}
+            <NavPill
+              key={item.to}
+              to={item.to}
+              icon={item.icon}
+              label={item.label}
+              isActive={location.pathname.startsWith(item.to)}
             />
           );
-        }
-        return (
-          <NavPill
-            key={item.to}
-            to={item.to}
-            icon={item.icon}
-            label={item.label}
-            isActive={location.pathname.startsWith(item.to)}
+        })}
+      </nav>
+
+      {mobileOpen && createPortal(
+        <div className="fixed inset-0 z-[9998] md:hidden" role="dialog" aria-modal="true" aria-label="Main navigation">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+            onClick={onMobileClose}
+            aria-label="Close navigation menu"
           />
-        );
-      })}
-    </nav>
+          <aside className="relative flex h-full w-[min(88vw,340px)] flex-col bg-white shadow-2xl animate-slide-in-left">
+            <div className="flex h-[60px] flex-shrink-0 items-center justify-between border-b border-gray-100 px-4">
+              <div>
+                <p className="text-sm font-bold tracking-wide text-gray-900">WELLSERVE</p>
+                <p className="mt-0.5 text-[10px] font-semibold uppercase text-[#07A04E]">Main Navigation</p>
+              </div>
+              <button
+                type="button"
+                onClick={onMobileClose}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                aria-label="Close navigation menu"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <nav className="min-h-0 flex-1 overflow-y-auto p-3">
+              <div className="space-y-1">
+                {renderedItems.map(item => {
+                  if (!item.children) {
+                    const active = location.pathname.startsWith(item.to);
+                    return (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={onMobileClose}
+                        className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-emerald-50 text-[#07A04E]' : 'text-gray-700 hover:bg-gray-50'}`}
+                      >
+                        <item.icon size={18} strokeWidth={active ? 2.5 : 2} />
+                        <span>{item.label}</span>
+                      </NavLink>
+                    );
+                  }
+
+                  const sectionActive = item.children.some(child => location.pathname.startsWith(child.to));
+                  const expanded = mobileSection === item.key || sectionActive;
+                  return (
+                    <div key={item.key}>
+                      <button
+                        type="button"
+                        onClick={() => setMobileSection(current => current === item.key ? null : item.key)}
+                        className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${sectionActive ? 'bg-emerald-50 text-[#07A04E]' : 'text-gray-700 hover:bg-gray-50'}`}
+                        aria-expanded={expanded}
+                      >
+                        <item.icon size={18} strokeWidth={sectionActive ? 2.5 : 2} />
+                        <span className="min-w-0 flex-1">{item.label}</span>
+                        <ChevronDown size={16} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {expanded && (
+                        <div className="ml-5 mt-1 space-y-1 border-l border-emerald-100 pl-3">
+                          {item.children.map(child => {
+                            const childActive = location.pathname.startsWith(child.to);
+                            return (
+                              <NavLink
+                                key={child.to}
+                                to={child.to}
+                                onClick={onMobileClose}
+                                className={`flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${childActive ? 'bg-emerald-50 text-[#07A04E]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                              >
+                                <child.icon size={16} strokeWidth={childActive ? 2.5 : 2} />
+                                <span>{child.label}</span>
+                              </NavLink>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </nav>
+          </aside>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }

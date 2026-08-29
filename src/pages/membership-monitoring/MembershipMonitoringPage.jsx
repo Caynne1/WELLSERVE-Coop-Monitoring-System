@@ -220,7 +220,7 @@ export default function MembershipMonitoringPage() {
           <h1 className="text-2xl font-bold text-gray-900">Membership Monitoring</h1>
           <p className="text-gray-500 mt-1">Track membership setup, payment breakdown, and balances</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handlePrint}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"

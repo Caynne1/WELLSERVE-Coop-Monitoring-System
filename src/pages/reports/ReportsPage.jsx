@@ -861,7 +861,7 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div className="p-6" id="wellserve-report-root">
+    <div className="p-4 sm:p-6" id="wellserve-report-root">
 
       {/* Header */}
       <PageHeader
@@ -1201,6 +1201,5 @@ export default function ReportsPage() {
     </div>
   );
 }
-
 
 

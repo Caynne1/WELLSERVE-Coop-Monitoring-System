@@ -649,7 +649,7 @@ export default function MembersPage() {
       </div>
 
       {/* ── View Tabs ── */}
-      <div className="mt-6 flex gap-2 print:hidden">
+      <div className="mt-6 flex gap-2 overflow-x-auto pb-1 print:hidden">
         {MEMBER_VIEWS.map(view => {
           const Icon = view.icon;
           const count = view.id === 'kiddy'

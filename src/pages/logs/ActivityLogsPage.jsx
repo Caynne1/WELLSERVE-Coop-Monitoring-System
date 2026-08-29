@@ -248,7 +248,7 @@ export default function ActivityLogsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader title="Activity Logs" subtitle="Audit trail of who did what, where, and when" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
@@ -283,7 +283,7 @@ export default function ActivityLogsPage() {
       </div>
 
       <div className="mt-5 flex flex-wrap gap-3 items-end">
-        <div className="flex gap-2 flex-1 min-w-[220px] max-w-sm">
+        <div className="flex w-full gap-2 sm:flex-1 sm:min-w-[220px] sm:max-w-sm">
           <div className="relative flex-1">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             <input

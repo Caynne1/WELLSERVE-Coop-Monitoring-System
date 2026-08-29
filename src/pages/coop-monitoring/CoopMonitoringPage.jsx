@@ -1609,7 +1609,7 @@ export default function CoopMonitoringPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Fund Monitoring"
         subtitle="Cooperative fund — cash inflow and outflow overview"
@@ -2057,4 +2057,3 @@ export default function CoopMonitoringPage() {
     </div>
   );
 }
-

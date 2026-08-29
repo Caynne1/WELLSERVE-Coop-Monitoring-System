@@ -1,11 +1,12 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import Topbar from './Topbar';
 import TopNav from './TopNav';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function AppLayout() {
   const location = useLocation();
   const mainRef = useRef(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     if (mainRef.current) {
@@ -15,14 +16,18 @@ export default function AppLayout() {
     }
   }, [location.pathname]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen h-[100dvh] flex-col overflow-hidden bg-gray-50">
       {/* Sticky header + horizontal top navigation (replaces the old sidebar) */}
-      <Topbar />
-      <TopNav />
+      <Topbar onMenuClick={() => setMobileNavOpen(true)} />
+      <TopNav mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
 
       {/* Main content */}
-      <main ref={mainRef} className="flex-1 overflow-y-auto animate-fade-in-up">
+      <main ref={mainRef} className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden animate-fade-in-up">
         <Outlet />
       </main>
     </div>

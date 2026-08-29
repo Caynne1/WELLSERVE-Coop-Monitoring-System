@@ -74,7 +74,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
      * far the page is scrolled.
      */
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4"
       aria-modal="true"
       role="dialog"
     >
@@ -88,15 +88,15 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
       {/* Panel — sits above the backdrop via relative stacking */}
       <div
         className={[
-          'relative bg-white rounded-2xl shadow-xl w-full flex flex-col',
-          'max-h-[90vh]',          // never taller than 90 % of viewport
+          'relative bg-white rounded-xl sm:rounded-2xl shadow-xl w-full flex flex-col',
+          'max-h-[calc(100dvh-1rem)] sm:max-h-[90vh]',
           sizes[size] ?? sizes.md,
           'animate-scale-in',
         ].join(' ')}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
           <button
             type="button"
@@ -109,7 +109,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
         </div>
 
         {/* Scrollable body — tall content scrolls inside the panel, not the page */}
-        <div className="overflow-y-auto flex-1 p-6 min-h-0">
+        <div className="overflow-y-auto flex-1 p-4 sm:p-6 min-h-0 overscroll-contain">
           {children}
         </div>
       </div>
