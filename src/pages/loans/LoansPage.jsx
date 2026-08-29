@@ -152,24 +152,27 @@ function parseJSONSafe(val, fallback = {}) {
 }
 
 function getLoanBalanceWithInterest(loan) {
+  const summary = parseJSONSafe(loan?.preview_summary_json, {});
   const schedule = parseJSONSafe(loan?.preview_schedule_json, []);
   if (Array.isArray(schedule) && schedule.length > 0) {
+    const rowTotal = row => Number(
+      row?.total_due ??
+      row?.payment ??
+      ((Number(row?.principal) || 0) + (Number(row?.interest ?? row?.interest_amount) || 0))
+    ) || 0;
+    const scheduledTotal = schedule.reduce((sum, row) => sum + rowTotal(row), 0);
     const remaining = schedule
       .filter(row => !row?.paid)
-      .reduce((sum, row) => {
-        const rowTotal = Number(
-          row?.remaining_due ??
-          row?.total_due ??
-          row?.payment ??
-          ((Number(row?.principal) || 0) + (Number(row?.interest ?? row?.interest_amount) || 0))
-        ) || 0;
-        return sum + rowTotal;
-      }, 0);
+      .reduce((sum, row) => sum + (Number(row?.remaining_due ?? rowTotal(row)) || 0), 0);
 
-    return Math.max(0, remaining);
+    if (remaining <= 0) return 0;
+
+    // Keep the exact summary total while schedule rows remain individually rounded.
+    const payable = Number(summary?.total_loan_payable ?? loan?.total_loan_payable) || 0;
+    const roundingAdjustment = payable > 0 ? payable - scheduledTotal : 0;
+    return Math.max(0, remaining + roundingAdjustment);
   }
 
-  const summary = parseJSONSafe(loan?.preview_summary_json, {});
   const rawBalance = Number(loan?.balance ?? loan?.amount) || 0;
   if (rawBalance <= 0) return 0;
 

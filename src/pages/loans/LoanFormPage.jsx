@@ -1049,12 +1049,15 @@ export default function LoanFormPage() {
       try {
         const data = await getLoanById(id);
         const firstPaymentDueDate = parseFirstScheduleDueDate(data.preview_schedule_json);
+        const savedSummary = parseJSONSafe(data.preview_summary_json, {});
         const savedDeductions = parseJSONSafe(data.preview_deductions_json, {});
         const savedMembershipDeduction = savedDeductions.membership_deduction;
 
         reset({
           member_id: data.member_id,
-          loan_type: data.loan_type || 'new',
+          loan_type: data.loan_type
+            || savedSummary.loan_type
+            || (OLD_FORMULA_FREQUENCY_VALUES.includes(data.repayment_frequency) ? 'existing' : 'new'),
           amount: data.amount || '',
           interest_rate: data.interest_rate || '2.5',
           term_months: data.term_months || '',
@@ -1419,6 +1422,7 @@ export default function LoanFormPage() {
       const payload = {
         ...values,
         source: 'manual',
+        notes: values.notes?.trim() || null,
         amount: principalAmount,
         balance: principalAmount,
         monthly_amortization: round2(preview.summary?.loan_payment_per_period || preview.summary?.payment_per_period || 0),
@@ -1462,7 +1466,11 @@ export default function LoanFormPage() {
         co_maker_relationship: coMakerRequired ? (values.co_maker_relationship || '') : '',
         co_maker_contact_no: coMakerRequired ? (values.co_maker_contact_no || '') : '',
 
-        preview_summary_json: JSON.stringify(preview.summary),
+        preview_summary_json: JSON.stringify({
+          ...preview.summary,
+          loan_type: values.loan_type,
+          notes: values.notes?.trim() || null,
+        }),
         preview_deductions_json: JSON.stringify({
           ...preview.deductions,
           charge_inclusion: chargeIncluded,

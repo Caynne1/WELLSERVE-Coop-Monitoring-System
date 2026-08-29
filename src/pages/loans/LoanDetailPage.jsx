@@ -13,7 +13,6 @@ import {
   History,
   CheckCircle2,
   Clock,
-  AlertTriangle,
   XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -24,7 +23,6 @@ import Badge from '../../components/ui/Badge';
 import Spinner from '../../components/ui/Spinner';
 
 import { getLoanById, getLoanPaymentHistory, updateLoanApprovalStatus } from '../../services/loanService';
-import { getAuditHistory } from '../../services/logService';
 import { useAuth } from '../../context/AuthContext';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
 import {
@@ -44,6 +42,18 @@ const statusVariant = {
   defaulted: 'danger',
   pending: 'warning',
 };
+
+const OLD_LOAN_FREQUENCIES = new Set(['weekly', 'monthly_old', 'semi_monthly_old']);
+
+function resolveLoanType(loan, summary) {
+  return loan?.loan_type
+    || summary?.loan_type
+    || (OLD_LOAN_FREQUENCIES.has(loan?.repayment_frequency) ? 'existing' : 'new');
+}
+
+function resolveLoanNotes(loan, summary) {
+  return loan?.notes?.trim() || summary?.notes?.trim() || '—';
+}
 
 // Row status badge colors for the printed schedule
 const ROW_STATUS_STYLE = {
@@ -303,9 +313,7 @@ export default function LoanDetailPage() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [deductionsOpen, setDeductionsOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [auditOpen, setAuditOpen] = useState(false);
   const [paymentHistory, setPaymentHistory] = useState([]);
-  const [auditHistory, setAuditHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [approvalSaving, setApprovalSaving] = useState(false);
 
@@ -322,13 +330,10 @@ export default function LoanDetailPage() {
   useEffect(() => {
     if (!id) return;
     setHistoryLoading(true);
-    Promise.all([
-      getLoanPaymentHistory(id).catch(() => []),
-      getAuditHistory(id, 'loan').catch(() => []),
-    ]).then(([payments, audit]) => {
-      setPaymentHistory(payments);
-      setAuditHistory(audit);
-    }).finally(() => setHistoryLoading(false));
+    getLoanPaymentHistory(id)
+      .then(setPaymentHistory)
+      .catch(() => setPaymentHistory([]))
+      .finally(() => setHistoryLoading(false));
   }, [id]);
 
   async function handleApprovalChange(newStatus) {
@@ -367,6 +372,8 @@ export default function LoanDetailPage() {
     () => parseJsonSafely(loan?.preview_schedule_json, []),
     [loan?.preview_schedule_json]
   );
+  const resolvedLoanType = resolveLoanType(loan, previewSummary);
+  const resolvedLoanNotes = resolveLoanNotes(loan, previewSummary);
 
   const fallbackSchedule = useMemo(() => {
     if (!loan) return [];
@@ -504,7 +511,9 @@ export default function LoanDetailPage() {
             ${kvRow('Member Name', memberName || '—')}
             ${kvRow('Member No.', loan.members?.member_no || '—')}
             ${kvRow('Loan No.', loan.loan_no || '—')}
+            ${kvRow('Loan Type', resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan')}
             ${kvRow('Purpose', loan.purpose || '—')}
+            ${kvRow('Notes', resolvedLoanNotes)}
             ${kvRow('Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund')}
             ${loan.funding_source === 'financing' ? kvRow('Financing Note', loan.financing_note || '—') : ''}
             ${kvRow('Status', titleCase(loan.status || '—'))}
@@ -793,6 +802,7 @@ export default function LoanDetailPage() {
         ['Member', memberName || '—'],
         ['Member No.', loan.members?.member_no || '—'],
         ['Loan No.', loan.loan_no || '—'],
+        ['Loan Type', resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan'],
         ['Loan Amount', loan.amount || 0],
         ['Outstanding Balance', loan.balance ?? loan.amount ?? 0],
         ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
@@ -808,7 +818,7 @@ export default function LoanDetailPage() {
         ['Due Date', formatDate(loan.due_date)],
         ['Status', loan.status || '—'],
         ['Purpose', loan.purpose || '—'],
-        ['Notes', loan.notes || '—'],
+        ['Notes', resolvedLoanNotes],
       ]);
 
       const deductionsSheet = XLSX.utils.aoa_to_sheet([
@@ -911,9 +921,10 @@ export default function LoanDetailPage() {
             {[
               ['Member', memberName || '—'],
               ['Member No.', loan.members?.member_no || '—'],
-              ['Loan Type', <Badge key="loan_type" variant={loan.loan_type === 'existing' ? 'warning' : 'success'}>{loan.loan_type === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
+              ['Loan Type', <Badge key="loan_type" variant={resolvedLoanType === 'existing' ? 'warning' : 'success'}>{resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
               ['Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund'],
               ...(loan.funding_source === 'financing' ? [['Financing Note', loan.financing_note || '—']] : []),
+              ['Notes', resolvedLoanNotes],
               ['Loan Principal', formatCurrency(loan.amount)],
               ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(loan.balance ?? loan.amount)}</span>],
               ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
@@ -930,7 +941,6 @@ export default function LoanDetailPage() {
               ['Total ROI (%)', <span key="roi" className="text-emerald-700 font-semibold">{computedRoi}%</span>],
               ['Status', <Badge key="status" variant={statusVariant[loan.status] || 'default'}>{loan.status}</Badge>],
               ['Purpose', loan.purpose || '—'],
-              ['Notes', loan.notes || '—'],
             ].map(([label, value]) => (
               <div key={label} className="flex items-start justify-between px-5 py-3 text-sm gap-4">
                 <span className="text-gray-400 font-medium w-52 flex-shrink-0">{label}</span>
@@ -1154,55 +1164,6 @@ export default function LoanDetailPage() {
         </div>
       )}
 
-      {/* Audit Trail */}
-      <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setAuditOpen(v => !v)}
-          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={15} className="text-gray-400" />
-            <span className="text-sm font-semibold text-gray-700">Audit Trail</span>
-            {auditHistory.length > 0 && (
-              <span className="ml-1 text-xs text-gray-400">({auditHistory.length} events)</span>
-            )}
-          </div>
-          {auditOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-        </button>
-
-        {auditOpen && (
-          <div className="border-t border-gray-100">
-            {historyLoading ? (
-              <div className="flex justify-center py-6"><Spinner /></div>
-            ) : auditHistory.length === 0 ? (
-              <div className="px-5 py-8 text-center text-sm text-gray-400">No audit events found.</div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {auditHistory.map(log => (
-                  <div key={log.id} className="px-5 py-3 flex items-start gap-3">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-semibold text-gray-700 capitalize">{log.action}</span>
-                        {log.user_name && (
-                          <span className="text-xs text-gray-400">by {log.user_name}</span>
-                        )}
-                        <span className="text-xs text-gray-300">
-                          {new Date(log.created_at).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      {log.description && (
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">{log.description}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
