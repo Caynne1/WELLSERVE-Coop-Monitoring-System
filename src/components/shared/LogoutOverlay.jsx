@@ -1,25 +1,13 @@
 import WellserveLogo from './WellserveLogo';
 
-/**
- * LogoutOverlay — brief animated screen shown while signing out.
- * Mirrors the SplashScreen's blue theme so login and logout feel
- * like matching bookends of the same session.
- */
 export default function LogoutOverlay() {
   return (
     <div className="lo-root">
-      <div className="lo-bg" />
-
-      <div className="lo-orb lo-orb-1" />
-      <div className="lo-orb lo-orb-2" />
-
       <div className="lo-content">
         <div className="lo-logo-wrap">
-          <WellserveLogo size={72} variant="light" />
+          <WellserveLogo size={128} variant="light" layout="horizontal" />
         </div>
-
         <p className="lo-text">Signing out&hellip;</p>
-
         <div className="lo-spinner" />
       </div>
 
@@ -27,80 +15,33 @@ export default function LogoutOverlay() {
         .lo-root {
           position: fixed; inset: 0; z-index: 9999;
           display: flex; align-items: center; justify-content: center;
-          overflow: hidden;
-          animation: loFadeIn 0.35s ease both;
+          overflow: hidden; background: #000066;
+          animation: loFadeIn 0.25s ease both;
         }
-
-        .lo-bg {
-          position: absolute; inset: 0;
-          background: radial-gradient(ellipse at 40% 40%, #000099 0%, #000066 40%, #00002e 100%);
-        }
-
-        .lo-orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(60px);
-          pointer-events: none;
-        }
-        .lo-orb-1 {
-          width: 380px; height: 380px;
-          background: rgba(59, 91, 219, 0.20);
-          top: -100px; right: -120px;
-          animation: loOrbDrift 9s ease-in-out infinite;
-        }
-        .lo-orb-2 {
-          width: 260px; height: 260px;
-          background: rgba(99, 132, 255, 0.16);
-          bottom: -80px; left: -60px;
-          animation: loOrbDrift 11s ease-in-out infinite reverse;
-        }
-        @keyframes loOrbDrift {
-          0%,100% { transform: translate(0,0); }
-          50%      { transform: translate(30px, 20px); }
-        }
-
         .lo-content {
-          position: relative; z-index: 10;
           display: flex; flex-direction: column;
-          align-items: center; gap: 18px;
-          animation: loContentUp 0.45s cubic-bezier(0.34, 1.2, 0.64, 1) both;
+          align-items: center; gap: 20px; padding: 28px;
         }
-
         .lo-logo-wrap {
-          animation: loLogoFade 1.8s ease-in-out infinite;
+          width: min(82vw, 420px);
         }
-        @keyframes loLogoFade {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%       { opacity: 0.75; transform: scale(0.96); }
+        .lo-logo-wrap > div {
+          width: 100% !important; max-width: 100%;
+          height: auto !important; aspect-ratio: 8 / 3;
         }
-
         .lo-text {
-          font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-          font-size: 14px; font-weight: 600;
-          letter-spacing: 0.08em;
-          color: rgba(255,255,255,0.85);
-          margin: 0;
+          margin: 0; color: rgba(255,255,255,0.82);
+          font: 600 13px/1.4 'Raleway', 'Inter', sans-serif;
+          letter-spacing: 0.06em;
         }
-
         .lo-spinner {
-          width: 26px; height: 26px;
-          border-radius: 50%;
-          border: 2.5px solid rgba(255,255,255,0.18);
-          border-top-color: rgba(255,255,255,0.85);
+          width: 25px; height: 25px; border-radius: 50%;
+          border: 2.5px solid rgba(255,255,255,0.22);
+          border-top-color: #07A04E;
           animation: loSpin 0.75s linear infinite;
         }
-        @keyframes loSpin {
-          to { transform: rotate(360deg); }
-        }
-
-        @keyframes loFadeIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        @keyframes loContentUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes loSpin { to { transform: rotate(360deg); } }
+        @keyframes loFadeIn { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
     </div>
   );

@@ -1,44 +1,41 @@
-import logo from '../../assets/ws-logo.svg';
+import wellserveLogo from '../../assets/WS-Logo Transparent.png';
 
 /**
- * WellserveLogo — uses official logo asset
+ * WellserveLogo — uses the approved transparent WELLSERVE logo asset.
  *
- * variant="light" → for dark backgrounds (login, topbar)
- * variant="dark"  → for light backgrounds (sidebar)
+ * The layout prop remains supported for existing callers, but both layouts
+ * intentionally render the same approved full wordmark.
+ * variant="light"     → approved white mark for dark backgrounds
+ * variant="dark"      → full-color mark for light backgrounds
  */
 export default function WellserveLogo({
   size = 40,
   variant = 'dark',
+  layout = 'icon',
   className = '',
 }) {
-  const isLight = variant === 'light';
+  const width = Math.round(size * (2048 / 768));
 
   return (
     <div
       style={{
-        width: size,
+        width,
         height: size,
-        borderRadius: '50%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: isLight
-          ? 'rgba(255,255,255,0.12)'
-          : '#D6FADC',
-        padding: '6px',
-        boxShadow: isLight
-          ? '0 4px 18px rgba(0,0,0,0.35)'
-          : '0 2px 10px rgba(0,0,0,0.08)',
+        flexShrink: 0,
       }}
       className={className}
     >
       <img
-        src={logo}
-        alt="WELLSERVE Logo"
+        src={wellserveLogo}
+        alt="WELLSERVE Credit Cooperative"
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'contain',
+          filter: variant === 'light' ? 'brightness(0) invert(1)' : 'none',
         }}
       />
     </div>

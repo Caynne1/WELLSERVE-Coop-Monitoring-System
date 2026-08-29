@@ -1,4 +1,4 @@
-import wsLogo from '../assets/logo-hr.svg';
+import wsLogo from '../assets/WS-Logo Transparent.png';
 
 /**
  * Wraps arbitrary HTML content in a print-ready document that adapts to
@@ -47,7 +47,7 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
       display: flex;
       align-items: center;
       padding: 6mm 16mm;
-      border-bottom: 1pt solid #2d7d46;
+      border-bottom: 1pt solid #07A04E;
     }
     .lh-header img {
       height: 14mm;
@@ -73,7 +73,7 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
     h1.report-title {
       font-size: 15pt;
       font-weight: 700;
-      color: #1a3d2b;
+      color: #000066;
       margin-bottom: 2mm;
     }
     .report-meta {
@@ -81,7 +81,7 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
       color: #555;
       margin-bottom: 5mm;
       padding-bottom: 3mm;
-      border-bottom: 1.5pt solid #2d7d46;
+      border-bottom: 1.5pt solid #07A04E;
     }
     table {
       width: 100%;
@@ -90,7 +90,7 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
       margin-bottom: 5mm;
     }
     th {
-      background: #1a3d2b;
+      background: #000066;
       color: #fff;
       padding: 4pt 6pt;
       text-align: left;
@@ -104,10 +104,10 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
     .section-heading {
       font-size: 11pt;
       font-weight: 700;
-      color: #1a3d2b;
+      color: #000066;
       margin: 5mm 0 2mm 0;
       padding-bottom: 1mm;
-      border-bottom: 1pt solid #2d7d46;
+      border-bottom: 1pt solid #07A04E;
     }
     .stats-grid {
       display: grid;
@@ -116,13 +116,13 @@ export function wrapWithLetterhead(contentHtml, options = {}) {
       margin-bottom: 5mm;
     }
     .stat-box {
-      border: 0.5pt solid #d1fae5;
+      border: 0.5pt solid #7EB751;
       border-radius: 3pt;
       padding: 3mm 4mm;
-      background: #f0fdf4;
+      background: #D6FADC;
     }
     .stat-label { font-size: 8pt; color: #6b7280; margin-bottom: 1mm; }
-    .stat-value { font-size: 13pt; font-weight: 700; color: #065f46; }
+    .stat-value { font-size: 13pt; font-weight: 700; color: #273C2C; }
     .stat-sub { font-size: 7.5pt; color: #6b7280; margin-top: 0.5mm; }
     .confidential {
       font-size: 8pt;

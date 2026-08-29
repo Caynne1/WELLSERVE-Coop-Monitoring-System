@@ -20,8 +20,8 @@ const variants = {
   finance: 'bg-[#273C2C] hover:bg-[#1e2f22] active:bg-[#162419] text-white focus:ring-[#273C2C] shadow-sm',
   danger:  'bg-red-600   hover:bg-red-700   active:bg-red-800   text-white focus:ring-red-500 shadow-sm',
   success: 'bg-[#7EB751] hover:bg-[#6a9e42] active:bg-[#5a8836] text-white focus:ring-[#7EB751] shadow-sm',
-  outline: 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 active:bg-gray-100 focus:ring-gray-300',
-  ghost:   'text-gray-600 hover:bg-gray-100 active:bg-gray-200 focus:ring-gray-300',
+  outline: 'border border-gray-300 text-gray-700 bg-white hover:border-[#7EB751] hover:bg-[#D6FADC]/35 hover:text-[#273C2C] active:bg-[#D6FADC]/60 focus:ring-[#07A04E]/25',
+  ghost:   'text-gray-600 hover:bg-[#D6FADC]/35 hover:text-[#273C2C] active:bg-[#D6FADC]/60 focus:ring-[#07A04E]/25',
 };
 
 const sizes = {

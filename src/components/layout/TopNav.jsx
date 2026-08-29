@@ -80,11 +80,11 @@ function NavPill({ to, icon: Icon, label, isActive }) {
           padding: '8px 14px', borderRadius: '10px',
           fontSize: '13px', fontWeight: isActive ? '600' : '500',
           color: isActive ? '#07A04E' : '#4b5563',
-          background: isActive ? '#f0fdf6' : 'transparent',
-          border: isActive ? '1px solid #d1fae5' : '1px solid transparent',
+          background: isActive ? '#D6FADC' : 'transparent',
+          border: isActive ? '1px solid #7EB751' : '1px solid transparent',
           whiteSpace: 'nowrap', cursor: 'pointer', transition: 'all 0.15s ease',
         }}
-        onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = '#f6fef9'; e.currentTarget.style.color = '#059c4a'; } }}
+        onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'rgba(214,250,220,0.35)'; e.currentTarget.style.color = '#07A04E'; } }}
         onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#4b5563'; } }}
       >
         <Icon size={15} strokeWidth={isActive ? 2.5 : 2} />
@@ -186,8 +186,8 @@ function NavCategory({ item, isOpen, isActive, onOpen, onClose, registerBtnRef }
           padding: '8px 12px', borderRadius: '10px',
           fontSize: '13px', fontWeight: isActive ? '600' : '500',
           color: isActive || isOpen ? '#07A04E' : '#4b5563',
-          background: isActive || isOpen ? '#f0fdf6' : 'transparent',
-          border: isActive || isOpen ? '1px solid #d1fae5' : '1px solid transparent',
+          background: isActive || isOpen ? '#D6FADC' : 'transparent',
+          border: isActive || isOpen ? '1px solid #7EB751' : '1px solid transparent',
           whiteSpace: 'nowrap', cursor: 'pointer', transition: 'all 0.15s ease',
         }}
       >
@@ -234,16 +234,16 @@ function NavCategory({ item, isOpen, isActive, onOpen, onClose, registerBtnRef }
                     padding: '9px 11px', borderRadius: '10px',
                     fontSize: '13.5px', fontWeight: childActive ? '600' : '500',
                     color: childActive ? '#07A04E' : '#374151',
-                    background: childActive ? '#f0fdf6' : 'transparent',
+                    background: childActive ? '#D6FADC' : 'transparent',
                     transition: 'background 0.12s ease, color 0.12s ease',
                   }}
-                  onMouseEnter={e => { if (!childActive) { e.currentTarget.style.background = '#f6fef9'; e.currentTarget.style.color = '#059c4a'; } }}
+                  onMouseEnter={e => { if (!childActive) { e.currentTarget.style.background = 'rgba(214,250,220,0.35)'; e.currentTarget.style.color = '#07A04E'; } }}
                   onMouseLeave={e => { if (!childActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#374151'; } }}
                 >
                   <span style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0,
-                    background: childActive ? '#d1fae5' : '#f3f4f6',
+                    background: childActive ? '#D6FADC' : '#f3f4f6',
                     color: childActive ? '#07A04E' : '#6b7280',
                   }}>
                     <child.icon size={14} strokeWidth={childActive ? 2.5 : 2} />
@@ -408,7 +408,7 @@ export default function TopNav({ mobileOpen = false, onMobileClose }) {
                         key={item.to}
                         to={item.to}
                         onClick={onMobileClose}
-                        className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-emerald-50 text-[#07A04E]' : 'text-gray-700 hover:bg-gray-50'}`}
+                        className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-[#D6FADC] text-[#07A04E]' : 'text-gray-700 hover:bg-gray-50'}`}
                       >
                         <item.icon size={18} strokeWidth={active ? 2.5 : 2} />
                         <span>{item.label}</span>
@@ -423,7 +423,7 @@ export default function TopNav({ mobileOpen = false, onMobileClose }) {
                       <button
                         type="button"
                         onClick={() => setMobileSection(current => current === item.key ? null : item.key)}
-                        className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${sectionActive ? 'bg-emerald-50 text-[#07A04E]' : 'text-gray-700 hover:bg-gray-50'}`}
+                        className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${sectionActive ? 'bg-[#D6FADC] text-[#07A04E]' : 'text-gray-700 hover:bg-gray-50'}`}
                         aria-expanded={expanded}
                       >
                         <item.icon size={18} strokeWidth={sectionActive ? 2.5 : 2} />
@@ -432,7 +432,7 @@ export default function TopNav({ mobileOpen = false, onMobileClose }) {
                       </button>
 
                       {expanded && (
-                        <div className="ml-5 mt-1 space-y-1 border-l border-emerald-100 pl-3">
+                        <div className="ml-5 mt-1 space-y-1 border-l border-[#7EB751]/40 pl-3">
                           {item.children.map(child => {
                             const childActive = location.pathname.startsWith(child.to);
                             return (
@@ -440,7 +440,7 @@ export default function TopNav({ mobileOpen = false, onMobileClose }) {
                                 key={child.to}
                                 to={child.to}
                                 onClick={onMobileClose}
-                                className={`flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${childActive ? 'bg-emerald-50 text-[#07A04E]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                                className={`flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${childActive ? 'bg-[#D6FADC] text-[#07A04E]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                               >
                                 <child.icon size={16} strokeWidth={childActive ? 2.5 : 2} />
                                 <span>{child.label}</span>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Libre+Baskerville:wght@400;700&family=Raleway:wght@500;600;700;800&display=swap');
 
 @import "tailwindcss/base";
 @import "tailwindcss/components";
@@ -89,6 +89,17 @@
 /* ─── Base Layer ───────────────────────────────────────────────────────────── */
 
 @layer base {
+  :root {
+    --ws-navy: #000066;
+    --ws-green: #07A04E;
+    --ws-mint: #D6FADC;
+    --ws-lime: #7EB751;
+    --ws-forest: #273C2C;
+    --ws-blue: #002C5F;
+    --ws-cyan: #AEECEF;
+    --ws-yellow: #F8F32B;
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -106,9 +117,16 @@
     font-feature-settings: 'cv11', 'ss01';
   }
 
+  h1,
+  h2,
+  h3 {
+    font-family: 'Raleway', 'Inter', sans-serif;
+    letter-spacing: 0;
+  }
+
   ::selection {
-    background: rgba(34, 197, 94, 0.18);
-    color: #111827;
+    background: var(--ws-mint);
+    color: var(--ws-navy);
   }
 }
 
@@ -150,8 +168,9 @@
   .section-title {
     font-size: 1.5rem;
     font-weight: 600;
-    letter-spacing: -0.025em;
+    letter-spacing: 0;
     color: #111827;
+    font-family: 'Raleway', 'Inter', sans-serif;
   }
 
   .section-subtitle {

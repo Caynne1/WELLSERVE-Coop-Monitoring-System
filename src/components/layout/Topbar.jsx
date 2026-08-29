@@ -132,25 +132,26 @@ export default function Topbar({ onMenuClick }) {
             type="button"
             onClick={onMenuClick}
             aria-label="Open navigation menu"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-[#07A04E] md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:border-[#7EB751] hover:bg-[#D6FADC]/40 hover:text-[#07A04E] md:hidden"
           >
             <Menu size={18} />
           </button>
-          <WellserveLogo size={32} variant="dark" />
-          <div style={{ lineHeight: 1.1 }} className="hidden sm:block">
-            <p style={{
-              margin: 0, fontSize: '13px', fontWeight: '800',
-              letterSpacing: '0.14em', color: '#111827',
-            }}>
-              WELLSERVE
-            </p>
-            <p style={{
-              margin: '2px 0 0', fontSize: '8px', fontWeight: '700',
-              letterSpacing: '0.12em', textTransform: 'uppercase', color: '#07A04E',
-            }}>
-              Credit Cooperative
-            </p>
-          </div>
+          <span
+            className="sm:hidden"
+            style={{ position: 'relative', width: '116px', height: '54px', overflow: 'hidden', flexShrink: 0 }}
+          >
+            <span style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
+              <WellserveLogo size={52} variant="dark" layout="horizontal" />
+            </span>
+          </span>
+          <span
+            className="hidden sm:block"
+            style={{ position: 'relative', width: '184px', height: '58px', overflow: 'hidden', flexShrink: 0 }}
+          >
+            <span style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
+              <WellserveLogo size={76} variant="dark" layout="horizontal" />
+            </span>
+          </span>
         </div>
 
         {/* Right — actions */}
@@ -161,8 +162,8 @@ export default function Topbar({ onMenuClick }) {
             <div style={{
               display: 'flex', alignItems: 'center', gap: '7px',
               height: '36px', borderRadius: '10px',
-              border: searchFocused ? '1px solid #bbf7d0' : '1px solid #e5e7eb',
-              background: searchFocused ? '#f6fef9' : '#fafafa',
+              border: searchFocused ? '1px solid #7EB751' : '1px solid #e5e7eb',
+              background: searchFocused ? 'rgba(214,250,220,0.32)' : '#fafafa',
               padding: '0 10px',
               transition: 'all 0.2s ease',
               width: searchFocused ? '220px' : '180px',
@@ -232,14 +233,14 @@ export default function Topbar({ onMenuClick }) {
                                 display: 'flex', alignItems: 'center', gap: '10px',
                                 width: '100%', padding: '8px 10px', borderRadius: '9px',
                                 border: 'none', cursor: 'pointer', textAlign: 'left',
-                                background: isHot ? '#f0fdf6' : 'transparent',
+                                background: isHot ? '#D6FADC' : 'transparent',
                                 transition: 'background 0.1s ease',
                               }}
                             >
                               <span style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0,
-                                background: isHot ? '#d1fae5' : '#f3f4f6',
+                                background: isHot ? '#D6FADC' : '#f3f4f6',
                                 color: isHot ? '#07A04E' : '#6b7280',
                                 transition: 'all 0.1s ease',
                               }}>
@@ -260,7 +261,7 @@ export default function Topbar({ onMenuClick }) {
                               {isHot && (
                                 <span style={{
                                   fontSize: '9px', color: '#07A04E', fontWeight: '700',
-                                  background: '#d1fae5', borderRadius: '5px', padding: '2px 6px', flexShrink: 0,
+                                  background: '#D6FADC', borderRadius: '5px', padding: '2px 6px', flexShrink: 0,
                                 }}>↵</span>
                               )}
                             </button>
@@ -310,21 +311,21 @@ export default function Topbar({ onMenuClick }) {
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '36px', height: '36px', borderRadius: '10px',
-                border: panelOpen ? '1px solid #bbf7d0' : '1px solid #e5e7eb',
-                background: panelOpen ? '#f0fdf6' : '#fafafa',
+                border: panelOpen ? '1px solid #7EB751' : '1px solid #e5e7eb',
+                background: panelOpen ? '#D6FADC' : '#fafafa',
                 cursor: 'pointer',
                 color: panelOpen ? '#07A04E' : '#6b7280',
                 transition: 'all 0.18s ease',
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.background = '#f0fdf6';
+                e.currentTarget.style.background = '#D6FADC';
                 e.currentTarget.style.color = '#07A04E';
-                e.currentTarget.style.borderColor = '#bbf7d0';
+                e.currentTarget.style.borderColor = '#7EB751';
               }}
               onMouseLeave={e => {
-                e.currentTarget.style.background = panelOpen ? '#f0fdf6' : '#fafafa';
+                e.currentTarget.style.background = panelOpen ? '#D6FADC' : '#fafafa';
                 e.currentTarget.style.color = panelOpen ? '#07A04E' : '#6b7280';
-                e.currentTarget.style.borderColor = panelOpen ? '#bbf7d0' : '#e5e7eb';
+                e.currentTarget.style.borderColor = panelOpen ? '#7EB751' : '#e5e7eb';
               }}
             >
               <Bell size={16} />
@@ -350,8 +351,8 @@ export default function Topbar({ onMenuClick }) {
           {/* Avatar */}
           <div style={{
             width: '32px', height: '32px', borderRadius: '9999px',
-            background: 'linear-gradient(135deg, #4ADE80, #07A04E)',
-            border: '2px solid #d1fae5',
+            background: 'linear-gradient(135deg, #7EB751, #07A04E)',
+            border: '2px solid #D6FADC',
             boxShadow: '0 1px 4px rgba(7,160,78,0.20)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
