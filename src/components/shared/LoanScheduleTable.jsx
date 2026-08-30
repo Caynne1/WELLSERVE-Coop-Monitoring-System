@@ -1,21 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, XCircle, AlertCircle, Banknote, Percent, Wallet } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { installmentPaid, installmentStatus, scheduleCollections } from '../../utils/loanPaymentDisplay';
 
-function interestColLabel(freq) {
-  switch (freq) {
-    case 'weekly': return 'Weekly';
-    case 'semi_monthly': return 'Quencena';
-    case 'monthly': return 'Monthly';
-    case 'chattel': return 'Chattel';
-    case 'quarterly': return 'Quarterly';
-    case 'yearly': return 'Yearly';
-    default: return 'Interest';
-  }
-}
-
-function StatusPill({ paid, paidAmount, totalDue }) {
-  if (paid) {
+function StatusPill({ status }) {
+  if (status === 'Paid') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">
         <CheckCircle size={10} /> Paid
@@ -23,7 +12,15 @@ function StatusPill({ paid, paidAmount, totalDue }) {
     );
   }
 
-  if (paidAmount > 0 && paidAmount < totalDue) {
+  if (status === 'Overdue') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700">
+        <AlertCircle size={10} /> Overdue
+      </span>
+    );
+  }
+
+  if (status === 'Partial') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
         <AlertCircle size={10} /> Partial
@@ -44,15 +41,17 @@ export default function LoanScheduleTable({
   loanAmount = 0,
   monthlyInterestRate = 0,
   compact = false,
+  memberLayout = false,
   defaultOpen = true,
   showPaymentTracking = false,
+  released = false,
+  collections = null,
   title = 'Amortization Schedule',
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
   if (!schedule || schedule.length === 0) return null;
 
-  const freqLabel = interestColLabel(frequency);
   const displaySchedule = schedule.map((row, idx) => {
     const storedInterest = Number(row.interest ?? row.interest_amount ?? 0);
     const shouldComputeWeeklyInterest =
@@ -87,16 +86,17 @@ export default function LoanScheduleTable({
     : rawTotalPrincipalAmort;
   const totalInterest = displaySchedule.reduce((s, r) => s + (r.displayInterest || 0), 0);
   const totalLoanPayment = totalPrincipalAmort + totalInterest;
-  const paidCount = schedule.filter(r => r.paid).length;
-  const totalPaidAmount = schedule.reduce((s, r) => s + (r.paid_amount || 0), 0);
+  const paidCount = schedule.filter(r => installmentStatus(r) === 'Paid').length;
+  const collected = collections ?? scheduleCollections(schedule);
+  const collectedValue = value => value == null ? 'Not recorded' : formatCurrency(value);
 
-  const textSize = compact ? 'text-[11px]' : 'text-xs';
-  const cellPad = compact ? 'px-2 py-1.5' : 'px-3 py-2';
-  const headerPad = compact ? 'px-2 py-1.5' : 'px-3 py-2.5';
+  const textSize = memberLayout ? 'text-sm' : compact ? 'text-[11px]' : 'text-xs';
+  const cellPad = memberLayout ? 'px-3 py-2.5' : compact ? 'px-2 py-1.5' : 'px-3 py-2';
+  const headerPad = memberLayout ? 'px-3 py-3' : compact ? 'px-2 py-1.5' : 'px-3 py-2.5';
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <button
+    <div className={memberLayout ? 'min-w-0 space-y-4' : 'bg-white rounded-xl border border-gray-200 overflow-hidden'}>
+      {!memberLayout && <button
         type="button"
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
@@ -108,27 +108,26 @@ export default function LoanScheduleTable({
           </span>
         </div>
         {open ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
-      </button>
+      </button>}
 
       {open && (
-        <div className="border-t border-gray-100 overflow-x-auto">
-          <table className={`w-full ${textSize}`}>
+        <>
+        <div className={memberLayout ? 'rounded-lg border border-gray-200 bg-white shadow-sm overflow-x-auto' : 'border-t border-gray-100 overflow-x-auto'}>
+          <table className={`w-full ${textSize} tabular-nums`}>
             <thead>
               <tr className="bg-[#07A04E] text-white">
                 <th className={`${headerPad} text-left font-semibold whitespace-nowrap`}>No.</th>
-                <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Principal</th>
-                <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Principal Amort.</th>
-                <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>{freqLabel}</th>
                 <th className={`${headerPad} text-left font-semibold whitespace-nowrap`}>Due Date</th>
-                {showPaymentTracking && (
-                  <th className={`${headerPad} text-right font-semibold whitespace-nowrap bg-blue-600`}>Paid</th>
-                )}
-                <th className={`${headerPad} text-center font-semibold whitespace-nowrap`}>Status</th>
+                <th className={`${headerPad} text-right font-semibold`}>Remaining Principal</th>
+                <th className={`${headerPad} text-right font-semibold`}>Principal Payment</th>
+                <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Interest</th>
+                {memberLayout && showPaymentTracking && <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Amount Paid</th>}
+                <th className={`${headerPad} text-center font-semibold`}>Payment Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {displaySchedule.map((row, idx) => {
-                const loanTotal = row.payment || (row.principal + row.displayInterest);
+                const paidAmount = installmentPaid(row);
 
                 return (
                   <tr
@@ -136,44 +135,56 @@ export default function LoanScheduleTable({
                     className={`hover:bg-gray-50/60 ${row.paid ? 'text-gray-400' : 'text-gray-700'}`}
                   >
                     <td className={`${cellPad} font-mono font-medium`}>{row.period}</td>
+                    <td className={`${cellPad} text-left whitespace-nowrap`}>{formatDate(row.due_date) || '-'}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.balance || 0)}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.principal || 0)}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.displayInterest || 0)}</td>
-                    <td className={`${cellPad} text-left whitespace-nowrap`}>{formatDate(row.due_date) || '-'}</td>
-                    {showPaymentTracking && (
-                      <td className={`${cellPad} text-right bg-blue-50/50 ${row.paid_amount > 0 ? 'font-medium text-blue-700' : ''}`}>
-                        {(row.paid_amount || 0) > 0 ? formatCurrency(row.paid_amount) : '-'}
-                      </td>
-                    )}
+                    {memberLayout && showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(paidAmount)}</td>}
                     <td className={`${cellPad} text-center`}>
-                      <StatusPill paid={row.paid} paidAmount={row.paid_amount || 0} totalDue={loanTotal} />
+                      <StatusPill status={installmentStatus(row, released)} />
+                      {!memberLayout && showPaymentTracking && paidAmount > 0 && (
+                        <p className="mt-1 text-[10px] text-gray-500 whitespace-nowrap">{formatCurrency(paidAmount)} paid</p>
+                      )}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
-              <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-700">
-                <td className={`${cellPad}`} colSpan={2}>Totals ({schedule.length} payments)</td>
+              <tr className="bg-emerald-50/50 border-t border-gray-200 font-semibold text-gray-700">
+                <td className={`${cellPad}`} colSpan={3}>Totals ({schedule.length} payments)</td>
                 <td className={`${cellPad} text-right`}>{formatCurrency(totalPrincipalAmort)}</td>
                 <td className={`${cellPad} text-right`}>{formatCurrency(totalInterest)}</td>
-                <td className={`${cellPad}`}></td>
-                {showPaymentTracking && (
-                  <td className={`${cellPad} text-right bg-blue-50/50 text-blue-700`}>{totalPaidAmount > 0 ? formatCurrency(totalPaidAmount) : '-'}</td>
-                )}
+                {memberLayout && showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(collected.total)}</td>}
                 <td className={`${cellPad} text-center`}>
                   <span className="text-[10px] text-gray-400">{paidCount}/{schedule.length}</span>
                 </td>
               </tr>
             </tfoot>
           </table>
+        </div>
 
           <div className="px-4 py-2.5 border-t border-gray-100 bg-emerald-50/50 flex flex-wrap gap-x-6 gap-y-1">
-            <span className={textSize}><span className="text-gray-400">Principal Collected:</span> <strong className="text-gray-700">{formatCurrency(totalPrincipalAmort)}</strong></span>
-            <span className={textSize}><span className="text-gray-400">Interest Earned:</span> <strong className="text-emerald-700">{formatCurrency(totalInterest)}</strong></span>
-            <span className={textSize}><span className="text-gray-400">Total Collected:</span> <strong className="text-gray-700">{formatCurrency(totalLoanPayment)}</strong></span>
+            <span className={textSize}><span className="text-gray-500">Scheduled Principal:</span> <strong className="text-gray-700">{formatCurrency(totalPrincipalAmort)}</strong></span>
+            <span className={textSize}><span className="text-gray-500">Scheduled Interest:</span> <strong className="text-gray-700">{formatCurrency(totalInterest)}</strong></span>
+            <span className={textSize}><span className="text-gray-500">Total Payable:</span> <strong className="text-gray-700">{formatCurrency(totalLoanPayment)}</strong></span>
           </div>
-        </div>
+          {showPaymentTracking && <div className={memberLayout ? 'grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-0 rounded-lg border border-emerald-100 bg-emerald-50/40 py-5 px-5 md:divide-x divide-emerald-100' : 'px-4 py-2.5 border-t border-gray-100 flex flex-wrap gap-x-6 gap-y-1'}>
+            {[
+              { label: 'Principal Collected:', value: collectedValue(collected.principal), Icon: Banknote },
+              { label: 'Interest Collected:', value: collectedValue(collected.interest), Icon: Percent },
+              { label: 'Total Collected:', value: formatCurrency(collected.total), Icon: Wallet },
+            ].map(({ label, value, Icon }) => (
+              <div key={label} className={memberLayout ? 'flex items-center md:justify-center gap-4 md:px-4 min-w-0' : textSize}>
+                {memberLayout && <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white border border-emerald-100 text-emerald-700"><Icon size={23} strokeWidth={1.7} /></span>}
+                <div className={memberLayout ? 'text-sm min-w-0' : 'flex gap-1'}>
+                  <span className="text-gray-500">{label}</span>
+                  <strong className={memberLayout ? 'block text-base text-gray-800 mt-1 tabular-nums break-all' : 'text-gray-700'}>{value}</strong>
+                </div>
+              </div>
+            ))}
+          </div>}
+        </>
       )}
     </div>
   );

@@ -41,7 +41,7 @@ const STATUS_OPTIONS = [
 
 const MEMBERSHIP_TYPE_OPTIONS = [
   { value: 'associate', label: 'Associate' },
-  { value: 'regular', label: 'Regular / Fullpledge' },
+  { value: 'regular', label: 'Regular / Full-fledged' },
   { value: 'kiddy', label: 'Kiddy Savings' },
 ];
 
@@ -88,7 +88,7 @@ const NEW_MEMBER_BREAKDOWN = {
     ],
   },
   regular: {
-    label: 'Regular / Fullpledge Membership',
+    label: 'Regular / Full-fledged Membership',
     items: [
       { key: 'membership_fee',  label: 'Membership Fee',          amount: 100,  category: 'membership', group: 'Associate Package' },
       { key: 'vip_card',        label: 'WELLife VIP Card',        amount: 300,  category: 'membership', group: 'Associate Package' },
@@ -137,7 +137,7 @@ const ALL_NEW_ITEM_KEYS = [
 
 const OLD_MEMBER_BREAKDOWN = {
   associate: { label: 'Old Associate Membership',        membership_fee: 300,  cbu: 1000, savings: 500  },
-  regular:   { label: 'Old Regular / Fullpledge Member', membership_fee: 1800, cbu: 4000, savings: 1000 },
+  regular:   { label: 'Old Regular / Full-fledged Member', membership_fee: 1800, cbu: 4000, savings: 1000 },
 };
 
 // ─── Membership type selector shown before form ────────────────────────────
@@ -167,7 +167,7 @@ const MEMBERSHIP_CARDS = [
   {
     value: 'regular',
     icon: Star,
-    title: 'Regular / Fullpledge',
+    title: 'Regular / Full-fledged',
     description: 'Full cooperative membership with complete voting rights.',
     badge: '₱5,900 total',
     badgeColor: 'bg-indigo-100 text-indigo-700',
@@ -1416,7 +1416,7 @@ export function MemberFormContent({
   const accentConfig = {
     kiddy:     { label: 'Kiddy & Youth Savings', color: 'teal',   chipBg: 'bg-teal-100',   chipText: 'text-teal-700'   },
     associate: { label: 'Associate Member',       color: 'blue',   chipBg: 'bg-blue-100',   chipText: 'text-blue-700'   },
-    regular:   { label: 'Regular / Fullpledge',   color: 'indigo', chipBg: 'bg-indigo-100', chipText: 'text-indigo-700' },
+    regular:   { label: 'Regular / Full-fledged',   color: 'indigo', chipBg: 'bg-indigo-100', chipText: 'text-indigo-700' },
   };
   const accent = accentConfig[membershipType] || accentConfig.associate;
 
@@ -1703,7 +1703,7 @@ export function MemberFormContent({
                         <div className="mt-2 flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
                           <CheckCircle size={12} className="text-emerald-600 flex-shrink-0" />
                           <p className="text-xs text-emerald-700 font-medium">
-                            Member status upon full payment: <span className="uppercase tracking-wide">Fullpledge</span>
+                            Member status upon full payment: <span className="uppercase tracking-wide">Full-fledged</span>
                           </p>
                         </div>
                       </div>

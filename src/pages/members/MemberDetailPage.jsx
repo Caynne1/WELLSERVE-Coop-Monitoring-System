@@ -6,7 +6,7 @@ import {
   ArrowLeft, User, CreditCard, PiggyBank, Wallet, ArrowLeftRight,
   Edit, Phone, Mail, MapPin, Calendar, Plus, TrendingUp,
   TrendingDown, Clock, AlertCircle, Shield, Download, BadgeAlert,
-  Printer, Upload, Sprout,
+  Printer, Sprout,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import toast from 'react-hot-toast';
@@ -15,8 +15,7 @@ import Spinner from '../../components/ui/Spinner';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
-import LoanImportModal from '../../components/shared/LoanImportModal';
-import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
+import LoanCard from './MemberLoanCard';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 
@@ -94,18 +93,6 @@ function isCurrentLoan(loan) {
 function getLoanPayableAmount(loan) {
   const summary = parseJSONSafe(loan?.preview_summary_json, {});
   return Number(loan?.total_loan_payable || summary?.total_loan_payable || summary?.total_payments_collected || loan?.amount || 0);
-}
-
-function frequencyLabel(value) {
-  if (!value) return 'period';
-  const map = {
-    weekly: 'week',
-    semi_monthly: 'semi-month',
-    monthly: 'month',
-    quarterly: 'quarter',
-    yearly: 'year',
-  };
-  return map[value] || value;
 }
 
 function formatMemberNo(value) {
@@ -542,8 +529,7 @@ export default function MemberDetailPage() {
                 {canEditMember && (
                 <button
                   onClick={() => navigate(`/members/${id}/edit`)}
-                  className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-xl shadow-sm transition-all
-                    ${member.membership_type === 'kiddy' ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'}`}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-xl shadow-sm transition-all bg-[#000066] hover:bg-[#000055] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000066] focus-visible:ring-offset-2"
                 >
                   <Edit size={14} />
                   Edit Member
@@ -905,20 +891,16 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
 function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, userId, navigate, onPayLoan, paymentHistoryRows, onRefresh }) {
   const { hasPermission } = useAuth();
   const canCreateLoan = hasPermission('loans', 'create');
-  const [importOpen, setImportOpen] = useState(false);
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-700">Loan Records</h3>
+          <h3 className="text-base font-semibold text-gray-900">Loan Records</h3>
           <p className="text-xs text-gray-400 mt-1">Loan payment count: {paymentCount}</p>
         </div>
         {canCreateLoan && (
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} icon={<Upload size={14} />}>
-            Import Excel
-          </Button>
           <Button size="sm" variant="green" onClick={() => navigate(`/loans/new?member=${memberId}`)} icon={<Plus size={14} />}>
             Add Loan
           </Button>
@@ -937,6 +919,7 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
               navigate={navigate}
               onPay={onPayLoan}
               paymentCount={loanTransactions.filter(t => t.loan_id === loan.id && t.type === 'loan_payment').length}
+              transactions={loanTransactions}
             />
           ))}
         </div>
@@ -949,101 +932,10 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
         </div>
       )}
 
-      <LoanImportModal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        memberId={memberId}
-        memberName={memberName}
-        userId={userId}
-        onImported={onRefresh}
-      />
     </div>
   );
 }
 
-function LoanCard({ loan, navigate, onPay, paymentCount }) {
-  const [showSchedule, setShowSchedule] = useState(false);
-  const statusColors = {
-    active: 'text-blue-700 bg-blue-50 border-blue-200',
-    paid: 'text-green-700 bg-green-50 border-green-200',
-    defaulted: 'text-red-700 bg-red-50 border-red-200',
-    pending: 'text-yellow-700 bg-yellow-50 border-yellow-200',
-  };
-
-  const summary = parseJSONSafe(loan.preview_summary_json, {});
-  const schedule = parseJSONSafe(loan.preview_schedule_json, []);
-  const nextDue = Array.isArray(schedule) ? schedule.find(row => !row.paid) : null;
-
-  const scheduledPayment =
-    nextDue?.remaining_due ||
-    nextDue?.total_due ||
-    nextDue?.payment ||
-    summary?.payment_per_period ||
-    0;
-
-  return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50/50 overflow-hidden">
-      <div
-        className="flex items-center justify-between p-4 hover:bg-gray-100/50 cursor-pointer transition-colors"
-        onClick={() => navigate(`/loans/${loan.id}`)}
-      >
-        <div>
-          <p className="text-sm font-medium text-gray-800">{formatCurrency(loan.amount || 0)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Released: {loan.release_date ? formatDate(loan.release_date) : 'â€”'}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
-
-          <p className="text-xs text-blue-600 mt-1 font-medium">
-            Scheduled: {formatCurrency(scheduledPayment)} / {frequencyLabel(loan.repayment_frequency)}
-          </p>
-
-          {nextDue && (
-            <p className="text-xs text-orange-600 mt-0.5">
-              Next Due: {formatDate(nextDue.due_date)} Â· {formatCurrency(nextDue.remaining_due || nextDue.total_due || nextDue.payment || 0)}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-xs text-gray-400">Balance</p>
-            <p className="text-sm font-semibold text-gray-800">{formatCurrency(loan.balance ?? 0)}</p>
-          </div>
-          <span className={`text-xs px-2 py-1 rounded-full border font-medium ${statusColors[loan.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
-            {loan.status || 'pending'}
-          </span>
-        </div>
-      </div>
-
-      {schedule.length > 0 && (
-        <>
-          <button
-            onClick={e => { e.stopPropagation(); setShowSchedule(v => !v); }}
-            className="w-full px-4 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 border-t border-gray-100 flex items-center justify-center gap-1 transition-colors"
-          >
-            {showSchedule ? 'Hide' : 'View'} Amortization Schedule ({schedule.filter(r => r.paid).length}/{schedule.length} paid)
-          </button>
-
-          {showSchedule && (
-            <div className="border-t border-gray-100">
-              <LoanScheduleTable
-                schedule={schedule}
-                frequency={loan.repayment_frequency || 'monthly'}
-                loanAmount={loan.amount || 0}
-                monthlyInterestRate={summary?.monthly_interest_rate ?? loan.interest_rate ?? 0}
-                compact={true}
-                defaultOpen={true}
-                showPaymentTracking={true}
-                title=""
-              />
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
 
 function LoanPaymentHistoryTable({ rows }) {
   return (
@@ -2893,22 +2785,25 @@ function MembershipTab({
   };
 
   function parsePaymentNotes(notes) {
+    const displayText = value => String(value ?? '')
+      .replace(/\u00e2\u201a\u00b1/g, '\u20b1')
+      .replace(/\u00c2\u00b7/g, '\u2022');
     try {
       const data = JSON.parse(notes || '{}');
-      if (typeof data !== 'object' || data === null) return notes || 'â€”';
+      if (typeof data !== 'object' || data === null) return displayText(notes) || '\u2014';
       if ('entry' in data) {
         const parts = [];
-        if (data.entry   > 0) parts.push(`Entry â‚±${Number(data.entry).toLocaleString()}`);
-        if (data.cbu     > 0) parts.push(`CBU â‚±${Number(data.cbu).toLocaleString()}`);
-        if (data.savings > 0) parts.push(`Savings â‚±${Number(data.savings).toLocaleString()}`);
-        return [parts.join(' Â· '), data.text].filter(Boolean).join(' | ') || 'â€”';
+        if (data.entry   > 0) parts.push(`Entry \u20b1${Number(data.entry).toLocaleString()}`);
+        if (data.cbu     > 0) parts.push(`CBU \u20b1${Number(data.cbu).toLocaleString()}`);
+        if (data.savings > 0) parts.push(`Savings \u20b1${Number(data.savings).toLocaleString()}`);
+        return displayText([parts.join(' \u2022 '), data.text].filter(Boolean).join(' | ')) || '\u2014';
       }
       const parts = Object.entries(data)
         .filter(([key, val]) => key !== 'text' && Number(val) > 0)
-        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ')}: â‚±${Number(val).toLocaleString()}`);
-      return [parts.join(' Â· '), data.text].filter(Boolean).join(' | ') || 'â€”';
+        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ')}: \u20b1${Number(val).toLocaleString()}`);
+      return displayText([parts.join(' \u2022 '), data.text].filter(Boolean).join(' | ')) || '\u2014';
     } catch {
-      return notes || 'â€”';
+      return displayText(notes) || '\u2014';
     }
   }
 

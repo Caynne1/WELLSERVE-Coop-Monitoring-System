@@ -25,6 +25,7 @@ import Spinner from '../../components/ui/Spinner';
 import { getLoanById, getLoanPaymentHistory, updateLoanApprovalStatus } from '../../services/loanService';
 import { useAuth } from '../../context/AuthContext';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
+import { isLoanReleased } from '../../utils/loanListState';
 import {
   buildScheduleByFrequency,
   computeTotalRoiPercent,
@@ -1042,6 +1043,7 @@ export default function LoanDetailPage() {
           monthlyInterestRate={monthlyInterestRate}
           defaultOpen={scheduleOpen}
           showPaymentTracking={true}
+          released={isLoanReleased(loan)}
           title="Amortization Schedule"
         />
       </div>
