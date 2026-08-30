@@ -4,7 +4,6 @@ import {
   Plus,
   Search,
   CreditCard,
-  Wallet,
   Layers3,
   Printer,
   Download,
@@ -17,6 +16,10 @@ import LoanTypeModal from '../../components/shared/LoanTypeModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import LoanTable from './LoanTable';
+import LoanReleasedSummary, { LoanReleaseDateFilter } from './LoanReleasedSummary';
+import { computeCoopSummaryFromInvoices } from '../../services/coopFundService';
+import { filterFundLedgerByDate, sumPostedLoanReleases, parseLedgerDate, txDisplayDate } from '../../utils/fundLoanReleases';
+import { getLoanFilterDate, matchesLoanDateRange } from '../../utils/loanDateFilter';
 import { getLoanBalanceWithInterest, getLoanFinancials, getLoanDueState, normalizeLoanStatus, isLoanReleased, getLoanWorkflowTarget, getLoanTypeLabel } from '../../utils/loanListState';
 import Spinner from '../../components/ui/Spinner';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
@@ -126,6 +129,18 @@ export default function LoansPage() {
   const canApproveLoan = hasPermission('loans', 'approve');
 
   const [loans, setLoans] = useState([]);
+  const [releaseLedger, setReleaseLedger] = useState(null);
+  const [releaseLedgerLoading, setReleaseLedgerLoading] = useState(true);
+  const [releaseLedgerError, setReleaseLedgerError] = useState(false);
+  const [releaseDateRange, setReleaseDateRange] = useState({ from: '', to: '' });
+  const releaseYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const baseYears = Array.from({ length: Math.max(8, currentYear - 2024 + 5) }, (_, i) => 2024 + i);
+    const ledgerYears = (releaseLedger || []).map(tx => parseLedgerDate(txDisplayDate(tx)))
+      .filter(Boolean).map(date => date.getFullYear());
+    const loanYears = loans.map(getLoanFilterDate).filter(Boolean).map(day => Number(day.slice(0, 4)));
+    return [...new Set([...baseYears, ...ledgerYears, ...loanYears])].sort((a, b) => b - a);
+  }, [releaseLedger, loans]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [frequencyFilter, setFrequencyFilter] = useState('all');
@@ -148,6 +163,7 @@ export default function LoansPage() {
   }, []);
 
   async function fetchLoans() {
+    fetchReleaseLedger();
     try {
       setLoading(true);
       setLoans(await getLoans());
@@ -168,6 +184,20 @@ export default function LoansPage() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchReleaseLedger() {
+    setReleaseLedgerLoading(true);
+    setReleaseLedgerError(false);
+    setReleaseLedger(null);
+    try {
+      const { transactions } = await computeCoopSummaryFromInvoices({ strict: true });
+      setReleaseLedger(transactions);
+    } catch {
+      setReleaseLedgerError(true);
+    } finally {
+      setReleaseLedgerLoading(false);
     }
   }
 
@@ -239,6 +269,7 @@ export default function LoansPage() {
     const q = search.trim().toLowerCase();
 
     return loans.filter(loan => {
+      if (!matchesLoanDateRange(loan, releaseDateRange)) return false;
       const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.toLowerCase();
       const matchesSearch =
         !q ||
@@ -270,7 +301,7 @@ export default function LoansPage() {
 
       return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesStatus;
     });
-  }, [loans, search, frequencyFilter, methodFilter, dueFilter, statusFilter]);
+  }, [loans, search, frequencyFilter, methodFilter, dueFilter, statusFilter, releaseDateRange]);
 
   function handleSort(key) {
     setSortConfig(prev => {
@@ -342,15 +373,18 @@ export default function LoansPage() {
 
   const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(sorted, { pageSize: 25 });
 
+  useEffect(() => { setPage(1); }, [releaseDateRange.from, releaseDateRange.to, setPage]);
+
   useEffect(() => {
     setPage(1);
   }, [search, frequencyFilter, methodFilter, dueFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
     const activeLoans = loans.filter(l => isLoanReleased(l) && getLoanBalanceWithInterest(l) > 0);
-    const totalReleased = loans
-      .filter(isLoanReleased)
-      .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+    const invalidRange = releaseDateRange.from && releaseDateRange.to && releaseDateRange.from > releaseDateRange.to;
+    const totalReleased = releaseLedger && !invalidRange
+      ? sumPostedLoanReleases(filterFundLedgerByDate(releaseLedger, releaseDateRange))
+      : null;
     const totalOutstanding = activeLoans.reduce((sum, l) => sum + getLoanBalanceWithInterest(l), 0);
 
     return {
@@ -359,7 +393,7 @@ export default function LoansPage() {
       totalReleased,
       totalOutstanding,
     };
-  }, [loans]);
+  }, [loans, releaseLedger, releaseDateRange]);
 
   function handlePrint() {
     const rowsHtml = filtered.map(loan => {
@@ -386,7 +420,7 @@ export default function LoansPage() {
       <div class="report-meta">Generated: ${new Date().toLocaleString()} &nbsp;|&nbsp; ${filtered.length} of ${loans.length} loans</div>
       <div class="stats-grid">
         <div class="stat-box"><div class="stat-label">Total Loans</div><div class="stat-value">${stats.total}</div></div>
-        <div class="stat-box"><div class="stat-label">Total Released</div><div class="stat-value">${formatCurrency(stats.totalReleased)}</div></div>
+        <div class="stat-box"><div class="stat-label">Total Released (Net Cash Out)</div><div class="stat-value">${stats.totalReleased == null ? 'Unavailable' : formatCurrency(stats.totalReleased)}</div><div class="stat-sub">${releaseDateRange.from || 'All time'} to ${releaseDateRange.to || 'Present'}</div></div>
         <div class="stat-box"><div class="stat-label">Outstanding Balance</div><div class="stat-value">${formatCurrency(stats.totalOutstanding)}</div></div>
       </div>
       <table>
@@ -460,19 +494,18 @@ export default function LoansPage() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-5">
+      <LoanReleaseDateFilter range={releaseDateRange} onRangeChange={setReleaseDateRange} years={releaseYears} />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 mb-5">
         <SummaryCard
           icon={<CreditCard size={18} className="text-blue-600" />}
           label="Total Loans"
           value={String(stats.total)}
           bg="bg-blue-50"
         />
-        <SummaryCard
-          icon={<Wallet size={18} className="text-green-600" />}
-          label="Total Released"
-          value={formatCurrency(stats.totalReleased)}
-          bg="bg-green-50"
-        />
+        <LoanReleasedSummary total={stats.totalReleased} loading={releaseLedgerLoading}
+          error={releaseLedgerError} range={releaseDateRange}
+          onRefresh={fetchReleaseLedger} />
         <SummaryCard
           icon={<Layers3 size={18} className="text-orange-600" />}
           label="Outstanding Balance"

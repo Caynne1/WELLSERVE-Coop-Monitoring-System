@@ -22,6 +22,7 @@ import {
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
+import { isLoanReleaseCategory, parseLedgerDate, txDisplayDate, filterFundLedgerByDate, sumPostedLoanReleases } from '../../utils/fundLoanReleases';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -39,26 +40,8 @@ const PAYMENT_MODE_OPTIONS = [
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const MIN_LEDGER_YEAR = 2023;
 const MAX_VISIBLE_FUND_ROWS = 250;
 
-function parseLedgerDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const year = date.getFullYear();
-  const maxYear = new Date().getFullYear() + 10;
-  if (year < MIN_LEDGER_YEAR || year > maxYear) return null;
-
-  return date;
-}
-
-function txDisplayDate(tx) {
-  if (parseLedgerDate(tx?.transaction_date)) return tx.transaction_date;
-  if (parseLedgerDate(tx?.created_at)) return tx.created_at;
-  return null;
-}
 
 function hasMeaningfulTime(value) {
   const text = String(value || '').trim();
@@ -101,10 +84,6 @@ function normalizeCategoryText(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
-function isLoanReleaseCategory(category = '') {
-  const text = normalizeCategoryText(category);
-  return text === 'loan_release' || text === 'loan release' || text === 'capital';
-}
 
 function isWithdrawalCategory(category = '') {
   const text = normalizeCategoryText(category);
@@ -1232,19 +1211,10 @@ export default function CoopMonitoringPage() {
     return [...new Set([...baseYears, ...transactionYears])].sort((a, b) => b - a);
   }, [transactions]);
 
-  const dateFilteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
-      const txDate = parseLedgerDate(txDisplayDate(tx));
-      if (!txDate) return !dateRange.from && !dateRange.to;
-      if (dateRange.from && txDate < new Date(dateRange.from)) return false;
-      if (dateRange.to) {
-        const toDate = new Date(dateRange.to);
-        toDate.setHours(23, 59, 59, 999);
-        if (txDate > toDate) return false;
-      }
-      return true;
-    });
-  }, [transactions, dateRange]);
+  const dateFilteredTransactions = useMemo(
+    () => filterFundLedgerByDate(transactions, dateRange),
+    [transactions, dateRange]
+  );
 
   const scopedFund = useMemo(() => {
     if (!dateRange.from && !dateRange.to) return fund;
@@ -1282,9 +1252,7 @@ export default function CoopMonitoringPage() {
   }, [dateFilteredTransactions]);
 
   const loanReleaseTotal = useMemo(() => {
-    return dateFilteredTransactions
-      .filter(tx => tx.type === 'cash_out' && isLoanReleaseCategory(tx.category))
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    return sumPostedLoanReleases(dateFilteredTransactions);
   }, [dateFilteredTransactions]);
 
   const totalExpenseAmount = useMemo(() => {
@@ -1535,55 +1503,37 @@ export default function CoopMonitoringPage() {
       <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
     `;
 
-    const printDocument = `<!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8" />
-        <title>Fund Monitoring - WELLSERVE</title>
-        <style>
-          * { box-sizing: border-box; }
-          body { margin: 0; padding: 28px; background: #fff; color: #0f172a; font-family: Arial, sans-serif; font-size: 12px; }
-          .print-header { border-bottom: 2px solid #059669; margin-bottom: 18px; padding-bottom: 12px; }
-          .brand { font-size: 18px; font-weight: 800; letter-spacing: .12em; color: #0f172a; }
-          .brand-sub { color: #059669; font-size: 10px; font-weight: 700; letter-spacing: .16em; margin-top: 2px; }
-          h1.report-title { margin: 18px 0 4px; font-size: 20px; color: #0f172a; }
-          .report-meta { color: #64748b; margin-bottom: 16px; }
-          h2 { margin: 22px 0 8px; font-size: 14px; color: #0f172a; }
-          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0 20px; }
-          .summary-grid div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
-          .summary-grid strong { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-          .summary-grid span { display: block; margin-top: 4px; font-size: 14px; font-weight: 700; color: #0f172a; }
-          table { table-layout: fixed; width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-          th { background: #f8fafc; color: #64748b; text-align: left; font-size: 10px; text-transform: uppercase; padding: 8px; border-bottom: 1px solid #e5e7eb; }
-          td { padding: 8px; border-bottom: 1px solid #eef2f7; vertical-align: top; word-break: break-word; }
-          .confidential { color: #64748b; font-size: 10px; font-style: italic; margin-top: 20px; text-align: center; }
-          @media print { body { padding: 18px; } }
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <div class="brand">WELLSERVE</div>
-          <div class="brand-sub">CREDIT COOPERATIVE</div>
-        </div>
-        ${html}
-      </body>
-      </html>`;
-
-    const win = window.open('', '_blank', 'width=1100,height=900');
-    if (!win) {
-      toast.error('Pop-up blocked. Please allow pop-ups and try again.');
-      return;
-    }
-
-    win.document.open();
-    win.document.write(printDocument);
-    win.document.close();
-    win.focus();
-
-    window.setTimeout(() => {
-      if (!win.closed) win.print();
-    }, 500);
-    toast.success('Print preview opened.');
+    const win = printHtmlDocument(wrapWithLetterhead(html, {
+      title: 'Fund Monitoring - WELLSERVE',
+      extraCss: `
+        .lh-content h2 {
+          font-size: 11pt; font-weight: 700; color: #000066;
+          margin: 5mm 0 2mm; padding-bottom: 1mm; border-bottom: 1pt solid #07A04E;
+          break-after: avoid;
+        }
+        .summary-grid {
+          display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 3mm; margin: 4mm 0 5mm; break-inside: avoid;
+        }
+        .summary-grid div {
+          border: 0.5pt solid #7EB751; border-radius: 3pt;
+          padding: 3mm; background: #D6FADC;
+        }
+        .summary-grid strong { display: block; font-size: 8pt; color: #6b7280; }
+        .summary-grid span {
+          display: block; margin-top: 1mm; font-size: 11pt; font-weight: 700;
+          color: #273C2C; overflow-wrap: anywhere;
+        }
+        .lh-content table { table-layout: fixed; }
+        .lh-content th, .lh-content td { overflow-wrap: anywhere; vertical-align: top; }
+        .lh-content td:first-child { white-space: normal !important; }
+      `,
+    }), {
+      width: 1100,
+      height: 900,
+      onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
+    });
+    if (win) toast.success('Print preview opened.');
   }
 
   function handleExportFundMonitoring() {

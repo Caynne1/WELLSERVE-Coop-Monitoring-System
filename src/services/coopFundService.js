@@ -301,7 +301,7 @@ const INVOICE_ONLY_TYPES = new Set([
   'annual_dues',
 ]);
 
-export async function computeCoopSummaryFromInvoices() {
+export async function computeCoopSummaryFromInvoices({ strict = false } = {}) {
   const [txRes, invRes, vchRes, loansRes] = await Promise.all([
     // All transactions
     supabase
@@ -317,6 +317,10 @@ export async function computeCoopSummaryFromInvoices() {
     Promise.resolve({ data: [] }),
   ]);
 
+  if (strict) {
+    if (txRes.error) throw txRes.error;
+    if (invRes.error) throw invRes.error;
+  }
   const txList     = txRes.data     || [];
   const invList    = invRes.data    || [];
   const vchList    = vchRes.data    || [];
