@@ -23,6 +23,8 @@ import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { isLoanReleaseCategory, parseLedgerDate, txDisplayDate, filterFundLedgerByDate, sumPostedLoanReleases } from '../../utils/fundLoanReleases';
+import { sumCashInLedger } from '../../utils/fundCashIn';
+import IncomeBreakdown from './IncomeBreakdown';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -661,7 +663,7 @@ function CashInBreakdown({ transactions, incomeData }) {
 // Dashboard Charts Panel — enhanced 2-row layout
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DashboardCharts({ transactions, incomeData }) {
+function DashboardCharts({ transactions, incomeRows, incomeLoading }) {
   const now = new Date();
   const txDates = transactions
     .map(tx => parseLedgerDate(txDisplayDate(tx)))
@@ -709,52 +711,12 @@ function DashboardCharts({ transactions, incomeData }) {
   const labels = months.map(m => m.label);
   const chartMinWidth = Math.max(640, labels.length * 72);
 
-  const cashInTx   = transactions.filter(tx => tx.type === 'cash_in');
-  const breakdownDefs = [
-    { key: 'loan_payment', label: 'Loan Payments', color: '#f97316' },
-    { key: 'cbu',          label: 'CBU Deposits',  color: '#22c55e' },
-    { key: 'membership_cbu', label: 'Membership CBU', color: '#16a34a' },
-    { key: 'savings',      label: 'Savings',        color: '#3b82f6' },
-    { key: 'membership_savings', label: 'Membership Savings', color: '#0284c7' },
-    { key: 'membership',   label: 'Membership/Admin & Regulatory Fees', color: '#a855f7' },
-    { key: 'vip_card',     label: 'WELLife VIP Card', color: '#ec4899' },
-    { key: 'loan_interest', label: 'Loan Interest', color: '#16a34a' },
-    { key: 'service_fee',  label: 'Service Fee',    color: '#fb923c' },
-    { key: 'cbu_retention', label: 'CBU Retention', color: '#059669' },
-    { key: 'regular_savings', label: 'Regular Savings', color: '#2563eb' },
-    { key: 'legal_fees',   label: 'Legal Fees',     color: '#475569' },
-    { key: 'clpi_insurance', label: 'CLPI/Insurance', color: '#dc2626' },
-    { key: 'annual_dues',  label: 'Annual Due',     color: '#9333ea' },
-    { key: 'penalty_due',  label: 'Penalty Due',    color: '#d97706' },
-    { key: 'petty_cash',   label: 'Petty Cash',     color: '#65a30d' },
-    { key: 'capital',      label: 'Capital',        color: '#6366f1' },
-    { key: 'time_deposit', label: 'Time Deposits',  color: '#8b5cf6' },
-    { key: 'savings_booster', label: 'Savings Booster', color: '#0f766e' },
-    { key: 'invoice',      label: 'Other',          color: '#9ca3af' },
-  ];
-  const knownBreakdownKeys = new Set(breakdownDefs.map(def => def.key));
-  const extraBreakdownDefs = [...new Set(cashInTx.map(tx => tx.category).filter(Boolean))]
-    .filter(key => !knownBreakdownKeys.has(key))
-    .map(key => ({ key, label: displayCategoryLabel(key), color: '#64748b' }));
-  const membershipTotals = {
-    membership: Number(incomeData?.membership_fee || 0) + Number(incomeData?.admin_regulatory_fees || 0),
-    membership_cbu: Number(incomeData?.membership_cbu || 0),
-    membership_savings: Number(incomeData?.membership_savings || 0),
-    vip_card: Number(incomeData?.vip_card || 0),
-  };
-  const donutSlices = [...breakdownDefs, ...extraBreakdownDefs].map(d => ({
-    ...d,
-    value: Object.prototype.hasOwnProperty.call(membershipTotals, d.key)
-      ? membershipTotals[d.key]
-      : cashInTx.filter(tx => tx.category === d.key).reduce((s, tx) => s + tx.amount, 0),
-  })).filter(d => d.value > 0);
-  const grandCashIn = donutSlices.reduce((s, d) => s + d.value, 0);
 
   return (
     <div className="space-y-4 mb-6">
 
       {/* ── Row 1: Cash Flow Line + Cash-In Donut ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 items-start gap-4">
 
         {/* Cash Flow Area-Line Chart */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
@@ -786,31 +748,7 @@ function DashboardCharts({ transactions, incomeData }) {
           </div>
         </div>
 
-        {/* Cash-In Donut */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-gray-800 mb-0.5">Cash In — Breakdown</h3>
-          <p className="text-xs text-gray-400 mb-3">By category · hover to inspect</p>
-          {donutSlices.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-xs text-gray-400">No data</div>
-          ) : (
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-24">
-                <EnhancedDonut slices={donutSlices} size={96} />
-              </div>
-              <div className="flex flex-col gap-1.5 min-w-0 flex-1 mt-1">
-                {donutSlices.map(d => (
-                  <div key={d.key} className="flex items-center gap-1.5 min-w-0">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                    <span className="text-xs text-gray-500 truncate flex-1">{d.label}</span>
-                    <span className="text-xs font-semibold text-gray-700 tabular-nums flex-shrink-0">
-                      {grandCashIn > 0 ? `${((d.value / grandCashIn) * 100).toFixed(0)}%` : '0%'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <IncomeBreakdown rows={incomeRows} loading={incomeLoading} />
       </div>
 
       {/* ── Row 2: Monthly Diverging Bars + Penalty Card ── */}
@@ -1218,9 +1156,7 @@ export default function CoopMonitoringPage() {
 
   const scopedFund = useMemo(() => {
     if (!dateRange.from && !dateRange.to) return fund;
-    const cashIn = dateFilteredTransactions
-      .filter(tx => tx.type === 'cash_in')
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const cashIn = sumCashInLedger(dateFilteredTransactions);
     const cashOut = dateFilteredTransactions
       .filter(tx => tx.type === 'cash_out')
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
@@ -1656,7 +1592,7 @@ export default function CoopMonitoringPage() {
           </div>
 
           {/* ── Dashboard Charts ── */}
-          <DashboardCharts transactions={dateFilteredTransactions} incomeData={incomeData} />
+          <DashboardCharts transactions={dateFilteredTransactions} incomeRows={incomeMonitoringRows} incomeLoading={incomeLoading} />
 
           {/* ── Cash-In Breakdown ── */}
           {/* ── Income Monitoring Breakdown ── */}

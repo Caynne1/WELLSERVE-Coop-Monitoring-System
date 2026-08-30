@@ -21,6 +21,7 @@ import {
 import PesoSign from '../../components/shared/PesoSign';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeDashboard } from '../../hooks/useRealtimeDashboard';
+import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatRelativeTime, formatDate, formatDateTime } from '../../utils/formatters';
 import { format } from 'date-fns';
 
@@ -1256,6 +1257,8 @@ function ProductStatCard({ label, value, sub, icon, iconColorClass = 'text-gray-
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const displayName = typeof profile?.full_name === 'string' ? profile.full_name.trim() : '';
   const [period, setPeriod] = useState('overall');
   const [customDate, setCustomDate] = useState(null);
   
@@ -1316,24 +1319,10 @@ export default function DashboardPage() {
 
       {/* ── Header ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="section-title">Dashboard</h1>
-          <p className="section-subtitle flex items-center gap-1.5 flex-wrap">
-            <span>WELLSERVE Cooperative — live overview</span>
-            {!isOverall && stats?.periodLabel && (
-              <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-                <span className="text-gray-300">·</span>
-                <CalendarDays size={12} />
-                {stats.periodLabel}
-              </span>
-            )}
-            {isOverall && (
-              <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
-                <span className="text-gray-300">·</span>
-                <Infinity size={12} />
-                All Time
-              </span>
-            )}
+          <p className="section-subtitle break-words">
+            {displayName ? `Welcome back, ${displayName}!` : 'Welcome back!'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

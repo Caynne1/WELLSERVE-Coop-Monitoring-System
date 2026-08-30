@@ -2,6 +2,7 @@ import { notifyCashIn, notifyCashOut } from './notificationService';
 import { supabase } from './supabase';
 import { createInvoice } from './invoiceService';
 import { getMembershipMonitoringIncomeSummary } from './membershipMonitoringService';
+import { sumCashInLedger } from '../utils/fundCashIn';
 
 // ── Primary: reads from coop_fund + fund_transactions ────────────────────────
 
@@ -410,10 +411,6 @@ export async function computeCoopSummaryFromInvoices({ strict = false } = {}) {
 
   // ── Cash Out: net proceeds released to members (loan disbursements) ───────
   // ── Totals ────────────────────────────────────────────────────────────────
-  const totalCashIn =
-    cashInTx.reduce((s, t) => s + (t.amount || 0), 0) +
-    cashInInv.reduce((s, i) => s + (i.amount || 0), 0);
-
   const totalCashOut =
     cashOutTx.reduce((s, t) => s + (t.amount || 0), 0) +
     cashOutInv.reduce((s, i) => s + (i.amount || 0), 0);
@@ -519,6 +516,7 @@ export async function computeCoopSummaryFromInvoices({ strict = false } = {}) {
 
   const allRows = dedupeLedgerRows([...txRows, ...membershipBreakdownRows, ...cashOutTxRows, ...invRows, ...vchRows])
     .sort((a, b) => new Date(b.transaction_date || b.created_at) - new Date(a.transaction_date || a.created_at));
+  const totalCashIn = sumCashInLedger(allRows);
 
   return {
     fund: {
