@@ -3,11 +3,12 @@ import { createTransaction } from './transactionService';
 import {
   getMembershipByMemberId,
   recordMembershipPayment,
-  computeFeeBalance,
+  patchMembershipFeeRequired,
 } from './membershipService';
 import { getLoansByMemberId, applyLoanPaymentToSchedule, reverseLoanPaymentFromSchedule } from './loanService';
 import { getMemberAccountsMap, updateAccount } from './accountService';
-import { updateMember } from './memberService';
+import { getMemberById, updateMember } from './memberService';
+import { getInvoiceLoanState, getInvoiceMembershipState } from '../utils/invoicePaymentState';
 import {
   getTimeDepositsByMemberId,
   recordTimeDepositPayment,
@@ -486,25 +487,22 @@ export const PAYMENT_CATEGORIES = [
 export async function getMemberPaymentSummary(memberId) {
   if (!memberId) throw new Error('member_id is required.');
 
-  const [membership, loans, accounts, timeDeposits, boosterRows] = await Promise.all([
-    getMembershipByMemberId(memberId).catch(() => null),
-    getLoansByMemberId(memberId).catch(() => []),
+  const [membership, loans, accounts, timeDeposits, boosterRows, member] = await Promise.all([
+    getMembershipByMemberId(memberId),
+    getLoansByMemberId(memberId),
     getMemberAccountsMap(memberId).catch(() => ({ all: [], cbu: null, savings: null })),
     getTimeDepositsByMemberId(memberId).catch(() => []),
     supabase.from('savings_booster').select('*').eq('member_id', memberId).then(
       r => (r.error ? [] : (r.data || [])),
       () => []
     ),
+    getMemberById(memberId),
   ]);
 
-  const allLoans = loans || [];
-  const activeLoans = allLoans.filter(l => l.status !== 'paid' && (l.balance || 0) > 0);
   const allTimeDeposits = timeDeposits || [];
   const activeTimeDeposits = allTimeDeposits.filter(td => td.status === 'Active');
   const activeBoosterRows = (boosterRows || []).filter(b => b.status === 'active');
 
-  const hasMembership = !!membership;
-  const membershipBalance = hasMembership ? computeFeeBalance(membership) : 0;
 
   const cbuTotalDeposited = accounts.cbu?.total_deposits ?? accounts.cbu?.balance ?? 0;
   const savingsTotalDeposited = accounts.savings?.total_deposits ?? accounts.savings?.balance ?? 0;
@@ -512,24 +510,9 @@ export async function getMemberPaymentSummary(memberId) {
   const boosterTotalDeposited = (boosterRows || []).reduce((s, b) => s + (Number(b.total_deposited) || 0), 0);
 
   return {
-    membership: {
-      key: 'membership',
-      label: 'Membership',
-      record: membership,
-      hasRecord: hasMembership,
-      valueType: 'balance',
-      value: membershipBalance,
-      payable: hasMembership && membershipBalance > 0,
-    },
-    loan: {
-      key: 'loan',
-      label: 'Loan',
-      records: activeLoans,
-      hasRecord: allLoans.length > 0,
-      valueType: 'balance',
-      value: activeLoans.reduce((s, l) => s + (l.balance || 0), 0),
-      payable: activeLoans.length > 0,
-    },
+    member,
+    membership: getInvoiceMembershipState(member, membership),
+    loan: getInvoiceLoanState(loans || []),
     cbu: {
       key: 'cbu',
       label: 'CBU',
@@ -610,6 +593,29 @@ export async function createMultiCategoryInvoice({
   }
 
   const effectivePaymentDate = payment_date || date;
+  // Re-read only the requested obligations before posting; the open form may be stale.
+  if (entries.some(entry => ['membership', 'loan'].includes(entry.category))) {
+    const current = await getMemberPaymentSummary(member.id);
+    entries = entries.map(entry => {
+      if (entry.category === 'membership') {
+        const info = current.membership;
+        if (!info.record || info.record.id !== entry.membership?.id) {
+          throw new Error('Membership record changed. Please select the member again.');
+        }
+        if (!info.payable) throw new Error('Membership fee is already fully paid.');
+        if (Number(entry.amount) > info.value) {
+          throw new Error(`Membership payment exceeds remaining balance of ${info.value}.`);
+        }
+        return { ...entry, membership: info.record, membership_required: info.required };
+      }
+      if (entry.category === 'loan') {
+        const loan = current.loan.records.find(record => record.id === entry.loan?.id);
+        if (!loan) throw new Error('Only released loans with an outstanding balance can receive payment.');
+        return { ...entry, loan };
+      }
+      return entry;
+    });
+  }
   const memberName = [member.first_name, member.last_name].filter(Boolean).join(' ') || 'Member';
   const created = [];
   const invoiceLines = [];
@@ -788,10 +794,19 @@ export async function createMultiCategoryInvoice({
           rows: Array.isArray(breakdown.rows) ? breakdown.rows : [],
           ...(notes ? { text: notes } : {}),
         });
-        const membershipRequired = parseFloat(entry.membership.fee_required) || 0;
+        const storedMembershipRequired = parseFloat(entry.membership.fee_required) || 0;
+        const membershipRequired = entry.membership_required ?? storedMembershipRequired;
         const membershipRemaining = Math.max(0, membershipRequired - priorFeePaid);
         if (amount > membershipRemaining) {
           throw new Error(`Membership payment exceeds remaining balance of ${membershipRemaining}.`);
+        }
+        if (membershipRequired > storedMembershipRequired) {
+          await patchMembershipFeeRequired(entry.membership.id, membershipRequired);
+          rollbacks.push(async () => {
+            const { error } = await supabase.from('member_memberships')
+              .update({ fee_required: storedMembershipRequired }).eq('id', entry.membership.id);
+            if (error) throw error;
+          });
         }
         const result = await recordMembershipPayment(
           entry.membership.id, member.id, amount, effectivePaymentDate, breakdownNotes, created_by

@@ -27,6 +27,7 @@ import {
 import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { trackActivity } from '../../services/logService';
+import { getMembershipBreakdown } from '../../utils/invoicePaymentState';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1253,7 +1254,7 @@ function SummaryCard({ icon, label, value, bg }) {
 const CATEGORY_ORDER = ['membership', 'loan', 'loan_interest', 'loan_penalty', 'cbu', 'savings', 'time_deposit', 'savings_booster'];
 const CATEGORY_LABEL = {
   membership: 'Membership',
-  loan: 'Loan',
+  loan: 'Loan (Principal)',
   loan_interest: 'Interest',
   loan_penalty: 'Penalty',
   cbu: 'CBU',
@@ -1262,34 +1263,6 @@ const CATEGORY_LABEL = {
   savings_booster: 'Savings Booster',
 };
 
-const OLD_MEMBERSHIP_BREAKDOWN = {
-  associate: [
-    { label: 'Membership Entry', amount: 300, key: 'membership', bucket: 'entry' },
-    { label: 'Initial CBU', amount: 1000, key: 'membership_initial_cbu', bucket: 'cbu' },
-    { label: 'Initial Savings', amount: 500, key: 'membership_initial_savings', bucket: 'savings' },
-  ],
-  regular: [
-    { label: 'Membership Entry', amount: 1800, key: 'membership', bucket: 'entry' },
-    { label: 'Initial CBU', amount: 4000, key: 'membership_initial_cbu', bucket: 'cbu' },
-    { label: 'Initial Savings', amount: 1000, key: 'membership_initial_savings', bucket: 'savings' },
-  ],
-};
-
-const NEW_MEMBERSHIP_BREAKDOWN = {
-  associate: [
-    { label: 'Membership Fee', amount: 100, key: 'membership', bucket: 'entry' },
-    { label: 'WELLife VIP Card', amount: 300, key: 'membership_wellife_vip', bucket: 'vip' },
-    { label: 'Initial CBU', amount: 500, key: 'membership_initial_cbu', bucket: 'cbu' },
-  ],
-  regular: [
-    { label: 'Membership Fee', amount: 100, key: 'membership', bucket: 'entry' },
-    { label: 'WELLife VIP Card', amount: 300, key: 'membership_wellife_vip', bucket: 'vip' },
-    { label: 'Initial CBU', amount: 500, key: 'membership_initial_cbu', bucket: 'cbu' },
-    { label: 'Admin & Regulatory Fees', amount: 1000, key: 'membership_admin_regulatory', bucket: 'admin' },
-    { label: 'Initial Savings Deposit', amount: 500, key: 'membership_initial_savings', bucket: 'savings' },
-    { label: 'Minimum CBU', amount: 3500, key: 'membership_minimum_cbu', bucket: 'cbu' },
-  ],
-};
 
 function parseInvoiceJSONSafe(value, fallback = {}) {
   try {
@@ -1309,30 +1282,6 @@ function getLoanInterestDue(loan) {
   return Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) || 0;
 }
 
-function getMembershipBreakdown(member, membershipInfo) {
-  const membership = membershipInfo?.record || null;
-  const type = membership?.membership_type || member?.membership_type || '';
-  const required = Number(membership?.fee_required || 0);
-  const isOldMembership =
-    member?.record_type === 'old_member' ||
-    (type === 'associate' && required === 1800) ||
-    (type === 'regular' && required === 6800);
-  const isNewMembership =
-    !isOldMembership &&
-    ((type === 'associate' && required === 900) ||
-      (type === 'regular' && required === 5900));
-
-  const rows = isOldMembership
-    ? OLD_MEMBERSHIP_BREAKDOWN[type]
-    : isNewMembership
-      ? NEW_MEMBERSHIP_BREAKDOWN[type]
-      : null;
-
-  if (!rows) return null;
-
-  const total = rows.reduce((sum, row) => sum + row.amount, 0);
-  return { rows, total, structure: isOldMembership ? 'old' : 'new' };
-}
 
 function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const [step, setStep] = useState(1); // 1 = pick member, 2 = choose payments
@@ -1391,6 +1340,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setLoadingSummary(true);
     try {
       const data = await getMemberPaymentSummary(m.id);
+      setMember(data.member || m);
       setSummary(data);
       setSelectedLoanId(data.loan.records?.[0]?.id || '');
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
@@ -1423,6 +1373,8 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   }, [amounts]);
 
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
+  const selectedLoanForDisplay = summary?.loan.records?.find(loan => loan.id === selectedLoanId)
+    || summary?.loan.records?.[0] || null;
 
   async function handleSave() {
     setErrorMsg('');
@@ -1643,9 +1595,11 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {CATEGORY_ORDER.map(cat => {
-                  const selectedLoanForRow = summary.loan.records?.find(l => l.id === selectedLoanId) || summary.loan.records?.[0] || null;
+                  const selectedLoanForRow = selectedLoanForDisplay;
                   const loanInterestDue = getLoanInterestDue(selectedLoanForRow);
-                  const info = summary[cat] || (
+                  const info = cat === 'loan'
+                    ? { ...summary.loan, value: selectedLoanForRow?.principal_balance || 0 }
+                    : summary[cat] || (
                     cat === 'loan_interest'
                       ? { ...summary.loan, valueType: 'interest_due', value: loanInterestDue, payable: summary.loan.payable }
                       : cat === 'loan_penalty'
@@ -1657,7 +1611,8 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                     info.valueType === 'interest_due' ? 'Interest Due' :
                     info.valueType === 'optional' ? 'Optional' :
                     'Total Deposited';
-                  const statusText = !info.hasRecord
+                  const membershipPaid = cat === 'membership' && info.hasRecord && !info.payable;
+                  const statusText = membershipPaid ? 'PAID' : !info.hasRecord
                     ? 'No Record'
                     : info.valueType === 'optional'
                       ? valueLabel
@@ -1666,7 +1621,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                     ? getMembershipBreakdown(member, info)
                     : null;
 
-                  if (membershipBreakdown) {
+                  if (membershipBreakdown && info.payable) {
                     const paidNowTotal = membershipBreakdown.rows.reduce(
                       (sum, row) => sum + (parseFloat(amounts[row.key]) || 0),
                       0
@@ -1680,6 +1635,12 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                             <span className={`text-xs font-medium ${info.hasRecord ? 'text-amber-700' : 'text-gray-400'}`}>
                               {statusText}
                             </span>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {info.record.membership_type === 'regular' ? 'Regular' : 'Associate'} Membership
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Previously paid: {formatCurrency(info.paid)}
+                            </p>
                           </td>
                           <td className="px-4 py-3 text-right">
                             <span className="text-xs font-semibold text-amber-700">
@@ -1727,18 +1688,22 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                     <tr key={cat}>
                       <td className="px-4 py-3 font-medium text-gray-800">{CATEGORY_LABEL[cat]}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs font-medium ${info.hasRecord ? 'text-amber-700' : 'text-gray-400'}`}>
+                        <span className={`text-xs font-medium ${membershipPaid ? 'text-emerald-700' : info.hasRecord ? 'text-amber-700' : 'text-gray-400'}`}>
                           {statusText}
                         </span>
                         {cat === 'loan' && summary.loan.records?.length > 1 && (
                           <select
                             className="ml-2 text-xs border border-gray-200 rounded px-1 py-0.5"
                             value={selectedLoanId}
-                            onChange={e => setSelectedLoanId(e.target.value)}
+                            aria-label="Loan principal balance"
+                            onChange={e => {
+                              setSelectedLoanId(e.target.value);
+                              setAmounts(current => ({ ...current, loan: '', loan_interest: '', loan_penalty: '' }));
+                            }}
                           >
                             {summary.loan.records.map(l => (
                               <option key={l.id} value={l.id}>
-                                {l.loan_no || l.id.slice(0, 8)} · {formatCurrency(l.balance)}
+                                {formatCurrency(l.principal_balance)}
                               </option>
                             ))}
                           </select>
