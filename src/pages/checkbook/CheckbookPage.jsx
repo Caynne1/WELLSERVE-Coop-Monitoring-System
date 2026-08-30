@@ -15,12 +15,14 @@ import Pagination from '../../components/ui/Pagination';
 import usePagination from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
+import LoanReleasePicker from './LoanReleasePicker';
 import {
   getCheckbookEntries,
   createCheckbookEntry,
   updateCheckbookEntry,
   clearCheck,
   releaseCheck,
+  getCheckLoanReleaseOptions,
   voidCheck,
 } from '../../services/checkbookService';
 // Load approved vouchers for the required voucher link dropdown.
@@ -136,6 +138,26 @@ export default function CheckbookPage() {
   const [clearTarget, setClearTarget] = useState(null);
   const [clearing, setClearing]       = useState(false);
   const [releaseTarget, setReleaseTarget] = useState(null);
+  const [releaseLoans, setReleaseLoans] = useState(null);
+  const [selectedReleaseLoanId, setSelectedReleaseLoanId] = useState('');
+  const [releaseLoanError, setReleaseLoanError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setReleaseLoans(null);
+    setSelectedReleaseLoanId('');
+    setReleaseLoanError('');
+    if (releaseTarget) {
+      getCheckLoanReleaseOptions(releaseTarget.id).then(loans => {
+        if (cancelled) return;
+        setReleaseLoans(loans);
+        setSelectedReleaseLoanId(loans.length === 1 ? loans[0].id : '');
+      }).catch(error => {
+        if (!cancelled) setReleaseLoanError(error.message || 'Unable to load the linked loan.');
+      });
+    }
+    return () => { cancelled = true; };
+  }, [releaseTarget?.id]);
   const [releasing, setReleasing]         = useState(false);
 
   // Void confirm modal
@@ -394,6 +416,7 @@ export default function CheckbookPage() {
 
   async function handleRelease() {
     if (!releaseTarget) return;
+    if (!releaseLoans || releaseLoanError || (releaseLoans.length > 0 && !selectedReleaseLoanId)) return;
     if (!canEdit) {
       toast.error('You do not have permission to edit checkbook entries');
       setReleaseTarget(null);
@@ -401,7 +424,7 @@ export default function CheckbookPage() {
     }
     setReleasing(true);
     try {
-      await releaseCheck(releaseTarget.id, user?.id ?? null);
+      await releaseCheck(releaseTarget.id, user?.id ?? null, selectedReleaseLoanId || null);
       toast.success(`Check ${checkNoDisplay(releaseTarget.check_no)} released.`);
       trackActivity({ userId: user?.id, module: 'checkbook', action: 'release', description: `Released check #${checkNoDisplay(releaseTarget.check_no)}` });
       setReleaseTarget(null);
@@ -1057,7 +1080,7 @@ export default function CheckbookPage() {
         open={!!releaseTarget}
         onClose={() => setReleaseTarget(null)}
         title="Release Check"
-        size="sm"
+        size="md"
       >
         {releaseTarget && (
           <>
@@ -1075,6 +1098,16 @@ export default function CheckbookPage() {
                 {formatCurrency(releaseTarget.amount)}
               </p>
             </div>
+            {releaseLoanError ? (
+              <p role="alert" className="text-sm text-red-700 mb-4">{releaseLoanError}</p>
+            ) : releaseLoans === null ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+                <Spinner size={14} /> Checking linked loan...
+              </div>
+            ) : (
+              <LoanReleasePicker loans={releaseLoans} value={selectedReleaseLoanId}
+                onChange={setSelectedReleaseLoanId} disabled={releasing} />
+            )}
             <div className="flex justify-end gap-3">
               <Button
                 variant="outline"
@@ -1087,6 +1120,7 @@ export default function CheckbookPage() {
                 variant="success"
                 loading={releasing}
                 onClick={handleRelease}
+                disabled={!releaseLoans || !!releaseLoanError || (releaseLoans.length > 0 && !selectedReleaseLoanId)}
                 icon={!releasing && <CheckCircle size={15} />}
               >
                 Release

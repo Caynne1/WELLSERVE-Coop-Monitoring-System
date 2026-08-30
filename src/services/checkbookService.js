@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { releaseLoanFromCheck } from './loanWorkflowService';
+import { getLoanReleaseCandidates, releaseLoanFromCheck } from './loanWorkflowService';
 import { createTransaction } from './transactionService';
 import { getImportedHistoricalRows, mapHistoricalCheck } from './historicalMigrationRecordService';
 
@@ -264,13 +264,21 @@ export async function clearCheck(id) {
   return data;
 }
 
-export async function releaseCheck(id, userId) {
+export async function getCheckLoanReleaseOptions(id) {
+  const check = await getCheckbookEntryById(id);
+  const voucher = await getLinkedVoucher(check.voucher_id);
+  const expense = await getLinkedExpense(voucher?.expense_id);
+  if (!isLoanReleaseVoucher(voucher, expense)) return [];
+  return getLoanReleaseCandidates(check, voucher);
+}
+
+export async function releaseCheck(id, userId, selectedLoanId = null) {
   const check = await getCheckbookEntryById(id);
   const voucher = await getLinkedVoucher(check.voucher_id);
   const expense = await getLinkedExpense(voucher?.expense_id);
 
   if (isLoanReleaseVoucher(voucher, expense)) {
-    await releaseLoanFromCheck(check, userId);
+    await releaseLoanFromCheck(check, userId, selectedLoanId);
   } else {
     await recordExpenseCheckRelease(check, voucher, expense, userId);
   }

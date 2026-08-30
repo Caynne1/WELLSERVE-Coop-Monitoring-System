@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { createTransaction } from './transactionService';
 import { updateLoan } from './loanService';
+import { cleanLoanReference as cleanReference, extractLoanReferences, findReleaseMemberIds } from '../utils/loanReleaseLink';
 import { getAccountsByMemberId, createAccount, updateAccount } from './accountService';
 import {
   createMembership,
@@ -420,7 +421,7 @@ export function buildLoanExpensePayload(loan, createdBy) {
   };
 }
 
-export async function releaseLoanFromCheck(check, userId) {
+export async function releaseLoanFromCheck(check, userId, selectedLoanId = null) {
   if (!check?.voucher_id) throw new Error('This check is not linked to a loan voucher.');
 
   const { data: voucher, error: voucherError } = await supabase
@@ -430,12 +431,14 @@ export async function releaseLoanFromCheck(check, userId) {
     .single();
   if (voucherError) throw voucherError;
 
-  const loan = await resolveLinkedLoanForRelease(check, voucher);
-  if (!loan) {
-    throw new Error(
-      'Linked loan could not be found. Please make sure the linked voucher or expense contains the Loan No. in its Reference, Notes, or Purpose.'
-    );
+  const loan = await resolveLinkedLoanForRelease(check, voucher, selectedLoanId);
+  if (round2(check.amount) !== round2(getLoanNetProceeds(loan))) {
+    throw new Error('The check amount does not match the selected loan net proceeds. Please review the check and voucher amounts.');
   }
+  // Persist the resolved link before posting, so a retry targets the same loan.
+  const { error: linkError } = await supabase.from('vouchers')
+    .update({ reference: loan.id, member_id: loan.member_id }).eq('id', voucher.id);
+  if (linkError) throw linkError;
   const releaseDate =
     dateOnly(check.date) ||
     dateOnly(loan.release_date) ||
@@ -508,111 +511,77 @@ export async function releaseLoanFromCheck(check, userId) {
   });
 }
 
-async function resolveLinkedLoanForRelease(check, voucher) {
+export async function getLoanReleaseCandidates(check, voucher) {
   const expense = await getVoucherExpense(voucher);
-  const textSources = [
-    voucher.reference,
-    voucher.notes,
-    voucher.purpose,
-    check.notes,
-    check.purpose,
-    expense?.notes,
-    expense?.description,
-  ];
-
-  for (const source of textSources) {
-    for (const reference of extractLoanReferences(source)) {
-      const loan = await getLoanByReference(reference);
-      if (loan) return loan;
+  const references = new Set([
+    cleanReference(voucher.reference),
+    ...[voucher.notes, voucher.purpose, check.notes, check.purpose, expense?.notes, expense?.description]
+      .flatMap(extractLoanReferences),
+  ].filter(Boolean));
+  const linked = new Map();
+  for (const reference of references) {
+    const loan = await getLoanByReference(reference);
+    if (loan) linked.set(loan.id, loan);
+  }
+  if (linked.size > 1) {
+    throw new Error('The linked voucher and expense refer to different loans. Please review them before releasing this check.');
+  }
+  if (linked.size === 1) {
+    const loan = [...linked.values()][0];
+    if (voucher.member_id && loan.member_id !== voucher.member_id) {
+      throw new Error('The linked loan does not belong to the voucher member.');
     }
+    if (!['approved', 'released', 'active', 'ongoing', 'partial', 'overdue', 'delinquent', 'defaulted', 'paid'].includes(loan.status)) {
+      throw new Error('The linked loan must be approved before this check can be released.');
+    }
+    return [{ ...loan, net_proceeds: getLoanNetProceeds(loan) }];
   }
 
-  return findLoanByReleaseContext({ check, voucher, expense });
+  let memberId = voucher.member_id;
+  if (!memberId) {
+    const { data: members, error } = await supabase.from('members')
+      .select('id, first_name, last_name');
+    if (error) throw error;
+    const memberIds = findReleaseMemberIds(members || [], [voucher.payee, check.payee, expense?.payee]);
+    if (memberIds.length > 1) {
+      throw new Error('The payee names match more than one member. Please review the linked voucher and expense.');
+    }
+    memberId = memberIds[0];
+  }
+  if (!memberId) {
+    throw new Error('No member matches the full payee name. Please check the member name on the voucher or expense.');
+  }
+  const { data: loans, error } = await supabase.from('loans').select('*')
+    .eq('member_id', memberId).eq('status', 'approved');
+  if (error) throw error;
+  if (!loans?.length) {
+    throw new Error('This member has no approved loan available for release.');
+  }
+  // Already-posted releases are not new candidates, even if a prior status update failed.
+  const { data: releases, error: releaseError } = await supabase.from('transactions')
+    .select('loan_id').eq('type', 'loan_release').in('loan_id', loans.map(loan => loan.id));
+  if (releaseError) throw releaseError;
+  const posted = new Set((releases || []).map(row => row.loan_id));
+  const candidates = loans.filter(loan => !posted.has(loan.id));
+  if (!candidates.length) throw new Error('The approved loans for this member have already been released.');
+  return candidates.map(loan => ({ ...loan, net_proceeds: getLoanNetProceeds(loan) }));
+}
+
+async function resolveLinkedLoanForRelease(check, voucher, selectedLoanId) {
+  const candidates = await getLoanReleaseCandidates(check, voucher);
+  if (selectedLoanId) {
+    const selected = candidates.find(loan => loan.id === selectedLoanId);
+    if (!selected) throw new Error('The selected loan is no longer available for this check. Please reopen Release Check.');
+    return selected;
+  }
+  if (candidates.length === 1) return candidates[0];
+  throw new Error('This member has multiple approved loans. Please select the loan by amount and date.');
 }
 
 async function getVoucherExpense(voucher) {
   if (!voucher?.expense_id) return null;
-
-  const { data, error } = await supabase
-    .from('expenses')
-    .select('id, description, notes, amount, payee')
-    .eq('id', voucher.expense_id)
-    .maybeSingle();
-
-  if (error) return null;
+  const { data, error } = await supabase.from('expenses')
+    .select('id, description, notes, amount, payee').eq('id', voucher.expense_id).maybeSingle();
+  if (error) throw error;
   return data || null;
-}
-
-async function findLoanByReleaseContext({ check, voucher, expense }) {
-  let query = supabase
-    .from('loans')
-    .select('*')
-    .in('status', ['approved', 'released']);
-
-  if (voucher.member_id) query = query.eq('member_id', voucher.member_id);
-
-  const { data: loans, error } = await query;
-  if (error || !loans?.length) return null;
-
-  const targetAmount = round2(voucher.amount || check.amount || expense?.amount || 0);
-  const amountMatches = targetAmount > 0
-    ? loans.filter(loan => round2(getLoanNetProceeds(loan)) === targetAmount)
-    : [];
-
-  if (amountMatches.length === 1) return amountMatches[0];
-
-  const text = [
-    voucher.payee,
-    check.payee,
-    expense?.payee,
-    voucher.purpose,
-    check.purpose,
-    expense?.description,
-  ].filter(Boolean).join(' ').toLowerCase();
-
-  const memberIds = [...new Set(loans.map(loan => loan.member_id).filter(Boolean))];
-  if (!memberIds.length) return null;
-
-  const { data: members } = await supabase
-    .from('members')
-    .select('id, first_name, last_name, member_no')
-    .in('id', memberIds);
-
-  const memberMap = Object.fromEntries((members || []).map(member => [member.id, member]));
-  const nameMatches = loans.filter(loan => {
-    const member = memberMap[loan.member_id];
-    const memberText = [
-      member?.member_no,
-      member?.first_name,
-      member?.last_name,
-      [member?.first_name, member?.last_name].filter(Boolean).join(' '),
-    ].filter(Boolean).map(v => String(v).toLowerCase());
-
-    return memberText.some(value => value && text.includes(value));
-  });
-
-  if (nameMatches.length === 1) return nameMatches[0];
-  return null;
-}
-
-function extractLoanReferences(value = '') {
-  const text = String(value || '');
-  const uuidPattern = /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/gi;
-  const refs = [
-    ...text.matchAll(uuidPattern),
-    ...text.matchAll(/Loan ID\s*:\s*([0-9a-f-]{20,})/gi),
-    ...text.matchAll(/Loan No\.?\s*:\s*(?!Loan ID\b)([^\s\n\r;|]+)/gi),
-    ...text.matchAll(/Loan net proceeds\s*-\s*([^\s\n\r;|]+)/gi),
-    ...text.matchAll(/\b(LN[-_/ A-Za-z0-9]+)\b/gi),
-  ].map(match => cleanReference(match[1])).filter(Boolean);
-
-  return [...new Set(refs)];
-}
-
-function cleanReference(value = '') {
-  return String(value || '')
-    .trim()
-    .replace(/^[#:\s-]+/, '')
-    .replace(/\s*(?:-|·|\|)\s*(?:PHP|₱)?\s*[\d,]+(?:\.\d{1,2})?.*$/i, '')
-    .replace(/\s+$/g, '');
 }
