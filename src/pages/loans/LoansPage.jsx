@@ -2,18 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus,
-  Eye,
-  Trash2,
   Search,
   CreditCard,
   Wallet,
   Layers3,
-  AlertCircle,
   Printer,
   Download,
-  ChevronUp,
-  ChevronDown,
-  ArrowUpDown,
 } from 'lucide-react';
 import PesoSign from '../../components/shared/PesoSign';
 import { exportToCSV } from '../../utils/csvExport';
@@ -22,7 +16,8 @@ import LoanTypeModal from '../../components/shared/LoanTypeModal';
 
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
+import LoanTable from './LoanTable';
+import { getLoanBalanceWithInterest, getLoanFinancials, getLoanDueState, normalizeLoanStatus, isLoanReleased, getLoanWorkflowTarget, getLoanTypeLabel } from '../../utils/loanListState';
 import Spinner from '../../components/ui/Spinner';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import Modal from '../../components/ui/Modal';
@@ -49,18 +44,6 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { useAuth } from '../../context/AuthContext';
 import { trackActivity } from '../../services/logService';
 
-const statusVariant = {
-  draft: 'default',
-  credit_committee_approval: 'warning',
-  approved: 'success',
-  released: 'info',
-  active: 'success',
-  ongoing: 'success',
-  paid: 'info',
-  defaulted: 'danger',
-  pending: 'warning',
-};
-
 const FREQUENCY_FILTER_OPTIONS = [
   { value: 'all', label: 'All Frequency' },
   { value: 'weekly', label: 'Weekly' },
@@ -83,35 +66,16 @@ const DUE_FILTER_OPTIONS = [
   { value: 'overdue', label: 'Overdue' },
 ];
 
-const STATUS_OPTIONS = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'credit_committee_approval', label: 'Credit Committee Approval' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'released', label: 'Released' },
-  { value: 'delinquent', label: 'Delinquent' },
-];
-
 const STATUS_FILTER_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'draft', label: 'Draft' },
-  { value: 'credit_committee_approval', label: 'Credit Committee Approval' },
+  { value: 'credit_committee_approval', label: 'For Approval' },
   { value: 'approved', label: 'Approved' },
   { value: 'released', label: 'Released' },
+  { value: 'active', label: 'Active' },
+  { value: 'paid', label: 'Paid' },
   { value: 'delinquent', label: 'Delinquent' },
 ];
-
-// Maps any legacy/underlying status value (e.g. 'ongoing', 'paid', 'defaulted')
-// to one of the 3 statuses now supported: active, pending, delinquent.
-function normalizeLoanStatus(status) {
-  const s = (status || '').toLowerCase();
-  if (s === 'draft') return 'draft';
-  if (s === 'credit_committee_approval') return 'credit_committee_approval';
-  if (s === 'approved') return 'approved';
-  if (s === 'released') return 'released';
-  if (s === 'pending') return 'draft';
-  if (s === 'delinquent' || s === 'defaulted' || s === 'overdue') return 'delinquent';
-  return 'active';
-}
 
 const PAYMENT_MODE_OPTIONS = [
   { value: '', label: 'Select mode of payment' },
@@ -149,134 +113,6 @@ function parseJSONSafe(val, fallback = {}) {
   } catch {
     return fallback;
   }
-}
-
-function getLoanBalanceWithInterest(loan) {
-  const summary = parseJSONSafe(loan?.preview_summary_json, {});
-  const schedule = parseJSONSafe(loan?.preview_schedule_json, []);
-  if (Array.isArray(schedule) && schedule.length > 0) {
-    const rowTotal = row => Number(
-      row?.total_due ??
-      row?.payment ??
-      ((Number(row?.principal) || 0) + (Number(row?.interest ?? row?.interest_amount) || 0))
-    ) || 0;
-    const scheduledTotal = schedule.reduce((sum, row) => sum + rowTotal(row), 0);
-    const remaining = schedule
-      .filter(row => !row?.paid)
-      .reduce((sum, row) => sum + (Number(row?.remaining_due ?? rowTotal(row)) || 0), 0);
-
-    if (remaining <= 0) return 0;
-
-    // Keep the exact summary total while schedule rows remain individually rounded.
-    const payable = Number(summary?.total_loan_payable ?? loan?.total_loan_payable) || 0;
-    const roundingAdjustment = payable > 0 ? payable - scheduledTotal : 0;
-    return Math.max(0, remaining + roundingAdjustment);
-  }
-
-  const rawBalance = Number(loan?.balance ?? loan?.amount) || 0;
-  if (rawBalance <= 0) return 0;
-
-  const principal = Number(loan?.amount) || 0;
-  const payable = Number(summary?.total_loan_payable ?? loan?.total_loan_payable) || 0;
-  if (payable > principal && principal > 0) {
-    const totalInterest = payable - principal;
-    return Math.max(0, rawBalance + (totalInterest * (rawBalance / principal)));
-  }
-
-  return rawBalance;
-}
-
-// Computes the automatic due-date status for a loan:
-// - "Overdue" if the due date has passed
-// - "Next Due: <date>" once at least one payment/installment has been made
-// - "Due in X days" (or "Due Today") otherwise
-function getNextDueInfo(loan) {
-  const schedule = parseJSONSafe(loan?.preview_schedule_json, []);
-  const hasPaidInstallment = Array.isArray(schedule) && schedule.some(row => row?.paid);
-  const nextDue = Array.isArray(schedule) ? schedule.find(row => !row.paid) : null;
-
-  const dueDate = nextDue?.due_date || loan?.due_date || null;
-  if (!dueDate) {
-    return {
-      dueDate: null,
-      diffDays: null,
-      badge: null,
-    };
-  }
-
-  const today = new Date();
-  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const due = new Date(dueDate);
-  const dueOnly = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-
-  const diffMs = dueOnly.getTime() - todayOnly.getTime();
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays < 0) {
-    return {
-      dueDate,
-      diffDays,
-      badge: {
-        label: 'Overdue',
-        className: 'bg-red-50 text-red-700 border border-red-200',
-      },
-    };
-  }
-
-  if (hasPaidInstallment) {
-    return {
-      dueDate,
-      diffDays,
-      badge: {
-        label: `Next Due: ${formatDate(dueDate)}`,
-        className: 'bg-blue-50 text-blue-700 border border-blue-200',
-      },
-    };
-  }
-
-  if (diffDays === 0) {
-    return {
-      dueDate,
-      diffDays,
-      badge: {
-        label: 'Due Today',
-        className: 'bg-amber-50 text-amber-700 border border-amber-200',
-      },
-    };
-  }
-
-  const dayLabel = `Due in ${diffDays} day${diffDays === 1 ? '' : 's'}`;
-
-  if (diffDays <= 2) {
-    return {
-      dueDate,
-      diffDays,
-      badge: {
-        label: dayLabel,
-        className: 'bg-amber-50 text-amber-700 border border-amber-200',
-      },
-    };
-  }
-
-  if (diffDays <= 7) {
-    return {
-      dueDate,
-      diffDays,
-      badge: {
-        label: dayLabel,
-        className: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
-      },
-    };
-  }
-
-  return {
-    dueDate,
-    diffDays,
-    badge: {
-      label: dayLabel,
-      className: 'bg-gray-50 text-gray-500 border border-gray-200',
-    },
-  };
 }
 
 export default function LoansPage() {
@@ -359,14 +195,12 @@ export default function LoansPage() {
 
   async function handleStatusChange(loan, newStatus) {
     if (!loan?.id || !newStatus || newStatus === loan.status) return;
-    // Moving into/out of "approved" (or "rejected") is a Credit Committee
-    // decision and doesn't require the general Loans edit permission;
-    // every other transition still needs loans:edit.
+    // Approval decisions require the separate permission assigned by an administrator.
     const isApprovalDecision = newStatus === 'approved' || newStatus === 'rejected';
     if (isApprovalDecision ? !canApproveLoan : !canEdit) {
       toast.error(
         isApprovalDecision
-          ? 'Only the Credit Committee can approve or reject loans.'
+          ? 'You do not have permission to approve or reject loans.'
           : 'You do not have permission to edit loans'
       );
       return;
@@ -386,15 +220,15 @@ export default function LoansPage() {
   }
 
   async function handleWorkflowAction(loan) {
-    const current = normalizeLoanStatus(loan.status);
-    const nextStatus = current === 'draft' ? 'credit_committee_approval' : 'approved';
+    const nextStatus = getLoanWorkflowTarget(loan);
+    if (!nextStatus || statusSavingId) return;
 
     if (nextStatus === 'credit_committee_approval' && !canEdit) {
       toast.error('You do not have permission to edit loans');
       return;
     }
     if (nextStatus === 'approved' && !canApproveLoan) {
-      toast.error('Only the Credit Committee can approve loans.');
+      toast.error('You do not have permission to approve loans.');
       return;
     }
 
@@ -420,7 +254,7 @@ export default function LoansPage() {
       const matchesMethod =
         methodFilter === 'all' || (loan.loan_method || '') === methodFilter;
 
-      const dueInfo = getNextDueInfo(loan);
+      const dueInfo = getLoanDueState(loan);
       let matchesDue = true;
 
       if (dueFilter === 'due_7') {
@@ -463,21 +297,28 @@ export default function LoansPage() {
           aVal = `${a.members?.first_name || ''} ${a.members?.last_name || ''}`.trim().toLowerCase();
           bVal = `${b.members?.first_name || ''} ${b.members?.last_name || ''}`.trim().toLowerCase();
           break;
+        case 'loan_type':
+          aVal = getLoanTypeLabel(a);
+          bVal = getLoanTypeLabel(b);
+          break;
         case 'amount':
           aVal = Number(a.amount) || 0;
           bVal = Number(b.amount) || 0;
           break;
+        case 'interest':
+        case 'payable':
+        case 'paid':
         case 'balance':
-          aVal = getLoanBalanceWithInterest(a);
-          bVal = getLoanBalanceWithInterest(b);
+          aVal = getLoanFinancials(a)[key];
+          bVal = getLoanFinancials(b)[key];
           break;
         case 'released':
           aVal = new Date(a.release_date || a.created_at || 0).getTime() || 0;
           bVal = new Date(b.release_date || b.created_at || 0).getTime() || 0;
           break;
         case 'due_date': {
-          const aDue = getNextDueInfo(a).dueDate;
-          const bDue = getNextDueInfo(b).dueDate;
+          const aDue = getLoanDueState(a).dueDate;
+          const bDue = getLoanDueState(b).dueDate;
           aVal = aDue ? new Date(aDue).getTime() : Infinity;
           bVal = bDue ? new Date(bDue).getTime() : Infinity;
           break;
@@ -506,10 +347,10 @@ export default function LoansPage() {
   }, [search, frequencyFilter, methodFilter, dueFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
-  const activeLoans = loans.filter(l => ['approved', 'released', 'active', 'ongoing'].includes(l.status));
-  const totalReleased = loans
-    .filter(l => l.status === 'released')
-    .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+    const activeLoans = loans.filter(l => isLoanReleased(l) && getLoanBalanceWithInterest(l) > 0);
+    const totalReleased = loans
+      .filter(isLoanReleased)
+      .reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
     const totalOutstanding = activeLoans.reduce((sum, l) => sum + getLoanBalanceWithInterest(l), 0);
 
     return {
@@ -523,19 +364,19 @@ export default function LoansPage() {
   function handlePrint() {
     const rowsHtml = filtered.map(loan => {
       const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim() || '—';
-      const dueInfo = getNextDueInfo(loan);
+      const financials = getLoanFinancials(loan);
 
       return `
         <tr>
           <td>${memberName}<br/><span style="color:#6b7280;font-size:9pt;">${loan.members?.member_no || '—'}</span></td>
-          <td style="text-align:right;">${formatCurrency(loan.amount || 0)}</td>
-          <td style="text-align:right;">${formatCurrency(getLoanBalanceWithInterest(loan))}</td>
-          <td>${titleCase(loan.loan_method)}</td>
-          <td>${frequencyLabel(loan.repayment_frequency)}</td>
-          <td>${loan.term_months || '—'}</td>
-          <td>${formatDate(loan.release_date || loan.created_at)}</td>
-          <td>${formatDate(dueInfo.dueDate)}</td>
-          <td>${titleCase(loan.status || '—')}</td>
+          <td>${getLoanTypeLabel(loan)}</td>
+          <td style="text-align:right;">${formatCurrency(financials.amount)}</td>
+          <td style="text-align:right;">${formatCurrency(financials.interest)}</td>
+          <td style="text-align:right;">${formatCurrency(financials.payable)}</td>
+          <td style="text-align:right;">${formatCurrency(financials.paid)}</td>
+          <td style="text-align:right;">${formatCurrency(financials.balance)}</td>
+          <td>${formatDate(getLoanDueState(loan).dueDate)}</td>
+          <td>${titleCase(normalizeLoanStatus(loan.status))}</td>
         </tr>
       `;
     }).join('');
@@ -552,12 +393,12 @@ export default function LoansPage() {
         <thead>
           <tr>
             <th>Member</th>
-            <th style="text-align:right;">Amount</th>
+            <th>Loan Type</th>
+            <th style="text-align:right;">Principal</th>
+            <th style="text-align:right;">Interest</th>
+            <th style="text-align:right;">Total Payable</th>
+            <th style="text-align:right;">Amount Paid</th>
             <th style="text-align:right;">Balance</th>
-            <th>Method</th>
-            <th>Frequency</th>
-            <th>Term</th>
-            <th>Released</th>
             <th>Due Date</th>
             <th>Status</th>
           </tr>
@@ -582,12 +423,18 @@ export default function LoansPage() {
       const rows = filtered.map(l => ({
         member: `${l.members?.first_name || ''} ${l.members?.last_name || ''}`.trim(),
         member_no: l.members?.member_no || '',
-        amount: l.amount || 0,
-        balance: getLoanBalanceWithInterest(l),
+        loan_type: getLoanTypeLabel(l),
+        principal: getLoanFinancials(l).amount,
+        interest: getLoanFinancials(l).interest,
+        total_payable: getLoanFinancials(l).payable,
+        amount_paid: getLoanFinancials(l).paid,
+        balance: getLoanFinancials(l).balance,
+        due_date: formatDate(getLoanDueState(l).dueDate),
         method: titleCase(l.loan_method),
         frequency: frequencyLabel(l.repayment_frequency),
         term_months: l.term_months || '',
-        released: formatDate(l.release_date || l.created_at),
+        released: isLoanReleased(l) ? formatDate(l.release_date) : '',
+        planned_release: !isLoanReleased(l) ? formatDate(l.release_date) : '',
         status: l.status || '',
       }));
       exportToCSV('loans_report.csv', rows);
@@ -721,174 +568,25 @@ export default function LoansPage() {
           <Spinner />
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-sm">
-              <colgroup>
-                <col className="w-[19%]" />
-                <col className="w-[15%]" />
-                <col className="w-[15%]" />
-                <col className="w-[14%]" />
-                <col className="w-[15%]" />
-                <col className="w-[12%]" />
-                <col className="w-[10%]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50/90 to-emerald-50/40">
-                  {[
-                    { key: 'member', label: 'Member', align: 'left' },
-                    { key: 'amount', label: 'Amount', align: 'center' },
-                    { key: 'balance', label: 'Balance', align: 'center' },
-                    { key: 'released', label: 'Released', align: 'center' },
-                    { key: 'due_date', label: 'Due Date', align: 'center' },
-                    { key: 'status', label: 'Status', align: 'center' },
-                    { key: null, label: 'Actions', align: 'center' },
-                  ].map(col => {
-                    const isSorted = sortConfig.key === col.key && col.key;
-                    return (
-                      <th
-                        key={col.label}
-                        onClick={col.key ? () => handleSort(col.key) : undefined}
-                        className={`px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap ${
-                          col.align === 'center' ? 'text-center' : 'text-left'
-                        } ${col.key ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}
-                      >
-                        <span
-                          className={`inline-flex items-center gap-1 ${
-                            col.align === 'center' ? 'justify-center w-full' : ''
-                          }`}
-                        >
-                          {col.label}
-                          {col.key && (
-                            isSorted ? (
-                              sortConfig.direction === 'asc'
-                                ? <ChevronUp size={12} />
-                                : <ChevronDown size={12} />
-                            ) : (
-                              <ArrowUpDown size={11} className="text-gray-300" />
-                            )
-                          )}
-                        </span>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-gray-50">
-                {sorted.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-16 text-center">
-                      <div className="flex flex-col items-center gap-2 text-gray-400">
-                        <CreditCard size={32} className="text-gray-200" />
-                        <p className="text-sm">
-                          {search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all'
-                            ? 'No loans match your search/filter.'
-                            : 'No loans yet.'}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  pageItems.map(loan => {
-                    const dueInfo = getNextDueInfo(loan);
-                    const normalizedStatus = normalizeLoanStatus(loan.status);
-                    const displayBalance = getLoanBalanceWithInterest(loan);
-
-                    return (
-                      <tr
-                        key={loan.id}
-                        className="hover:bg-[#D6FADC]/25 transition-colors group"
-                      >
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-gray-900">
-                            {loan.members?.first_name} {loan.members?.last_name}
-                          </p>
-                          {loan.members?.member_no && (
-                            <p className="text-xs text-gray-400 font-mono mt-0.5">
-                              {loan.members.member_no}
-                            </p>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <span className="font-semibold text-gray-900">
-                            {formatCurrency(loan.amount)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`font-semibold ${
-                              displayBalance > 0 ? 'text-orange-600' : 'text-green-600'
-                            }`}
-                          >
-                            {formatCurrency(displayBalance)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 text-center text-gray-500 text-xs whitespace-nowrap">
-                          {formatDate(loan.release_date || loan.created_at)}
-                        </td>
-
-                        <td className="px-4 py-3 text-center text-xs whitespace-nowrap">
-                          {dueInfo.dueDate ? (
-                            <span className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium ${dueInfo.badge.className}`}>
-                              <AlertCircle size={11} />
-                              {dueInfo.badge.label}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <Badge variant={statusVariant[normalizedStatus] || 'default'}>
-                            {STATUS_OPTIONS.find(opt => opt.value === normalizedStatus)?.label || titleCase(loan.status)}
-                          </Badge>
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {((normalizedStatus === 'draft' && canEdit) ||
-                              (normalizedStatus === 'credit_committee_approval' && canApproveLoan)) && (
-                              <button
-                                onClick={() => handleWorkflowAction(loan)}
-                                disabled={statusSavingId === loan.id}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 transition-colors disabled:opacity-50"
-                              >
-                                {normalizedStatus === 'draft' ? 'For Approval' : 'Approve'}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => navigate(`/loans/${loan.id}`)}
-                              title="View loan"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                            >
-                              <Eye size={15} />
-                            </button>
-
-                            {canDelete && (
-                            <button
-                              onClick={() => setToDelete(loan)}
-                              title="Delete loan"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+        <div className="min-w-0 bg-white rounded-lg border border-gray-200">
+          <LoanTable
+            loans={pageItems}
+            sortConfig={sortConfig}
+            onSort={handleSort}
+            canEdit={canEdit}
+            canApprove={canApproveLoan}
+            canDelete={canDelete}
+            savingId={statusSavingId}
+            onView={loan => navigate(`/loans/${loan.id}`)}
+            onEdit={loan => navigate(`/loans/${loan.id}/edit`)}
+            onWorkflow={handleWorkflowAction}
+            onDelete={setToDelete}
+            emptyMessage={search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all'
+              ? 'No loans match your search/filter.' : 'No loans yet.'}
+          />
 
           {filtered.length > 0 && (
-            <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between">
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-gray-400">
                 Showing <span className="font-medium text-gray-600">{filtered.length}</span> of{' '}
                 <span className="font-medium text-gray-600">{loans.length}</span> loans
@@ -897,7 +595,7 @@ export default function LoansPage() {
                 Total outstanding:{' '}
                 {formatCurrency(
                   filtered
-                    .filter(l => l.status === 'active' || l.status === 'ongoing')
+                    .filter(isLoanReleased)
                     .reduce((s, l) => s + getLoanBalanceWithInterest(l), 0)
                 )}
               </p>
