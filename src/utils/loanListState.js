@@ -52,11 +52,10 @@ export function getLoanBalanceWithInterest(loan) {
   const summary = parseLoanJSON(loan?.preview_summary_json, {});
   const schedule = parseLoanJSON(loan?.preview_schedule_json, []);
   if (Array.isArray(schedule) && schedule.length > 0) {
-    const rowTotal = row => Number(
-      row?.total_due ??
-      row?.payment ??
-      ((Number(row?.principal) || 0) + (Number(row?.interest ?? row?.interest_amount) || 0))
-    ) || 0;
+    // total_due can include CBU/savings; compare the summary with loan-only payments.
+    const rowTotal = row => Number(row?.payment ?? (row?.principal != null
+      ? (Number(row.principal) || 0) + (Number(row.interest ?? row.interest_amount) || 0)
+      : row?.total_due)) || 0;
     const scheduledTotal = schedule.reduce((sum, row) => sum + rowTotal(row), 0);
     const remaining = schedule
       .filter(row => !row?.paid)
