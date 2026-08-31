@@ -25,7 +25,11 @@ import Spinner from '../../components/ui/Spinner';
 import { getLoanById, getLoanPaymentHistory, updateLoanApprovalStatus } from '../../services/loanService';
 import { useAuth } from '../../context/AuthContext';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
-import { isLoanReleased } from '../../utils/loanListState';
+import { getLoanProductLabel } from '../../utils/loanProducts';
+import LoanPaymentHistoryTable from '../../components/shared/LoanPaymentHistoryTable';
+import { MemberPaymentNavigation } from '../members/MemberPaymentNavigation';
+import { loanPaymentHistoryRows } from '../../utils/memberPaymentHistory';
+import { isLoanReleased, getLoanApprovalStage, isLoanWorkflowLocked } from '../../utils/loanListState';
 import {
   buildScheduleByFrequency,
   computeTotalRoiPercent,
@@ -316,6 +320,7 @@ export default function LoanDetailPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const [approvalSaving, setApprovalSaving] = useState(false);
 
   useEffect(() => {
@@ -331,14 +336,19 @@ export default function LoanDetailPage() {
   useEffect(() => {
     if (!id) return;
     setHistoryLoading(true);
+    setHistoryError(false);
     getLoanPaymentHistory(id)
       .then(setPaymentHistory)
-      .catch(() => setPaymentHistory([]))
+      .catch(() => { setPaymentHistory([]); setHistoryError(true); })
       .finally(() => setHistoryLoading(false));
   }, [id]);
 
   async function handleApprovalChange(newStatus) {
     if (!loan) return;
+    if (isLoanWorkflowLocked(loan)) {
+      toast.error('Released loans cannot be edited.');
+      return;
+    }
     const isApprovalDecision = newStatus === 'approved' || newStatus === 'rejected';
     if (isApprovalDecision) {
       if (!canApproveLoan) {
@@ -402,6 +412,9 @@ export default function LoanDetailPage() {
 
   const scheduleRows = previewSchedule?.length ? previewSchedule : fallbackSchedule;
   const canApproveLoan = hasPermission('loans', 'approve');
+  const historyRows = useMemo(() => loanPaymentHistoryRows(paymentHistory, loan ? [loan] : []), [paymentHistory, loan]);
+  const workflowLocked = isLoanWorkflowLocked(loan);
+  const approvalStage = getLoanApprovalStage(loan);
 
   if (loading) return <div className="flex justify-center py-24"><Spinner /></div>;
   if (!loan) return null;
@@ -903,7 +916,7 @@ export default function LoanDetailPage() {
               Excel
             </Button>
 
-            {canEdit && (
+            {canEdit && !workflowLocked && (
             <Button
               icon={<Edit2 size={14} />}
               onClick={() => navigate(`/loans/${id}/edit`)}
@@ -922,6 +935,7 @@ export default function LoanDetailPage() {
             {[
               ['Member', memberName || '—'],
               ['Member No.', loan.members?.member_no || '—'],
+              ['Loan Product', getLoanProductLabel(loan)],
               ['Loan Type', <Badge key="loan_type" variant={resolvedLoanType === 'existing' ? 'warning' : 'success'}>{resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
               ['Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund'],
               ...(loan.funding_source === 'financing' ? [['Financing Note', loan.financing_note || '—']] : []),
@@ -1058,9 +1072,9 @@ export default function LoanDetailPage() {
           <div className="flex items-center gap-2">
             <History size={15} className="text-gray-400" />
             <span className="text-sm font-semibold text-gray-700">Payment History</span>
-            {paymentHistory.length > 0 && (
+            {historyRows.length > 0 && (
               <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                {paymentHistory.length}
+                {historyRows.length}
               </span>
             )}
           </div>
@@ -1071,66 +1085,21 @@ export default function LoanDetailPage() {
           <div className="border-t border-gray-100">
             {historyLoading ? (
               <div className="flex justify-center py-6"><Spinner /></div>
-            ) : paymentHistory.length === 0 ? (
+            ) : historyError ? (
+              <p role="alert" className="px-5 py-6 text-sm text-red-700">Payment history could not be loaded. Please refresh to retry.</p>
+            ) : historyRows.length === 0 ? (
               <div className="px-5 py-8 text-center text-sm text-gray-400">No payment records found.</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50/80 border-b border-gray-100">
-                      {['Date', 'Amount', 'Mode', 'Reference', 'Notes', 'Recorded By'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {paymentHistory.map(tx => (
-                      <tr key={tx.id} className="hover:bg-gray-50/50">
-                        <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                          {formatDate(tx.transaction_date || tx.created_at)}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-emerald-700 tabular-nums">
-                          {formatCurrency(tx.amount)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {tx.payment_mode ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
-                              {tx.payment_mode}
-                            </span>
-                          ) : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs font-mono">
-                          {tx.reference || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate">
-                          {tx.notes || tx.payment_mode_note || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">
-                          {tx.created_by_name || '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 border-t border-gray-100">
-                      <td className="px-4 py-3 text-xs font-semibold text-gray-600">
-                        Total Paid ({paymentHistory.length} payments)
-                      </td>
-                      <td className="px-4 py-3 font-bold text-emerald-700 tabular-nums">
-                        {formatCurrency(paymentHistory.reduce((s, t) => s + (t.amount || 0), 0))}
-                      </td>
-                      <td colSpan={4} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <MemberPaymentNavigation memberId={loan.member_id}>
+                <LoanPaymentHistoryTable rows={historyRows} loans={[loan]} memberId={loan.member_id} />
+              </MemberPaymentNavigation>
             )}
           </div>
         )}
       </div>
 
       {/* Approval Workflow */}
-      {(loan.approval_status !== undefined) && (
+      {(loan.approval_status !== undefined || workflowLocked) && (
         <div className="mt-4 bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <CheckCircle2 size={15} className="text-gray-400" />
@@ -1146,14 +1115,18 @@ export default function LoanDetailPage() {
             ].map(({ value, label, icon: Icon, color, bg }) => (
               <button
                 key={value}
+                aria-current={approvalStage === value ? 'step' : undefined}
+                title={workflowLocked ? 'Released loan: workflow is read-only' : value === 'released' ? 'Updated through check release' : label}
                 disabled={
                   approvalSaving ||
-                  loan.status === value ||
+                  workflowLocked ||
+                  value === 'released' ||
+                  approvalStage === value ||
                   (['approved', 'rejected'].includes(value) ? !canApproveLoan : !canEdit)
                 }
                 onClick={() => handleApprovalChange(value)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border
-                  ${loan.status === value || loan.approval_status === value
+                  ${approvalStage === value
                     ? `${bg} ${color} border-current ring-2 ring-offset-1 ring-current/30`
                     : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
                   }`}

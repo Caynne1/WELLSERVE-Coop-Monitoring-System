@@ -16,6 +16,7 @@ import LoanTypeModal from '../../components/shared/LoanTypeModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import LoanTable from './LoanTable';
+import { LOAN_PRODUCT_FILTER_OPTIONS, matchesLoanProduct } from '../../utils/loanProducts';
 import LoanReleasedSummary, { LoanReleaseDateFilter } from './LoanReleasedSummary';
 import { computeCoopSummaryFromInvoices } from '../../services/coopFundService';
 import { filterFundLedgerByDate, sumPostedLoanReleases, parseLedgerDate, txDisplayDate } from '../../utils/fundLoanReleases';
@@ -31,7 +32,7 @@ import {
   getLoans,
   deleteLoan,
   applyLoanPaymentToSchedule,
-  updateLoan,
+  updateLoanDetails,
 } from '../../services/loanService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import {
@@ -147,6 +148,7 @@ export default function LoansPage() {
   const [methodFilter, setMethodFilter] = useState('all');
   const [dueFilter, setDueFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [productFilter, setProductFilter] = useState('all');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -238,7 +240,7 @@ export default function LoansPage() {
 
     try {
       setStatusSavingId(loan.id);
-      await updateLoan(loan.id, { status: newStatus });
+      await updateLoanDetails(loan.id, { status: newStatus, approval_status: newStatus });
       toast.success('Loan status updated');
       trackActivity({ userId: user?.id, module: 'loan', action: newStatus, description: `Loan status changed to ${newStatus} (ID: ${loan.id})` });
       await fetchLoans();
@@ -270,6 +272,7 @@ export default function LoansPage() {
 
     return loans.filter(loan => {
       if (!matchesLoanDateRange(loan, releaseDateRange)) return false;
+      if (!matchesLoanProduct(loan, productFilter)) return false;
       const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.toLowerCase();
       const matchesSearch =
         !q ||
@@ -301,7 +304,7 @@ export default function LoansPage() {
 
       return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesStatus;
     });
-  }, [loans, search, frequencyFilter, methodFilter, dueFilter, statusFilter, releaseDateRange]);
+  }, [loans, search, frequencyFilter, methodFilter, dueFilter, statusFilter, productFilter, releaseDateRange]);
 
   function handleSort(key) {
     setSortConfig(prev => {
@@ -563,6 +566,17 @@ export default function LoansPage() {
           </select>
 
           <select
+            aria-label="Loan product filter"
+            value={productFilter}
+            onChange={e => setProductFilter(e.target.value)}
+            className="w-full sm:w-56 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+          >
+            <option value="all">All Loan Products</option>
+            {LOAN_PRODUCT_FILTER_OPTIONS.map(product => <option key={product.value} value={product.value}>{product.label}</option>)}
+            <option value="unspecified">Unspecified</option>
+          </select>
+
+          <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
             className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
@@ -614,7 +628,7 @@ export default function LoansPage() {
             onEdit={loan => navigate(`/loans/${loan.id}/edit`)}
             onWorkflow={handleWorkflowAction}
             onDelete={setToDelete}
-            emptyMessage={search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all'
+            emptyMessage={search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all' || productFilter !== 'all'
               ? 'No loans match your search/filter.' : 'No loans yet.'}
           />
 
@@ -858,7 +872,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
       });
 
       if (loanPay > 0) {
-        await createTransaction({
+        const loanTx = await createTransaction({
           member_id: loan.member_id,
           loan_id: loan.id,
           category: 'loan',
@@ -872,7 +886,9 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           payment_mode_note: paymentModeNote,
         });
 
-        await applyLoanPaymentToSchedule(loan.id, loanPay, paymentDate);
+        await applyLoanPaymentToSchedule(loan.id, loanPay, paymentDate, {
+          principal: loanPay, interest: 0, paymentId: loanTx.id,
+        });
       }
 
       if (cbuPay > 0) {

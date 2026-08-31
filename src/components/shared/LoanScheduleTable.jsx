@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, CheckCircle, XCircle, AlertCircle, Banknote, Percent, Wallet } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { installmentPaid, installmentStatus, scheduleCollections } from '../../utils/loanPaymentDisplay';
+import { installmentPaid, installmentRemaining, installmentStatus, scheduleCollections } from '../../utils/loanPaymentDisplay';
 
 function StatusPill({ status }) {
   if (status === 'Paid') {
@@ -121,7 +121,8 @@ export default function LoanScheduleTable({
                 <th className={`${headerPad} text-right font-semibold`}>Remaining Principal</th>
                 <th className={`${headerPad} text-right font-semibold`}>Principal Payment</th>
                 <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Interest</th>
-                {memberLayout && showPaymentTracking && <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Amount Paid</th>}
+                {showPaymentTracking && <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Amount Paid</th>}
+                {showPaymentTracking && <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Remaining Due</th>}
                 <th className={`${headerPad} text-center font-semibold`}>Payment Status</th>
               </tr>
             </thead>
@@ -139,12 +140,10 @@ export default function LoanScheduleTable({
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.balance || 0)}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.principal || 0)}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.displayInterest || 0)}</td>
-                    {memberLayout && showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(paidAmount)}</td>}
+                    {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(paidAmount)}</td>}
+                    {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(installmentRemaining(row))}</td>}
                     <td className={`${cellPad} text-center`}>
                       <StatusPill status={installmentStatus(row, released)} />
-                      {!memberLayout && showPaymentTracking && paidAmount > 0 && (
-                        <p className="mt-1 text-[10px] text-gray-500 whitespace-nowrap">{formatCurrency(paidAmount)} paid</p>
-                      )}
                     </td>
                   </tr>
                 );
@@ -155,7 +154,8 @@ export default function LoanScheduleTable({
                 <td className={`${cellPad}`} colSpan={3}>Totals ({schedule.length} payments)</td>
                 <td className={`${cellPad} text-right`}>{formatCurrency(totalPrincipalAmort)}</td>
                 <td className={`${cellPad} text-right`}>{formatCurrency(totalInterest)}</td>
-                {memberLayout && showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(collected.total)}</td>}
+                {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(schedule.reduce((sum, row) => sum + installmentPaid(row), 0))}</td>}
+                {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(schedule.reduce((sum, row) => sum + installmentRemaining(row), 0))}</td>}
                 <td className={`${cellPad} text-center`}>
                   <span className="text-[10px] text-gray-400">{paidCount}/{schedule.length}</span>
                 </td>

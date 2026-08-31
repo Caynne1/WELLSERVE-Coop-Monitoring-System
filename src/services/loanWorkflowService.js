@@ -451,7 +451,7 @@ export async function releaseLoanFromCheck(check, userId, selectedLoanId = null)
       .eq('loan_id', loan.id)
       .in('type', ['loan_release', 'loan_deduction']);
 
-    return updateLoan(loan.id, { release_date: releaseDate });
+    return updateLoan(loan.id, { release_date: releaseDate, approval_status: 'released' });
   }
 
   const { data: existingRelease, error: releaseLookupError } = await supabase
@@ -471,6 +471,7 @@ export async function releaseLoanFromCheck(check, userId, selectedLoanId = null)
     await postLoanMembershipDeduction(loan, userId, releaseDate);
     return updateLoan(loan.id, {
       status: 'released',
+      approval_status: 'released',
       release_date: releaseDate,
     });
   }
@@ -507,6 +508,7 @@ export async function releaseLoanFromCheck(check, userId, selectedLoanId = null)
 
   return updateLoan(loan.id, {
     status: 'released',
+    approval_status: 'released',
     release_date: releaseDate,
   });
 }

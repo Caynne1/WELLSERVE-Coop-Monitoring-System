@@ -21,6 +21,15 @@ export function isLoanReleased(loan) {
   return RELEASED_STATUSES.has(String(loan?.status || '').toLowerCase());
 }
 
+export function isLoanWorkflowLocked(loan) {
+  return isLoanReleased(loan) || String(loan?.approval_status || '').toLowerCase() === 'released';
+}
+
+export function getLoanApprovalStage(loan) {
+  if (isLoanWorkflowLocked(loan)) return 'released';
+  return normalizeLoanStatus(loan?.status || loan?.approval_status);
+}
+
 export function getLoanTypeLabel(loan) {
   const summary = parseLoanJSON(loan?.preview_summary_json);
   const type = loan?.loan_type || summary.loan_type

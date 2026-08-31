@@ -18,6 +18,7 @@ import Modal from '../../components/ui/Modal';
 import LoanCard from './MemberLoanCard';
 import { MemberPaymentNavigation, PaymentHistoryRow } from './MemberPaymentNavigation';
 import { loanPaymentHistoryRows, paymentDate } from '../../utils/memberPaymentHistory';
+import LoanPaymentHistoryTable from '../../components/shared/LoanPaymentHistoryTable';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 
@@ -341,7 +342,7 @@ export default function MemberDetailPage() {
     [transactions]
   );
 
-  const paymentHistoryRows = useMemo(() => loanPaymentHistoryRows(transactions), [transactions]);
+  const paymentHistoryRows = useMemo(() => loanPaymentHistoryRows(transactions, loans), [transactions, loans]);
 
   const loanPaymentCount = loanTransactions.filter(t => t.type === 'loan_payment').length;
   const cbuPaymentCount = cbuTransactions.filter(t => t.type === 'deposit').length;
@@ -901,7 +902,7 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
       {paymentHistoryRows.length > 0 && (
         <div className="mt-6">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Payment History</h4>
-          <LoanPaymentHistoryTable rows={paymentHistoryRows} />
+          <LoanPaymentHistoryTable rows={paymentHistoryRows} loans={loans} memberId={memberId} />
         </div>
       )}
 
@@ -910,44 +911,6 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
 }
 
 
-function LoanPaymentHistoryTable({ rows }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto w-full">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-100">
-            {['Payment Date', 'Loan Payment', 'Mode', 'Assisted By'].map(h => (
-              <th
-                key={h}
-                className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-50">
-          {rows.map(row => (
-            <PaymentHistoryRow key={row.id} record={row}>
-              <td className="px-4 py-3 whitespace-nowrap">
-                {paymentDate(row) ? formatDate(paymentDate(row)) : ''}
-              </td>
-              <td className="px-4 py-3 font-medium">
-                {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : '-'}
-              </td>
-              <td className="px-4 py-3 text-gray-500">
-                {displayPaymentMode(row)}
-              </td>
-              <td className="px-4 py-3 text-gray-500">
-                {row.created_by_name || ''}
-              </td>
-            </PaymentHistoryRow>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 // â”€â”€â”€ CBU TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1711,7 +1674,9 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           });
           rollbacks.push(() => deleteTransaction(loanTx.id));
 
-          await applyLoanPaymentToSchedule(loan.id, loanPay, paymentDate);
+          await applyLoanPaymentToSchedule(loan.id, loanPay, paymentDate, {
+            principal: loanPay, interest: 0, paymentId: loanTx.id,
+          });
         }
 
         if (cbuPay > 0) {

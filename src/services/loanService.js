@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { isLoanWorkflowLocked } from '../utils/loanListState';
+import { applyLoanAllocation, reverseLoanAllocation, schedulePaymentBalances } from '../utils/loanPaymentAllocation';
 
 // ── Inlined helpers (no external engine dependency) ───────────────────────────
 // These are kept here so loanService.js never fails to load due to a missing file.
@@ -82,7 +84,8 @@ function applyPaymentToSchedule(schedule, paymentAmount, paidAt = new Date().toI
 
 function computeLoanStatus(balance, dueDate, schedule = []) {
   const bal = safeNum(balance);
-  if (bal <= 0) return 'paid';
+  const scheduledOutstanding = schedule.some(row => !row.paid && Number(row.remaining_due ?? row.total_due ?? row.payment ?? 0) > 0);
+  if (bal <= 0 && !scheduledOutstanding) return 'paid';
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -144,6 +147,7 @@ const LOAN_COLUMNS = [
   'monthly_amortization', 'release_date', 'due_date', 'status', 'purpose', 'notes',
   'repayment_frequency', 'loan_method', 'source', 'advance_payment',
   'funding_source', 'financing_note',
+  'approval_status',
 
   'loan_proposal', 'service_fee', 'share_capital', 'loan_insurance', 'regular_savings',
   'regular_savings_percent',
@@ -313,6 +317,12 @@ export async function createLoan(payload) {
   return result.data;
 }
 
+export async function updateLoanDetails(id, payload) {
+  const loan = await getLoanById(id);
+  if (isLoanWorkflowLocked(loan)) throw new Error('Released loans cannot be edited.');
+  return updateLoan(id, payload);
+}
+
 export async function updateLoan(id, payload) {
   const clean = sanitizeLoanPayload(payload);
 
@@ -423,7 +433,7 @@ export async function getLoanStats() {
  * Apply a loan payment to the amortization schedule using the unified engine.
  * Updates the loan's schedule JSON, summary JSON, balance, due date, and status.
  */
-export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentDate = null) {
+export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentDate = null, allocation = null) {
   const amount = round2(safeNum(paymentAmount));
   if (!loanId || amount <= 0) throw new Error('Valid loan ID and payment amount are required.');
 
@@ -434,13 +444,18 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
   if (!Array.isArray(schedule) || schedule.length === 0) return loan;
 
   // Engine handles all payment allocation
-  const { schedule: updatedSchedule } = applyPaymentToSchedule(schedule, amount, paymentDate || undefined);
+  if (allocation && round2(Number(allocation.principal || 0) + Number(allocation.interest || 0)) !== amount) {
+    throw new Error('Principal and interest must equal the payment amount.');
+  }
+  const updatedSchedule = allocation
+    ? applyLoanAllocation(schedule, allocation, paymentDate || new Date().toISOString())
+    : applyPaymentToSchedule(schedule, amount, paymentDate || undefined).schedule;
 
   // Recompute balance from remaining unpaid principal
   const unpaidPrincipal = round2(
     updatedSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
   );
-  const newBalance = unpaidPrincipal;
+  const newBalance = allocation ? schedulePaymentBalances(updatedSchedule).principal / 100 : unpaidPrincipal;
 
   // Recompute status using engine
   const nextUnpaid = updatedSchedule.find(r => !r.paid);
@@ -461,7 +476,9 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
       status: newStatus,
       due_date: nextUnpaid?.due_date || loan.due_date || null,
       preview_schedule_json: JSON.stringify(updatedSchedule),
-      preview_summary_json: JSON.stringify(updatedSummary),
+      preview_summary_json: JSON.stringify({ ...updatedSummary,
+        ...(summary.loan_product ? { loan_product: summary.loan_product } : {}),
+      }),
     })
     .eq('id', loanId)
     .select()
@@ -471,7 +488,7 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
   return data;
 }
 
-export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount) {
+export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allocation = null) {
   const amount = round2(safeNum(paymentAmount));
   if (!loanId || amount <= 0) throw new Error('Valid loan ID and payment amount are required.');
 
@@ -481,10 +498,13 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount) {
 
   if (!Array.isArray(schedule) || schedule.length === 0) return loan;
 
+  if (allocation && round2(Number(allocation.principal || 0) + Number(allocation.interest || 0)) !== amount) {
+    throw new Error('Principal and interest must equal the reversal amount.');
+  }
   let remaining = amount;
-  const updatedSchedule = schedule.map(r => ({ ...r }));
+  const updatedSchedule = allocation ? reverseLoanAllocation(schedule, allocation) : schedule.map(r => ({ ...r }));
 
-  for (let i = updatedSchedule.length - 1; i >= 0 && remaining > 0; i--) {
+  for (let i = updatedSchedule.length - 1; !allocation && i >= 0 && remaining > 0; i--) {
     const row = updatedSchedule[i];
     const paidAmount = round2(row.paid_amount || 0);
     if (paidAmount <= 0) continue;
@@ -516,7 +536,7 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount) {
     remaining = round2(remaining - reversal);
   }
 
-  const unpaidPrincipal = round2(
+  const unpaidPrincipal = allocation ? schedulePaymentBalances(updatedSchedule).principal / 100 : round2(
     updatedSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
   );
   const nextUnpaid = updatedSchedule.find(r => !r.paid);
@@ -535,7 +555,9 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount) {
       status: newStatus,
       due_date: nextUnpaid?.due_date || loan.due_date || null,
       preview_schedule_json: JSON.stringify(updatedSchedule),
-      preview_summary_json: JSON.stringify(updatedSummary),
+      preview_summary_json: JSON.stringify({ ...updatedSummary,
+        ...(summary.loan_product ? { loan_product: summary.loan_product } : {}),
+      }),
     })
     .eq('id', loanId)
     .select()
@@ -553,7 +575,7 @@ export async function getLoanPaymentHistory(loanId) {
     .from('transactions')
     .select('*')
     .eq('loan_id', loanId)
-    .eq('type', 'loan_payment')
+    .in('type', ['loan_payment', 'loan_interest'])
     .order('transaction_date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -671,6 +693,9 @@ export async function getLoanPortfolioAnalytics() {
  * Requires approval_status and approval_notes columns (see migration SQL).
  */
 export async function updateLoanApprovalStatus(loanId, approvalStatus, notes = '') {
+  const loan = await getLoanById(loanId);
+  if (isLoanWorkflowLocked(loan)) throw new Error('Released loans cannot be edited.');
+  if (approvalStatus === 'released') throw new Error('Release this loan through its approved check.');
   const nextStatus = approvalStatus === 'approved' ? 'approved' : approvalStatus;
   const { data, error } = await supabase
     .from('loans')

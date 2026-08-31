@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Wallet, PieChart, Percent, CreditCard, ChevronDown, ChevronUp } from 'lucide-react';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
+import { getLoanProductLabel } from '../../utils/loanProducts';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { parseLoanJSON as parseJSONSafe, getLoanFinancials, getLoanRecordDate, isLoanReleased } from '../../utils/loanListState';
 import { installmentRemaining, installmentStatus, loanFrequencyLabel, memberLoanCollections } from '../../utils/loanPaymentDisplay';
@@ -49,6 +50,7 @@ export default function MemberLoanCard({ loan, navigate, onPay, paymentCount, tr
               {loanFrequencyLabel(loan.repayment_frequency)} <span className="text-emerald-600 px-1">&bull;</span> {schedule.length} installments
             </p>
             <p className="text-xs text-gray-500 mt-1">Payments recorded: {paymentCount}</p>
+            <p className="text-xs text-gray-500 mt-1">Loan Product: {getLoanProductLabel(loan)}</p>
             {released && outstanding > 0 && nextDue && (
               <p className="text-sm text-orange-600 mt-2">
                 Next Due: {formatDate(nextDue.due_date)} &bull; {formatCurrency(installmentRemaining(nextDue))}

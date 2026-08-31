@@ -1305,7 +1305,8 @@ function getLoanInterestDue(loan) {
   const nextDue = schedule.find(row => !row.paid && Number(row.remaining_due ?? row.total_due ?? row.payment ?? 0) > 0)
     || schedule.find(row => !row.paid)
     || null;
-  return Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) || 0;
+  return Math.max(0, Number(nextDue?.interest_remaining ??
+    (Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) - Number(nextDue?.interest_paid_amount || 0))) || 0);
 }
 
 

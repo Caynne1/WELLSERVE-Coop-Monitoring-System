@@ -22,7 +22,9 @@ import Select from '../../components/ui/Select';
 import Spinner from '../../components/ui/Spinner';
 import MemberSearchInput from '../../components/shared/MemberSearchInput';
 
-import { createLoan, updateLoan, getLoanById } from '../../services/loanService';
+import { createLoan, updateLoanDetails, getLoanById } from '../../services/loanService';
+import { isLoanWorkflowLocked } from '../../utils/loanListState';
+import { getLoanProductCode } from '../../utils/loanProducts';
 import { trackActivity } from '../../services/logService';
 import { getAccountsByMemberId } from '../../services/accountService';
 import {
@@ -579,6 +581,7 @@ export default function LoanFormPage() {
 
   const watchedLoanType = useWatch({ control, name: 'loan_type' });
   const watchedProduct = useWatch({ control, name: 'loan_product' });
+  const productSelectionRef = useRef(null);
   const watchedRate = useWatch({ control, name: 'interest_rate' });
   const watchedTerm = useWatch({ control, name: 'term_months' });
   const watchedOldCalculationBasis = useWatch({ control, name: 'old_calculation_basis' });
@@ -940,6 +943,9 @@ export default function LoanFormPage() {
 
 
   useEffect(() => {
+    const selection = `${watchedProduct || ''}|${watchedLoanType || ''}`;
+    if (productSelectionRef.current === selection) return;
+    productSelectionRef.current = selection;
     if (!watchedProduct || watchedProduct === 'custom') return;
     const cfg = LOAN_PRODUCT_MAP[watchedProduct];
     if (!cfg) return;
@@ -1088,8 +1094,18 @@ export default function LoanFormPage() {
     async function bootstrapEdit() {
       try {
         const data = await getLoanById(id);
+        if (isLoanWorkflowLocked(data)) {
+          toast.error('Released loans cannot be edited.');
+          navigate(`/loans/${id}`, { replace: true });
+          return;
+        }
         const firstPaymentDueDate = parseFirstScheduleDueDate(data.preview_schedule_json);
         const savedSummary = parseJSONSafe(data.preview_summary_json, {});
+        const savedProduct = getLoanProductCode(data);
+        const savedLoanType = data.loan_type || savedSummary.loan_type
+          || (OLD_FORMULA_FREQUENCY_VALUES.includes(data.repayment_frequency) ? 'existing' : 'new');
+        // Restoring the product must not replace the saved rate or method with presets.
+        productSelectionRef.current = `${savedProduct}|${savedLoanType}`;
         const savedDeductions = parseJSONSafe(data.preview_deductions_json, {});
         const savedMembershipDeduction = savedDeductions.membership_deduction;
         const savedPaymentCount = Number(savedSummary.old_number_of_payments ?? savedSummary.number_of_payments) || 0;
@@ -1102,9 +1118,8 @@ export default function LoanFormPage() {
 
         reset({
           member_id: data.member_id,
-          loan_type: data.loan_type
-            || savedSummary.loan_type
-            || (OLD_FORMULA_FREQUENCY_VALUES.includes(data.repayment_frequency) ? 'existing' : 'new'),
+          loan_product: savedProduct,
+          loan_type: savedLoanType,
           amount: data.amount || '',
           interest_rate: data.interest_rate || '2.5',
           term_months: data.term_months || '',
@@ -1530,6 +1545,7 @@ export default function LoanFormPage() {
 
         preview_summary_json: JSON.stringify({
           ...preview.summary,
+          loan_product: values.loan_product || '',
           loan_type: values.loan_type,
           notes: values.notes?.trim() || null,
         }),
@@ -1545,7 +1561,7 @@ export default function LoanFormPage() {
 
       let loan;
       if (isEdit) {
-        loan = await updateLoan(id, payload);
+        loan = await updateLoanDetails(id, payload);
 
         const memberDisplayName = [
           selectedMember?.first_name,

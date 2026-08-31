@@ -293,13 +293,14 @@ export async function deleteInvoiceAndLinkedRecords(id, { deleted_by = null } = 
     const loanGroups = relatedTransactions.reduce((map, tx) => {
       if (!tx.loan_id) return map;
       if (!['loan_payment', 'loan_interest'].includes(String(tx.type || '').toLowerCase())) return map;
-      const current = map.get(tx.loan_id) || 0;
-      map.set(tx.loan_id, current + Number(tx.amount || 0));
+      const current = map.get(tx.loan_id) || { principal: 0, interest: 0, paymentId: invoice.id };
+      current[tx.type === 'loan_interest' ? 'interest' : 'principal'] += Number(tx.amount || 0);
+      map.set(tx.loan_id, current);
       return map;
     }, new Map());
 
-    for (const [loanId, total] of loanGroups.entries()) {
-      await reverseLoanPaymentFromSchedule(loanId, total);
+    for (const [loanId, allocation] of loanGroups.entries()) {
+      await reverseLoanPaymentFromSchedule(loanId, allocation.principal + allocation.interest, allocation);
     }
   }
 
@@ -931,6 +932,13 @@ export async function createMultiCategoryInvoice({
         if (principalAmount > (entry.loan.balance || 0)) {
           throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
         }
+        const loanBeforePayment = Object.fromEntries([
+          'balance', 'status', 'due_date', 'preview_schedule_json', 'preview_summary_json',
+        ].map(key => [key, entry.loan[key] ?? null]));
+        rollbacks.push(async () => {
+          const { error } = await supabase.from('loans').update(loanBeforePayment).eq('id', entry.loan.id);
+          if (error) throw error;
+        });
         if (principalAmount > 0) {
           const loanTx = await createTransaction({
             member_id: member.id,
@@ -1004,7 +1012,9 @@ export async function createMultiCategoryInvoice({
           });
         }
         if (scheduleAmount > 0) {
-          await applyLoanPaymentToSchedule(entry.loan.id, scheduleAmount, effectivePaymentDate);
+          await applyLoanPaymentToSchedule(entry.loan.id, scheduleAmount, effectivePaymentDate, {
+            principal: principalAmount, interest: interestAmount, paymentId: savedInvoice.id,
+          });
         }
         ref_id = entry.loan.id;
         purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;

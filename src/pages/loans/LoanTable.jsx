@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { MoreHorizontal, Eye, Pencil, ArrowRight, Check, Trash2, ArrowUpDown, ChevronUp, ChevronDown, CreditCard } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
+import { getLoanProductLabel } from '../../utils/loanProducts';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getLoanFinancials, getLoanDueState, normalizeLoanStatus, getLoanTypeLabel, getLoanRecordDate } from '../../utils/loanListState';
+import { getLoanFinancials, getLoanDueState, normalizeLoanStatus, getLoanTypeLabel, getLoanRecordDate, isLoanWorkflowLocked } from '../../utils/loanListState';
 
 const COLUMNS = [
   { key: 'member', label: 'Member', width: '14%', align: 'left' },
@@ -42,6 +43,9 @@ function LoanIdentity({ loan }) {
       </p>
       <p className="mt-1 text-xs text-gray-500 [overflow-wrap:anywhere]">
         {loan.members?.member_no || 'No member number'}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-gray-500 [overflow-wrap:anywhere]">
+        {getLoanProductLabel(loan)}
       </p>
       {recordDate && (
         <p className="mt-1 text-[11px] leading-4 text-gray-500">
@@ -132,12 +136,12 @@ function LoanActions({ loan, canEdit, canApprove, canDelete, savingId, onView, o
   return (
     <div role="group" aria-label="Loan actions" className="flex flex-wrap items-center gap-1 xl:justify-center">
       <ActionButton label="View" icon={Eye} onClick={() => onView(loan)} />
-      {canEdit && <ActionButton label="Edit" icon={Pencil} onClick={() => onEdit(loan)} disabled={busy} />}
-      {status === 'draft' && canEdit && (
+      {canEdit && !isLoanWorkflowLocked(loan) && <ActionButton label="Edit" icon={Pencil} onClick={() => onEdit(loan)} disabled={busy} />}
+      {status === 'draft' && canEdit && !isLoanWorkflowLocked(loan) && (
         <ActionButton label="Submit for Approval" icon={ArrowRight} onClick={() => onWorkflow(loan)}
           disabled={busy} tone="text-green-700 hover:bg-green-50" />
       )}
-      {status === 'credit_committee_approval' && canApprove && (
+      {status === 'credit_committee_approval' && canApprove && !isLoanWorkflowLocked(loan) && (
         <ActionButton label="Approve" icon={Check} onClick={() => onWorkflow(loan)}
           disabled={busy} tone="text-green-700 hover:bg-green-50" />
       )}
