@@ -23,7 +23,7 @@ function loanFingerprint(memberId, releaseDate, amount) {
   return `${memberId}|${releaseDate || ''}|${round2(safeNum(amount))}`;
 }
 
-function applyPaymentToSchedule(schedule, paymentAmount) {
+function applyPaymentToSchedule(schedule, paymentAmount, paidAt = new Date().toISOString()) {
   if (!Array.isArray(schedule) || schedule.length === 0)
     return { schedule: [], applied: 0, remaining: safeNum(paymentAmount) };
 
@@ -51,7 +51,7 @@ function applyPaymentToSchedule(schedule, paymentAmount) {
       const interestPaidNow = interestForPayment(rowDue);
       row.paid = true;
       row.paid_amount = round2(previousPaid + rowDue);
-      row.paid_at = new Date().toISOString();
+      row.paid_at = paidAt;
       row.remaining_due = 0;
       row.partial_paid = false;
       row.interest_paid_amount = rowInterest;
@@ -66,7 +66,7 @@ function applyPaymentToSchedule(schedule, paymentAmount) {
       row.paid_amount = round2(previousPaid + remaining);
       row.partial_paid_amount = row.paid_amount;
       row.remaining_due = round2(rowDue - remaining);
-      row.last_partial_paid_at = new Date().toISOString();
+      row.last_partial_paid_at = paidAt;
       row.interest_paid_amount = round2(previousInterestPaid + interestPaidNow);
       row.last_interest_paid_amount = interestPaidNow;
       row.last_interest_paid_at = row.last_partial_paid_at;
@@ -423,7 +423,7 @@ export async function getLoanStats() {
  * Apply a loan payment to the amortization schedule using the unified engine.
  * Updates the loan's schedule JSON, summary JSON, balance, due date, and status.
  */
-export async function applyLoanPaymentToSchedule(loanId, paymentAmount) {
+export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentDate = null) {
   const amount = round2(safeNum(paymentAmount));
   if (!loanId || amount <= 0) throw new Error('Valid loan ID and payment amount are required.');
 
@@ -434,7 +434,7 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount) {
   if (!Array.isArray(schedule) || schedule.length === 0) return loan;
 
   // Engine handles all payment allocation
-  const { schedule: updatedSchedule } = applyPaymentToSchedule(schedule, amount);
+  const { schedule: updatedSchedule } = applyPaymentToSchedule(schedule, amount, paymentDate || undefined);
 
   // Recompute balance from remaining unpaid principal
   const unpaidPrincipal = round2(

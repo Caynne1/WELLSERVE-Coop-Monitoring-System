@@ -872,7 +872,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
           payment_mode_note: paymentModeNote,
         });
 
-        await applyLoanPaymentToSchedule(loan.id, loanPay);
+        await applyLoanPaymentToSchedule(loan.id, loanPay, paymentDate);
       }
 
       if (cbuPay > 0) {

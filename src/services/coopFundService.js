@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import { createInvoice } from './invoiceService';
 import { getMembershipMonitoringIncomeSummary } from './membershipMonitoringService';
 import { sumCashInLedger } from '../utils/fundCashIn';
+import { loanInterestForPeriod } from '../utils/loanInterestPeriod';
 
 // ── Primary: reads from coop_fund + fund_transactions ────────────────────────
 
@@ -595,50 +596,21 @@ export async function recordManualFundDeposit({
  */
 export async function getIncomeBreakdown({ from = null, to = null } = {}) {
   const toEndOfDay = to ? `${to}T23:59:59` : null;
-  const hasDateFilter = Boolean(from || toEndOfDay);
 
-  const inRange = (value) => {
-    if (!value) return !from && !toEndOfDay;
-    const d = new Date(value);
-    if (from && d < new Date(from)) return false;
-    if (toEndOfDay && d > new Date(toEndOfDay)) return false;
-    return true;
-  };
-
-  const { data: loans = [], error: loanErr } = await supabase
-    .from('loans')
-    .select('id, preview_schedule_json');
-  if (loanErr) throw loanErr;
-
-  let loanInterest = 0;
-  for (const loan of loans) {
-    try {
-      const schedule = typeof loan.preview_schedule_json === 'string'
-        ? JSON.parse(loan.preview_schedule_json)
-        : (loan.preview_schedule_json || []);
-
-      if (Array.isArray(schedule)) {
-        for (const row of schedule) {
-          const paidDate = row.last_interest_paid_at || row.paid_at || row.last_partial_paid_at || null;
-          if ((row.paid || row.partial_paid) && inRange(paidDate)) {
-            const fullInterest = Number(row.interest || row.interest_amount || 0);
-            const totalDue = Number(row.total_due || row.payment || ((row.principal || 0) + fullInterest));
-            const proportionalInterest = totalDue > 0
-              ? Math.min(fullInterest, fullInterest * (Number(row.paid_amount || 0) / totalDue))
-              : fullInterest;
-            loanInterest += Number(
-              hasDateFilter && row.last_interest_paid_amount != null
-                ? row.last_interest_paid_amount
-                : row.interest_paid_amount != null
-                  ? row.interest_paid_amount
-                  : row.paid
-                    ? fullInterest
-                    : proportionalInterest
-            );
-          }
-        }
-      }
-    } catch { /* skip malformed JSON */ }
+  async function fetchInterestPayments() {
+    const payments = [];
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: page = [], error } = await supabase
+        .from('transactions')
+        .select('id, loan_id, type, amount, transaction_date')
+        .eq('type', 'loan_interest')
+        .order('id')
+        .range(offset, offset + pageSize - 1);
+      if (error) throw error;
+      payments.push(...page);
+      if (page.length < pageSize) return payments;
+    }
   }
 
   let txQuery = supabase
@@ -648,8 +620,18 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
   if (from) txQuery = txQuery.gte('transaction_date', from);
   if (toEndOfDay) txQuery = txQuery.lte('transaction_date', toEndOfDay);
 
-  const { data: txList = [], error: txErr } = await txQuery;
+  // Independent sources load together; interest pagination remains sequential.
+  const [loanResult, interestPayments, txResult, membershipIncome] = await Promise.all([
+    supabase.from('loans').select('id, preview_schedule_json'),
+    fetchInterestPayments(),
+    txQuery,
+    getMembershipMonitoringIncomeSummary({ from, to }),
+  ]);
+  const { data: loans = [], error: loanErr } = loanResult;
+  const { data: txList = [], error: txErr } = txResult;
+  if (loanErr) throw loanErr;
   if (txErr) throw txErr;
+  const loanInterest = loanInterestForPeriod(loans, interestPayments, { from, to });
   const incomeTxList = dedupeLoanDeductionTransactions(txList);
 
   const isMembershipDeposit = (tx, category) => {
@@ -735,7 +717,6 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     }
   }
 
-  const membershipIncome = await getMembershipMonitoringIncomeSummary({ from, to });
   buckets.membership_fee = membershipIncome.membership_fee || 0;
   buckets.membership_cbu = membershipIncome.membership_cbu || 0;
   buckets.membership_savings = membershipIncome.membership_savings || 0;

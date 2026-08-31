@@ -1003,7 +1003,7 @@ export async function createMultiCategoryInvoice({
           });
         }
         if (scheduleAmount > 0) {
-          await applyLoanPaymentToSchedule(entry.loan.id, scheduleAmount);
+          await applyLoanPaymentToSchedule(entry.loan.id, scheduleAmount, effectivePaymentDate);
         }
         ref_id = entry.loan.id;
         purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;

@@ -1796,7 +1796,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
           });
           rollbacks.push(() => deleteTransaction(loanTx.id));
 
-          await applyLoanPaymentToSchedule(loan.id, loanPay);
+          await applyLoanPaymentToSchedule(loan.id, loanPay, paymentDate);
         }
 
         if (cbuPay > 0) {

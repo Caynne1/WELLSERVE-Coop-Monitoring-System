@@ -1004,6 +1004,8 @@ export default function CoopMonitoringPage() {
   const [incomeRange, setIncomeRange]       = useState({ from: '', to: '' });
   const [incomeData, setIncomeData]         = useState(null);
   const [incomeLoading, setIncomeLoading]   = useState(true);
+  const [incomeError, setIncomeError]       = useState(false);
+  const incomeRequestId = useRef(0);
 
   function getDateRangeForPeriod(period) {
     const today = new Date();
@@ -1028,17 +1030,20 @@ export default function CoopMonitoringPage() {
   }
 
   const fetchIncome = useCallback(async (period = incomePeriod, range = incomeRange) => {
+    const requestId = ++incomeRequestId.current;
     try {
       setIncomeLoading(true);
+      setIncomeError(false);
       const dr = dateRange.from || dateRange.to
         ? dateRange
         : period === 'custom' ? range : getDateRangeForPeriod(period);
       const data = await getIncomeBreakdown({ from: dr.from || null, to: dr.to || null });
-      setIncomeData(data);
+      if (requestId === incomeRequestId.current) setIncomeData(data);
     } catch (err) {
+      if (requestId === incomeRequestId.current) setIncomeError(true);
       console.error('[CoopMonitoringPage] income fetch error:', err);
     } finally {
-      setIncomeLoading(false);
+      if (requestId === incomeRequestId.current) setIncomeLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incomePeriod, incomeRange, dateRange]);
@@ -1524,7 +1529,7 @@ export default function CoopMonitoringPage() {
         }
       />
 
-      {loading ? (
+      {loading || incomeLoading ? (
         <div className="flex justify-center py-24"><Spinner /></div>
       ) : (
         <>
@@ -1565,7 +1570,7 @@ export default function CoopMonitoringPage() {
             <StatCard
               icon={<TrendingUp size={22} className="text-green-600" />}
               label="Loan Interest"
-              value={formatCurrency(incomeData?.loan_interest || 0)}
+              value={incomeError ? 'Unavailable' : formatCurrency(incomeData?.loan_interest || 0)}
               sub="Interest earned from loan"
               bg="bg-green-50"
               textColor="text-green-700"
