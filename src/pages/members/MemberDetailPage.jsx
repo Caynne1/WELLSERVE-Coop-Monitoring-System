@@ -16,6 +16,8 @@ import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import LoanCard from './MemberLoanCard';
+import { MemberPaymentNavigation, PaymentHistoryRow } from './MemberPaymentNavigation';
+import { loanPaymentHistoryRows, paymentDate } from '../../utils/memberPaymentHistory';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 
@@ -61,6 +63,7 @@ const TABS = [
   { id: 'loan',            label: 'Loan',           icon: CreditCard },
   { id: 'cbu',             label: 'CBU',            icon: PiggyBank },
   { id: 'savings',         label: 'Savings',        icon: Wallet },
+  { id: 'transactions',    label: 'Transactions',   icon: ArrowLeftRight },
   { id: 'time_deposit',    label: 'Time Deposit',   icon: Clock },
   { id: 'savings_booster', label: 'Savings Booster', icon: Sprout },
 ];
@@ -76,6 +79,19 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'Check', label: 'Check' },
   { value: 'Others', label: 'Others' },
 ];
+
+function displayTracingText(value) {
+  return String(value ?? '')
+    .replace(/\bnot\s+traceable\b/gi, 'FOR TRACING')
+    .replace(/\u00e2\u20ac\u201d/g, '-')
+    .replace(/\u00c3\u00a2\u00e2\u201a\u00ac\u00e2\u20ac\u009d/g, '-');
+}
+
+function displayPaymentMode(row) {
+  const mode = displayTracingText(row.payment_mode);
+  if (mode.trim()) return mode;
+  return row.type === 'loan_deduction' ? 'Loan Deduction' : '';
+}
 
 function parseJSONSafe(val, fallback = {}) {
   try {
@@ -185,7 +201,17 @@ export default function MemberDetailPage() {
           getMembershipPayments(ms.id),
           getMembershipUpgradeLogs(ms.id),
         ]);
-        setMembershipPayments(payments || []);
+        const creatorIds = [...new Set((payments || []).map(payment => payment.created_by).filter(Boolean))];
+        let creators = {};
+        if (creatorIds.length) {
+          const { data: profiles, error } = await supabase.from('profiles')
+            .select('id, full_name, email').in('id', creatorIds);
+          if (error) console.warn('[MemberDetailPage] membership staff lookup:', error);
+          creators = Object.fromEntries((profiles || []).map(profile => [profile.id, profile.full_name || profile.email || '']));
+        }
+        setMembershipPayments((payments || []).map(payment => ({
+          ...payment, created_by_name: creators[payment.created_by] || '',
+        })));
         setUpgradeLogs(logs || []);
       } else {
         setMembershipPayments([]);
@@ -253,8 +279,7 @@ export default function MemberDetailPage() {
 
   useEffect(() => {
     if (
-      (member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(activeTab)) ||
-      activeTab === 'transactions'
+      member?.membership_type === 'kiddy' && HIDDEN_FOR_KIDDY.has(activeTab)
     ) {
       setSearchParams({ tab: 'overview' });
     }
@@ -316,61 +341,7 @@ export default function MemberDetailPage() {
     [transactions]
   );
 
-  const paymentHistoryRows = useMemo(() => {
-    const relevant = transactions
-      .filter(t => t.type === 'loan_payment')
-      .sort((a, b) => {
-        const aDate = a.transaction_date || a.created_at;
-        const bDate = b.transaction_date || b.created_at;
-        return new Date(bDate) - new Date(aDate);
-      });
-
-    const grouped = [];
-
-    for (const tx of relevant) {
-      const txDateValue = tx.transaction_date || tx.created_at;
-      const txDate = new Date(txDateValue);
-      const txDay = String(tx.transaction_date || txDate.toISOString().slice(0, 10));
-
-      const last = grouped[grouped.length - 1];
-
-      const canMerge =
-        last &&
-        last.created_by === (tx.created_by || 'System') &&
-        last.created_by_name === (tx.created_by_name || 'System') &&
-        last.tx_day === txDay &&
-        last.payment_mode === (tx.payment_mode || '') &&
-        last.payment_mode_note === (tx.payment_mode_note || '');
-
-      if (canMerge) {
-        last.loan_amount += Number(tx.amount || 0);
-
-        if (txDate > new Date(last.latest_created_at)) {
-          last.latest_created_at = tx.created_at;
-        }
-
-        last.ids.push(tx.id);
-      } else {
-        grouped.push({
-          id: tx.id,
-          ids: [tx.id],
-          created_at: tx.created_at,
-          latest_created_at: tx.created_at,
-          transaction_date: tx.transaction_date || txDay,
-          tx_day: txDay,
-          created_by: tx.created_by || 'System',
-          created_by_name: tx.created_by_name || 'System',
-          payment_mode: tx.payment_mode || '',
-          payment_mode_note: tx.payment_mode_note || '',
-          loan_amount: Number(tx.amount || 0),
-          cbu_amount: 0,
-          savings_amount: 0,
-        });
-      }
-    }
-
-    return grouped;
-  }, [transactions]);
+  const paymentHistoryRows = useMemo(() => loanPaymentHistoryRows(transactions), [transactions]);
 
   const loanPaymentCount = loanTransactions.filter(t => t.type === 'loan_payment').length;
   const cbuPaymentCount = cbuTransactions.filter(t => t.type === 'deposit').length;
@@ -397,11 +368,11 @@ export default function MemberDetailPage() {
     const savAcc = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
     const activeLoans = loans.filter(isCurrentLoan);
     const loanRows = activeLoans.map(l => `<tr>
-      <td>${l.loan_no||'â€”'}</td>
+      <td>${l.loan_no||'-'}</td>
       <td style="text-transform:capitalize">${(l.loan_type||'').replace(/_/g,' ')}</td>
       <td style="text-align:right;font-weight:600">${fmt(l.principal_amount)}</td>
       <td style="text-align:right;color:#b91c1c">${fmt(l.outstanding_balance)}</td>
-      <td style="text-align:center">${l.status||'â€”'}</td>
+      <td style="text-align:center">${l.status||'-'}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Member Record</h1>
@@ -409,11 +380,11 @@ export default function MemberDetailPage() {
       <div class="section-heading">Personal Information</div>
       <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
         <div class="stat-box"><div class="stat-label">Full Name</div><div class="stat-value" style="font-size:12pt">${member?.first_name||''} ${member?.last_name||''}</div></div>
-        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${formatMemberNo(member?.member_no)||'â€”'}</div></div>
-        <div class="stat-box"><div class="stat-label">Type</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.membership_type||'â€”'}</div></div>
-        <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.status||'â€”'}</div></div>
-        <div class="stat-box"><div class="stat-label">Contact</div><div class="stat-value" style="font-size:11pt">${member?.contact_no||'â€”'}</div></div>
-        <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${member?.date_joined||member?.created_at?.slice(0,10)||'â€”'}</div></div>
+        <div class="stat-box"><div class="stat-label">Member No.</div><div class="stat-value" style="font-size:12pt">${formatMemberNo(member?.member_no)||'-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Type</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.membership_type||'-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value" style="font-size:12pt;text-transform:capitalize">${member?.status||'-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Contact</div><div class="stat-value" style="font-size:11pt">${member?.contact_no||'-'}</div></div>
+        <div class="stat-box"><div class="stat-label">Date Joined</div><div class="stat-value" style="font-size:11pt">${member?.date_joined||member?.created_at?.slice(0,10)||'-'}</div></div>
       </div>
       <div class="section-heading">Account Balances</div>
       <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
@@ -426,9 +397,9 @@ export default function MemberDetailPage() {
         <thead><tr><th>Loan No.</th><th>Type</th><th style="text-align:right">Principal</th><th style="text-align:right">Outstanding</th><th style="text-align:center">Status</th></tr></thead>
         <tbody>${loanRows}</tbody>
       </table>` : ''}
-      <div class="confidential">WELLSERVE Cooperative Monitoring System â€” Authorized personnel only.</div>
+      <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
     `;
-    const win = printHtmlDocument(wrapWithLetterhead(html, {title:`Member â€” ${member?.first_name||''} ${member?.last_name||''}`}), {
+    const win = printHtmlDocument(wrapWithLetterhead(html, {title:`Member - ${member?.first_name||''} ${member?.last_name||''}`}), {
       onBlocked: () => toast.error('Pop-up blocked. Please allow pop-ups and try again.'),
     });
     if (win) toast.success('Print dialog opened.');
@@ -461,6 +432,7 @@ export default function MemberDetailPage() {
   const memberFullName = `${member.first_name || ''} ${member.last_name || ''}`.trim();
 
   return (
+    <MemberPaymentNavigation memberId={id}>
     <div className="p-4 md:p-6 max-w-7xl mx-auto bg-gray-50/30 min-h-screen">
       {/* Back button */}
       <button
@@ -675,8 +647,7 @@ export default function MemberDetailPage() {
               transactions={cbuTransactions}
               displayBalance={cbuDisplayBalance}
               paymentCount={cbuPaymentCount}
-              onDeposit={() => setCbuDepositModal(true)}
-              onWithdraw={() => setCbuWithdrawModal(true)}
+              membershipDate={member.date_joined}
             />
           )}
 
@@ -686,10 +657,11 @@ export default function MemberDetailPage() {
               transactions={savingsTransactions}
               displayBalance={savingsDisplayBalance}
               paymentCount={savingsPaymentCount}
-              onDeposit={() => setSavingsDepositModal(true)}
-              onWithdraw={() => setSavingsWithdrawModal(true)}
+              membershipDate={member.date_joined}
             />
           )}
+
+          {activeTab === 'transactions' && <TransactionsTab transactions={transactions} />}
 
           {activeTab === 'membership' && (
             <MembershipTab
@@ -810,6 +782,7 @@ export default function MemberDetailPage() {
         onSuccess={refreshEverything}
       />
     </div>
+    </MemberPaymentNavigation>
   );
 }
 
@@ -833,7 +806,7 @@ function InfoRow({ icon: Icon, label, value }) {
       <Icon size={15} className="text-gray-400 mt-0.5 flex-shrink-0" />
       <div className="min-w-0">
         <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-        <p className="text-sm text-gray-800 break-words">{value || 'â€”'}</p>
+        <p className="text-sm text-gray-800 break-words">{value || '-'}</p>
       </div>
     </div>
   );
@@ -843,7 +816,7 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
   const fullName = `${member.first_name || ''} ${member.middle_initial ? `${member.middle_initial}. ` : ''}${member.last_name || ''}`.trim();
   const membershipLabel = displayMembershipType
     ? displayMembershipType.charAt(0).toUpperCase() + displayMembershipType.slice(1)
-    : 'â€”';
+    : '-';
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -875,7 +848,7 @@ function OverviewTab({ member, displayMembershipType, cbuAccount, savingsAccount
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-700">Member Details</h3>
         </div>
         <div className="grid grid-cols-1 gap-2">
-          <InfoRow icon={Calendar} label="Date Joined" value={member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : 'â€”')} />
+          <InfoRow icon={Calendar} label="Date Joined" value={member.date_joined ? formatDate(member.date_joined) : (member.created_at ? formatDate(member.created_at) : '-')} />
           <InfoRow icon={Shield} label="Membership Type" value={membershipLabel} />
           <InfoRow icon={User} label="Referred By" value={member.recruiter_name || 'Self'} />
           <InfoRow icon={PiggyBank} label="CBU Account No." value={cbuAccount?.account_no || '—'} />
@@ -939,11 +912,11 @@ function LoanTab({ loans, loanTransactions, paymentCount, memberId, memberName, 
 
 function LoanPaymentHistoryTable({ rows }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
+    <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto w-full">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Date & Time', 'Loan Payment', 'Mode', 'Assisted by'].map(h => (
+            {['Payment Date', 'Loan Payment', 'Mode', 'Assisted By'].map(h => (
               <th
                 key={h}
                 className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -955,20 +928,20 @@ function LoanPaymentHistoryTable({ rows }) {
         </thead>
         <tbody className="divide-y divide-gray-50">
           {rows.map(row => (
-            <tr key={row.id}>
+            <PaymentHistoryRow key={row.id} record={row}>
               <td className="px-4 py-3 whitespace-nowrap">
-                {formatDateTime(row.latest_created_at || row.created_at)}
+                {paymentDate(row) ? formatDate(paymentDate(row)) : ''}
               </td>
               <td className="px-4 py-3 font-medium">
-                {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : 'â€”'}
+                {row.loan_amount > 0 ? formatCurrency(row.loan_amount) : '-'}
               </td>
               <td className="px-4 py-3 text-gray-500">
-                {row.payment_mode || 'â€”'}
+                {displayPaymentMode(row)}
               </td>
               <td className="px-4 py-3 text-gray-500">
-                {row.created_by_name || row.created_by || 'System'}
+                {row.created_by_name || ''}
               </td>
-            </tr>
+            </PaymentHistoryRow>
           ))}
         </tbody>
       </table>
@@ -978,9 +951,7 @@ function LoanPaymentHistoryTable({ rows }) {
 
 // â”€â”€â”€ CBU TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit, onWithdraw }) {
-  const { hasPermission } = useAuth();
-  const canEdit = hasPermission('cbu', 'edit');
+function CBUTab({ account, transactions, displayBalance, paymentCount, membershipDate }) {
   if (!account) return <EmptyState icon={PiggyBank} message="No CBU account initialized for this member." />;
 
   return (
@@ -996,21 +967,11 @@ function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
-        {canEdit && (
-        <div className="flex items-center gap-2">
-          <Button onClick={onDeposit} variant="primary" icon={<TrendingUp size={14} />} size="sm">
-            Deposit
-          </Button>
-          <Button onClick={onWithdraw} variant="danger" icon={<TrendingDown size={14} />} size="sm">
-            Withdraw
-          </Button>
-        </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-        <AccountInfoCell label="Account No." value={account.account_no || 'â€”'} mono />
-        <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : 'â€”'} />
+        <AccountInfoCell label="Account No." value={account.account_no || '-'} mono />
+        <AccountInfoCell label="Opened" value={membershipDate ? formatDate(membershipDate) : ''} />
         <AccountInfoCell label="Total Deposits" value={formatCurrency(account.total_deposits ?? 0)} />
         <AccountInfoCell label="Total Withdrawals" value={formatCurrency(account.total_withdrawals ?? 0)} />
       </div>
@@ -1027,9 +988,7 @@ function CBUTab({ account, transactions, displayBalance, paymentCount, onDeposit
 
 // â”€â”€â”€ SAVINGS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function SavingsTab({ account, transactions, displayBalance, paymentCount, onDeposit, onWithdraw }) {
-  const { hasPermission } = useAuth();
-  const canEdit = hasPermission('savings', 'edit');
+function SavingsTab({ account, transactions, displayBalance, paymentCount, membershipDate }) {
   if (!account) return <EmptyState icon={Wallet} message="No Savings account initialized for this member." />;
 
   return (
@@ -1045,21 +1004,11 @@ function SavingsTab({ account, transactions, displayBalance, paymentCount, onDep
             <p className="text-xs text-gray-400 mt-1">Payment Count: {paymentCount}</p>
           </div>
         </div>
-        {canEdit && (
-        <div className="flex items-center gap-2">
-          <Button onClick={onDeposit} variant="primary" icon={<TrendingUp size={14} />} size="sm">
-            Deposit
-          </Button>
-          <Button onClick={onWithdraw} variant="danger" icon={<TrendingDown size={14} />} size="sm">
-            Withdraw
-          </Button>
-        </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-        <AccountInfoCell label="Account No." value={account.account_no || 'â€”'} mono />
-        <AccountInfoCell label="Opened" value={account.created_at ? formatDate(account.created_at) : 'â€”'} />
+        <AccountInfoCell label="Account No." value={account.account_no || '-'} mono />
+        <AccountInfoCell label="Opened" value={membershipDate ? formatDate(membershipDate) : ''} />
         <AccountInfoCell label="Total Deposits" value={formatCurrency(account.total_deposits ?? 0)} />
         <AccountInfoCell label="Total Withdrawals" value={formatCurrency(account.total_withdrawals ?? 0)} />
       </div>
@@ -1089,14 +1038,14 @@ function SavingsBoosterSlotCard({ slot }) {
   return (
     <div className="rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || 'â€”'}</p>
+        <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || '-'}</p>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${statusStyle}`}>
           {slot.status || 'active'}
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-        <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : 'â€”'} />
-        <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : 'â€”'} />
+        <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : '-'} />
+        <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '-'} />
         <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '—'} />
         <AccountInfoCell label="Total Deposited" value={formatCurrency(ledger.totalDeposited)} />
         <AccountInfoCell label="Net Interest" value={formatCurrency(ledger.netInterest)} />
@@ -1182,9 +1131,9 @@ function WellifeVipTab({ transactions }) {
                 <div>
                   <p className="text-sm font-medium text-gray-800">WELLife VIP Card</p>
                   <p className="text-xs text-gray-400">
-                    {tx.payment_mode && <span>{tx.payment_mode} Ã‚Â· </span>}
+                    {tx.payment_mode && <span>{displayTracingText(tx.payment_mode)} Ã‚Â· </span>}
                     {tx.created_by_name && <span>By: {tx.created_by_name} Ã‚Â· </span>}
-                    {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : 'Ã¢â‚¬â€'}
+                    {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : '-'}
                   </p>
                 </div>
               </div>
@@ -1200,49 +1149,15 @@ function WellifeVipTab({ transactions }) {
 }
 
 function TransactionsTab({ transactions }) {
-  const typeStyles = {
-    deposit:            { icon: TrendingUp,   color: 'text-green-600'  },
-    withdrawal:         { icon: TrendingDown, color: 'text-red-600'    },
-    loan_payment:       { icon: TrendingDown, color: 'text-orange-600' },
-    loan_release:       { icon: TrendingUp,   color: 'text-blue-600'   },
-    membership_payment: { icon: TrendingDown, color: 'text-purple-600' },
-  };
-
+  const rows = [...transactions].sort((a, b) =>
+    String(paymentDate(b) || '').localeCompare(String(paymentDate(a) || '')));
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-700 mb-4">All Transactions</h3>
-      {transactions.length === 0 ? (
+      {rows.length === 0 ? (
         <EmptyState icon={ArrowLeftRight} message="No transactions recorded for this member." />
       ) : (
-        <div className="divide-y divide-gray-50">
-          {transactions.map(tx => {
-            const style = typeStyles[tx.type] || { icon: Clock, color: 'text-gray-500' };
-            const TxIcon = style.icon;
-            return (
-              <div key={tx.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                    <TxIcon size={14} className={style.color} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-800 capitalize">
-                      {tx.type?.replace(/_/g, ' ') || 'Transaction'}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {tx.category && <span className="capitalize mr-1">{tx.category} Â·</span>}
-                      {tx.payment_mode && <span>{tx.payment_mode} Â· </span>}
-                      {tx.created_by_name && <span>By: {tx.created_by_name} Â· </span>}
-                      {(tx.transaction_date || tx.created_at) ? formatDate(tx.transaction_date || tx.created_at) : 'â€”'}
-                    </p>
-                  </div>
-                </div>
-                <p className={`text-sm font-semibold ${style.color}`}>
-                  {formatCurrency(tx.amount || 0)}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+        <HistoryTable rows={rows} />
       )}
     </div>
   );
@@ -1350,7 +1265,7 @@ function PenaltyTab({ memberId, memberName, penalties, loading, userId, onRefres
                 <tr key={p.id}>
                   <td className="px-4 py-3">{formatDate(p.penalty_date)}</td>
                   <td className="px-4 py-3 font-semibold text-red-600">{formatCurrency(p.amount)}</td>
-                  <td className="px-4 py-3 text-gray-500">{p.description || 'â€”'}</td>
+                  <td className="px-4 py-3 text-gray-500">{p.description || '-'}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs">{formatDateTime(p.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <button
@@ -1573,14 +1488,14 @@ function CreditProfileTab({ loans, memberName }) {
               <tbody className="divide-y divide-gray-50">
                 {loans.map(loan => (
                   <tr key={loan.id} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{loan.loan_no || 'â€”'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{loan.loan_no || '-'}</td>
                     <td className="px-4 py-3 font-semibold tabular-nums">{formatCurrency(loan.amount)}</td>
                     <td className="px-4 py-3 tabular-nums">
                       <span className={(loan.balance || 0) > 0 ? 'text-orange-600 font-semibold' : 'text-emerald-600'}>
                         {formatCurrency(loan.balance ?? loan.amount)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{loan.term_months ? `${loan.term_months} mo.` : 'â€”'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{loan.term_months ? `${loan.term_months} mo.` : '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
                         ${loan.status === 'paid' ? 'bg-emerald-50 text-emerald-700' :
@@ -1616,11 +1531,11 @@ function AccountInfoCell({ label, value, mono }) {
 
 function HistoryTable({ rows }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
+    <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto w-full">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Date & Time', 'Type', 'Amount', 'Mode', 'Assisted By'].map(h => (
+            {['Payment Date', 'Type', 'Amount', 'Mode', 'Assisted By'].map(h => (
               <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 {h}
               </th>
@@ -1629,15 +1544,15 @@ function HistoryTable({ rows }) {
         </thead>
         <tbody className="divide-y divide-gray-50">
           {rows.map(row => (
-            <tr key={row.id}>
-              <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(row.created_at || row.transaction_date || row.payment_date)}</td>
-              <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || 'â€”'}</td>
+            <PaymentHistoryRow key={row.id} record={row}>
+              <td className="px-4 py-3 whitespace-nowrap">{paymentDate(row) ? formatDate(paymentDate(row)) : ''}</td>
+              <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || '-'}</td>
               <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
                 {formatCurrency(row.amount || 0)}
               </td>
-              <td className="px-4 py-3 text-gray-500">{row.payment_mode || 'â€”'}</td>
-              <td className="px-4 py-3 text-gray-500">{row.created_by_name || 'â€”'}</td>
-            </tr>
+              <td className="px-4 py-3 text-gray-500">{displayPaymentMode(row)}</td>
+              <td className="px-4 py-3 text-gray-500">{row.created_by_name || '-'}</td>
+            </PaymentHistoryRow>
           ))}
         </tbody>
       </table>
@@ -2379,14 +2294,14 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
             <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
               <p className="text-xs text-gray-400 mb-1">Amount</p>
               <p className="text-sm font-semibold text-gray-900">
-                {amount ? formatCurrency(parseFloat(amount) || 0) : 'â€”'}
+                {amount ? formatCurrency(parseFloat(amount) || 0) : '-'}
               </p>
             </div>
 
             <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
               <p className="text-xs text-gray-400 mb-1">Date</p>
               <p className="text-sm font-semibold text-gray-900">
-                {paymentDate ? formatDate(paymentDate) : 'â€”'}
+                {paymentDate ? formatDate(paymentDate) : '-'}
               </p>
             </div>
           </div>
@@ -2394,21 +2309,21 @@ function WithdrawalVoucherModal({ open, onClose, accountType, label, account, me
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
             <p className="text-xs text-gray-400 mb-1">Mode of Payment</p>
             <p className="text-sm font-semibold text-gray-900">
-              {paymentMode || 'â€”'}
+              {paymentMode || '-'}
             </p>
           </div>
 
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
             <p className="text-xs text-gray-400 mb-1">Reference</p>
             <p className="text-sm font-semibold text-gray-900 break-all">
-              {paymentReference || 'â€”'}
+              {paymentReference || '-'}
             </p>
           </div>
 
           <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
             <p className="text-xs text-gray-400 mb-1">Notes</p>
             <p className="text-sm text-gray-900 whitespace-pre-wrap">
-              {paymentNotes || 'â€”'}
+              {paymentNotes || '-'}
             </p>
           </div>
         </div>
@@ -2734,7 +2649,7 @@ function MembershipTab({
             if (key !== 'text') acc[key] = (acc[key] || 0) + Number(val || 0);
           });
         }
-      } catch { /* plain text notes â€” skip */ }
+      } catch { /* plain text notes - skip */ }
       return acc;
     }, {});
   }, [displayPayments]);
@@ -2785,7 +2700,7 @@ function MembershipTab({
   };
 
   function parsePaymentNotes(notes) {
-    const displayText = value => String(value ?? '')
+    const displayText = value => displayTracingText(value)
       .replace(/\u00e2\u201a\u00b1/g, '\u20b1')
       .replace(/\u00c2\u00b7/g, '\u2022');
     try {
@@ -2944,7 +2859,7 @@ function MembershipTab({
           category: 'membership',
           type: 'membership_payment',
           amount: item.amount,
-          notes: [item.label, payNotes.trim()].filter(Boolean).join(' â€” '),
+          notes: [item.label, payNotes.trim()].filter(Boolean).join(' - '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -2960,7 +2875,7 @@ function MembershipTab({
           type: 'deposit',
           amount: cbuAmt,
           reference: cbuAccount.account_no || null,
-          notes: [cbuParts.join(' Â· ') || 'Initial CBU (Membership)', payNotes.trim()].filter(Boolean).join(' â€” '),
+          notes: [cbuParts.join(' Â· ') || 'Initial CBU (Membership)', payNotes.trim()].filter(Boolean).join(' - '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -2976,7 +2891,7 @@ function MembershipTab({
           type: 'deposit',
           amount: savingsAmt,
           reference: savingsAccount.account_no || null,
-          notes: [savingsParts.join(' Â· ') || 'Initial Savings (Membership)', payNotes.trim()].filter(Boolean).join(' â€” '),
+          notes: [savingsParts.join(' Â· ') || 'Initial Savings (Membership)', payNotes.trim()].filter(Boolean).join(' - '),
           created_by: userId,
           transaction_date: payDate,
           payment_mode: payMode || null,
@@ -3106,12 +3021,12 @@ function MembershipTab({
                 onChange={e => setSetupRecordType(e.target.value)}
                 className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
               >
-                <option value="new_member">New Membership â€” current fee structure</option>
-                <option value="old_member">Old Membership â€” previous fee structure</option>
+                <option value="new_member">New Membership - current fee structure</option>
+                <option value="old_member">Old Membership - previous fee structure</option>
               </select>
               <p className="text-[11px] text-gray-400">
                 {isSetupNewMember
-                  ? 'Ledger starts unpaid â€” use "Record Payment" to log onboarding payments.'
+                  ? 'Ledger starts unpaid - use "Record Payment" to log onboarding payments.'
                   : 'Ledger starts unpaid using the previous fee structure - record payments through the Invoice page.'}
               </p>
             </div>
@@ -3204,7 +3119,7 @@ function MembershipTab({
       {membershipFees && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-2.5 border-b border-gray-100">
-            Payment Breakdown â€” {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
+            Payment Breakdown - {membership.membership_type === 'regular' ? 'Regular' : 'Associate'}
           </p>
           <div className="divide-y divide-gray-50">
             {membershipBreakdownRows.map(([label, target, componentKey]) => {
@@ -3276,11 +3191,11 @@ function MembershipTab({
         {displayPayments.length === 0 ? (
           <p className="text-xs text-gray-400 py-4 text-center">No payments recorded yet.</p>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto w-full">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Date', 'Amount', 'Breakdown / Notes', 'Recorded'].map(h => (
+                  {['Date', 'Amount', 'Breakdown / Notes', 'Assisted By'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {h}
                     </th>
@@ -3289,14 +3204,14 @@ function MembershipTab({
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {displayPayments.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50/50">
+                  <PaymentHistoryRow key={p.id} record={p}>
                     <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-3 font-semibold text-green-700">{formatCurrency(p.amount)}</td>
                     <td className="px-4 py-3 text-gray-500">{parsePaymentNotes(p.notes)}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {p.is_stored_payment ? 'Imported' : formatDateTime(p.created_at)}
+                      {p.created_by_name || ''}
                     </td>
-                  </tr>
+                  </PaymentHistoryRow>
                 ))}
               </tbody>
             </table>
@@ -3324,7 +3239,7 @@ function MembershipTab({
                     <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDateTime(log.upgraded_at)}</td>
                     <td className="px-4 py-3 capitalize text-gray-600">{log.from_type}</td>
                     <td className="px-4 py-3 capitalize text-blue-700 font-medium">{log.to_type}</td>
-                    <td className="px-4 py-3 text-gray-500">{log.notes || 'â€”'}</td>
+                    <td className="px-4 py-3 text-gray-500">{displayTracingText(log.notes) || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3369,7 +3284,7 @@ function MembershipTab({
                             : allocate > 0 ? 'text-blue-700 font-semibold'
                             : 'text-gray-400'
                           }>
-                            {isComplete ? 'âœ“ Fully paid' : allocate > 0 ? `+${formatCurrency(allocate)}` : 'â€”'}
+                            {isComplete ? 'âœ“ Fully paid' : allocate > 0 ? `+${formatCurrency(allocate)}` : '-'}
                           </span>
                         </div>
                       );
@@ -3440,7 +3355,7 @@ function MembershipTab({
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              SI# <span className="text-gray-400">(optional â€” recorded in Invoice)</span>
+              SI# <span className="text-gray-400">(optional - recorded in Invoice)</span>
             </label>
             <input type="text" placeholder="Enter SI# manually"
               value={paySiNo} onChange={e => setPaySiNo(e.target.value)} className={fieldClass} />
@@ -3561,7 +3476,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         invoice_no:   tdForm.si_number.trim(),
         date:         tdForm.date_applied,
         payee:        memberName || 'Member',
-        purpose:      `New Time Deposit â€” ${memberName || 'Member'}`,
+        purpose:      `New Time Deposit - ${memberName || 'Member'}`,
         amount:       amt,
         status:       'paid',
         payment_type: 'time_deposit',
@@ -3580,7 +3495,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         transaction_date: tdForm.date_applied,
         created_by:       userId ?? null,
         reference:        tdForm.si_number.trim(),
-        notes:            `New Time Deposit â€” ${memberName || 'Member'}`,
+        notes:            `New Time Deposit - ${memberName || 'Member'}`,
         payment_mode:     tdForm.payment_mode || null,
         member_id:        memberId,
       });
@@ -3589,7 +3504,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         userId,
         module: 'time_deposit',
         action: 'create',
-        description: `New time deposit for ${memberName} â€” SI# ${tdForm.si_number.trim()}, ${formatCurrency(amt)}`,
+        description: `New time deposit for ${memberName} - SI# ${tdForm.si_number.trim()}, ${formatCurrency(amt)}`,
       });
 
       toast.success('Time Deposit added.');
@@ -3631,7 +3546,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         invoice_no:   paySiNo.trim(),
         date:         payDate,
         payee:        memberName || payTarget.name,
-        purpose:      `Time Deposit Payment â€” ${memberName || payTarget.name}`,
+        purpose:      `Time Deposit Payment - ${memberName || payTarget.name}`,
         amount:       value,
         status:       'paid',
         payment_type: 'time_deposit',
@@ -3650,7 +3565,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         transaction_date: payDate,
         created_by:       userId ?? null,
         reference:        paySiNo.trim(),
-        notes:            `Time Deposit Payment â€” ${memberName || payTarget.name}`,
+        notes:            `Time Deposit Payment - ${memberName || payTarget.name}`,
         payment_mode:     payMode,
         member_id:        memberId,
       });
@@ -3659,7 +3574,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
         userId,
         module: 'time_deposit',
         action: 'create',
-        description: `Time deposit payment for ${memberName} â€” SI# ${paySiNo.trim()}, ${formatCurrency(value)}`,
+        description: `Time deposit payment for ${memberName} - SI# ${paySiNo.trim()}, ${formatCurrency(value)}`,
       });
 
       toast.success(`Payment recorded. SI# ${paySiNo.trim()}`);
@@ -3705,7 +3620,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                 d.setMonth(d.getMonth() + (td.terms || 0));
                 return formatDate(d.toISOString().slice(0, 10));
               })()
-            : 'â€”';
+            : '-';
 
           return (
             <div key={td.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
@@ -3739,7 +3654,7 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                 ))}
               </div>
               {td.time_deposit_payments && td.time_deposit_payments.length > 0 && (
-                <div className="border-t border-gray-100">
+                <div className="border-t border-gray-100 overflow-x-auto">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-2 bg-gray-50">
                     Payment History
                   </p>
@@ -3753,11 +3668,11 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {td.time_deposit_payments.map(p => (
-                        <tr key={p.id}>
-                          <td className="px-4 py-2 text-gray-500">{p.si_number || 'â€”'}</td>
+                        <PaymentHistoryRow key={p.id} record={p}>
+                          <td className="px-4 py-2 text-gray-500">{displayTracingText(p.si_number) || '-'}</td>
                           <td className="px-4 py-2 text-gray-500">{formatDate(p.payment_date)}</td>
                           <td className="px-4 py-2 font-medium text-gray-800">{formatCurrency(p.amount || 0)}</td>
-                        </tr>
+                        </PaymentHistoryRow>
                       ))}
                       <tr className="bg-gray-50">
                         <td colSpan={2} className="px-4 py-2 font-semibold text-gray-600">Total Paid</td>

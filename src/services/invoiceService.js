@@ -54,6 +54,7 @@ export async function getInvoices(filters = {}) {
     .order('created_at', { ascending: false });
 
   if (filters.status) query = query.eq('status', filters.status);
+  if (filters.id) query = query.eq('id', filters.id);
   if (filters.from) query = query.gte('date', filters.from);
   if (filters.to) query = query.lte('date', filters.to);
 

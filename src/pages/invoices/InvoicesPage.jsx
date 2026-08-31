@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Receipt, Search, Plus, Pencil, Ban, Eye,
   CheckCircle, Clock, X, Printer, Download, Trash2,
@@ -95,6 +96,8 @@ function getPaymentMode(invoice) {
 }
 
 export default function InvoicesPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedInvoiceId = searchParams.get('invoice');
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('invoices', 'create');
   const canEdit = hasPermission('invoices', 'edit');
@@ -117,6 +120,28 @@ export default function InvoicesPage() {
   const [selectedMember, setSelectedMember] = useState(null);
 
   const [viewTarget, setViewTarget] = useState(null);
+
+  useEffect(() => {
+    if (!requestedInvoiceId) return;
+    let cancelled = false;
+    getInvoices({ id: requestedInvoiceId }).then(records => {
+      const invoice = records[0];
+      if (!invoice) throw new Error('Invoice not found');
+      if (!cancelled) setViewTarget(invoice);
+    }).catch(() => {
+      if (!cancelled) toast.error('This invoice could not be found or you do not have access.');
+    });
+    return () => { cancelled = true; };
+  }, [requestedInvoiceId]);
+
+  function closeInvoiceView() {
+    setViewTarget(null);
+    if (requestedInvoiceId) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('invoice');
+      setSearchParams(next, { replace: true });
+    }
+  }
 
   const [paidTarget, setPaidTarget] = useState(null);
   const [marking, setMarking] = useState(false);
@@ -376,7 +401,8 @@ export default function InvoicesPage() {
 
   function getInvoiceGroup(invoice) {
     if (!invoice.invoice_no) return [invoice];
-    return invoices.filter(inv => inv.invoice_no === invoice.invoice_no);
+    const group = invoices.filter(inv => inv.invoice_no === invoice.invoice_no);
+    return group.length ? group : [invoice];
   }
 
   function handlePrintSingleInvoice(invoice) {
@@ -960,7 +986,7 @@ export default function InvoicesPage() {
 
       <Modal
         open={!!viewTarget}
-        onClose={() => setViewTarget(null)}
+        onClose={closeInvoiceView}
         title="Invoice Details"
         size="md"
       >
