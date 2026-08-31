@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { MoreHorizontal, Eye, Pencil, ArrowRight, Check, Trash2, ArrowUpDown, ChevronUp, ChevronDown, CreditCard } from 'lucide-react';
+import { MoreHorizontal, Eye, Pencil, ArrowRight, Check, Trash2, ArrowUpDown, ChevronUp, ChevronDown, CreditCard, Tag } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
-import { getLoanProductLabel } from '../../utils/loanProducts';
+import { getLoanProductLabel, canAssignLoanProduct } from '../../utils/loanProducts';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { getLoanFinancials, getLoanDueState, normalizeLoanStatus, getLoanTypeLabel, getLoanRecordDate, isLoanWorkflowLocked } from '../../utils/loanListState';
 
@@ -130,12 +130,13 @@ function ActionButton({ label, icon: Icon, onClick, disabled, tone = 'text-gray-
   );
 }
 
-function LoanActions({ loan, canEdit, canApprove, canDelete, savingId, onView, onEdit, onWorkflow, onDelete }) {
+function LoanActions({ loan, canEdit, canApprove, canDelete, savingId, onView, onEdit, onWorkflow, onDelete, onSetProduct }) {
   const status = normalizeLoanStatus(loan.status);
   const busy = savingId === loan.id;
   return (
     <div role="group" aria-label="Loan actions" className="flex flex-wrap items-center gap-1 xl:justify-center">
       <ActionButton label="View" icon={Eye} onClick={() => onView(loan)} />
+      {canEdit && onSetProduct && canAssignLoanProduct(loan) && <ActionButton label="Set Loan Product" icon={Tag} onClick={() => onSetProduct(loan)} disabled={busy} />}
       {canEdit && !isLoanWorkflowLocked(loan) && <ActionButton label="Edit" icon={Pencil} onClick={() => onEdit(loan)} disabled={busy} />}
       {status === 'draft' && canEdit && !isLoanWorkflowLocked(loan) && (
         <ActionButton label="Submit for Approval" icon={ArrowRight} onClick={() => onWorkflow(loan)}

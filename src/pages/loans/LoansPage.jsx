@@ -16,6 +16,7 @@ import LoanTypeModal from '../../components/shared/LoanTypeModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import LoanTable from './LoanTable';
+import SetLoanProductModal from '../../components/shared/SetLoanProductModal';
 import { LOAN_PRODUCT_FILTER_OPTIONS, matchesLoanProduct } from '../../utils/loanProducts';
 import LoanReleasedSummary, { LoanReleaseDateFilter } from './LoanReleasedSummary';
 import { computeCoopSummaryFromInvoices } from '../../services/coopFundService';
@@ -149,6 +150,7 @@ export default function LoansPage() {
   const [dueFilter, setDueFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [productFilter, setProductFilter] = useState('all');
+  const [productAssignmentLoan, setProductAssignmentLoan] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -626,6 +628,7 @@ export default function LoansPage() {
             savingId={statusSavingId}
             onView={loan => navigate(`/loans/${loan.id}`)}
             onEdit={loan => navigate(`/loans/${loan.id}/edit`)}
+            onSetProduct={setProductAssignmentLoan}
             onWorkflow={handleWorkflowAction}
             onDelete={setToDelete}
             emptyMessage={search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all' || productFilter !== 'all'
@@ -669,6 +672,10 @@ export default function LoansPage() {
         title="Delete Loan"
         message="Delete this loan record? This cannot be undone."
       />
+
+      {productAssignmentLoan && <SetLoanProductModal loan={productAssignmentLoan}
+        onClose={() => setProductAssignmentLoan(null)}
+        onSaved={updated => setLoans(current => current.map(loan => loan.id === updated.id ? { ...loan, ...updated } : loan))} />}
 
       <LoansPaymentModal
         open={payModal.open}

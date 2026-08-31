@@ -478,6 +478,7 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
       preview_schedule_json: JSON.stringify(updatedSchedule),
       preview_summary_json: JSON.stringify({ ...updatedSummary,
         ...(summary.loan_product ? { loan_product: summary.loan_product } : {}),
+        ...(summary.loan_product_assignment ? { loan_product_assignment: summary.loan_product_assignment } : {}),
       }),
     })
     .eq('id', loanId)
@@ -557,6 +558,7 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allo
       preview_schedule_json: JSON.stringify(updatedSchedule),
       preview_summary_json: JSON.stringify({ ...updatedSummary,
         ...(summary.loan_product ? { loan_product: summary.loan_product } : {}),
+        ...(summary.loan_product_assignment ? { loan_product_assignment: summary.loan_product_assignment } : {}),
       }),
     })
     .eq('id', loanId)

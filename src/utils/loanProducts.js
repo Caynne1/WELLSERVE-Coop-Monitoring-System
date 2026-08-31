@@ -1,4 +1,4 @@
-import { parseLoanJSON } from './loanListState.js';
+import { parseLoanJSON, isLoanReleased } from './loanListState.js';
 
 // Display names only. Product rates and calculation rules stay in the loan form.
 export const LOAN_PRODUCT_FILTER_OPTIONS = [
@@ -24,4 +24,8 @@ export function getLoanProductLabel(loan) {
 export function matchesLoanProduct(loan, filter = 'all') {
   if (filter === 'all') return true;
   return getLoanProductCode(loan) === (filter === 'unspecified' ? '' : filter);
+}
+
+export function canAssignLoanProduct(loan) {
+  return isLoanReleased(loan) && !getLoanProductCode(loan);
 }

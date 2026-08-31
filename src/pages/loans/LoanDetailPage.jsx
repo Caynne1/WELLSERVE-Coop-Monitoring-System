@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
+  Tag,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,7 +26,8 @@ import Spinner from '../../components/ui/Spinner';
 import { getLoanById, getLoanPaymentHistory, updateLoanApprovalStatus } from '../../services/loanService';
 import { useAuth } from '../../context/AuthContext';
 import LoanScheduleTable from '../../components/shared/LoanScheduleTable';
-import { getLoanProductLabel } from '../../utils/loanProducts';
+import { getLoanProductLabel, canAssignLoanProduct } from '../../utils/loanProducts';
+import SetLoanProductModal from '../../components/shared/SetLoanProductModal';
 import LoanPaymentHistoryTable from '../../components/shared/LoanPaymentHistoryTable';
 import { MemberPaymentNavigation } from '../members/MemberPaymentNavigation';
 import { loanPaymentHistoryRows } from '../../utils/memberPaymentHistory';
@@ -322,6 +324,7 @@ export default function LoanDetailPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(false);
   const [approvalSaving, setApprovalSaving] = useState(false);
+  const [productAssignmentOpen, setProductAssignmentOpen] = useState(false);
 
   useEffect(() => {
     getLoanById(id)
@@ -924,6 +927,8 @@ export default function LoanDetailPage() {
               Edit
             </Button>
             )}
+            {canEdit && canAssignLoanProduct(loan) && <Button variant="outline" icon={<Tag size={14} />}
+              onClick={() => setProductAssignmentOpen(true)}>Set Loan Product</Button>}
           </div>
         }
       />
@@ -1139,6 +1144,9 @@ export default function LoanDetailPage() {
         </div>
       )}
 
+      {productAssignmentOpen && <SetLoanProductModal loan={loan}
+        onClose={() => setProductAssignmentOpen(false)}
+        onSaved={updated => setLoan(current => ({ ...current, ...updated }))} />}
     </div>
   );
 }
