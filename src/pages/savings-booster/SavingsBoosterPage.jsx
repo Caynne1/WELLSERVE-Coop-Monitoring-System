@@ -29,19 +29,21 @@ const WEEKLY_DEPOSIT   = SAVINGS_BOOSTER_DEFAULTS.weeklyDeposit;
 const INITIAL_DEPOSIT  = SAVINGS_BOOSTER_DEFAULTS.initialDeposit;
 const TOTAL_MONTHS     = SAVINGS_BOOSTER_DEFAULTS.months;
 const TOTAL_SLOTS      = 100;
-const MAX_SLOTS_MEMBER = 5;
+const MAX_SLOTS_MEMBER = 1;
 
 // ── Computation ────────────────────────────────────────────────────────────────
 
 function computeSavingsBooster() {
-  const totalSaved = INITIAL_DEPOSIT + ((SAVINGS_BOOSTER_DEFAULTS.weeksRequired - 5) * WEEKLY_DEPOSIT);
-  const rows = buildSavingsBoosterSchedule(totalSaved);
-  const ledger = calculateSavingsBoosterLedger({ total_deposited: totalSaved, status: 'active' });
+  const totalSaved = INITIAL_DEPOSIT + (SAVINGS_BOOSTER_DEFAULTS.weeksRequired * WEEKLY_DEPOSIT);
+  const rows = buildSavingsBoosterSchedule();
+  const ledger = calculateSavingsBoosterLedger({
+    total_deposited: totalSaved,
+    weeks_deposited: SAVINGS_BOOSTER_DEFAULTS.weeksRequired,
+    status: 'matured',
+  });
   return {
     rows,
-    totalInterest: ledger.grossInterest,
-    transactionFee: ledger.transactionFee,
-    netInterest: ledger.netInterest,
+    totalInterest: ledger.interestEarned,
     totalSaved,
     totalWithdrawable: ledger.withdrawableAmount,
   };
@@ -50,18 +52,19 @@ function computeSavingsBooster() {
 // ── Mechanics ─────────────────────────────────────────────────────────────────
 
 const mechanics = [
-  { text: 'Must be MIGS (Member in Good Standing)',                                           highlight: true },
-  { text: 'Only 1 slot per member (maximum 5 for special promo)' },
+  { text: 'Member must be MIGS (Member in Good Standing)', highlight: true },
+  { text: 'Only one Savings Booster slot is allowed per member' },
   { text: 'Must be an Associate or Regular Member of WELLSERVE Cooperative' },
   { text: 'Must have a minimum loan of ₱7,000.00 for New Regular Members' },
   { text: 'Existing Regular Member (MIGS) without existing loan may participate' },
-  { text: '₱10.00/day or ₱70.00/week deposit, collected anytime of the week',               highlight: true },
-  { text: 'Must NEVER skip a deposit every week for 1 year' },
-  { text: 'If depositor skips a single week, must repeat the whole process',                 highlight: true },
-  { text: 'Interest accounted every month for 12 months' },
-  { text: 'Maturity date on the 13th month or after 365 days',                               highlight: true },
-  { text: 'All deposits withdrawn only after 365 days (forfeited = same amount, no interest)' },
-  { text: 'Only 100 slots offered; maximum 5 slots per member' },
+  { text: 'Initial deposit is ₱350.00, followed by ₱70.00 per week for 48 weeks', highlight: true },
+  { text: 'Daily payments of ₱10.00 may be accumulated toward the ₱70.00 weekly requirement' },
+  { text: 'A payment made during a fifth week is credited to the next available program week' },
+  { text: 'Missing one required week stops the program and forfeits all interest', highlight: true },
+  { text: 'A forfeited account receives only its deposited capital after the original 365-day term' },
+  { text: 'A completed account earns a fixed 52% of capital after 365 days', highlight: true },
+  { text: 'Funds are released during the 13th month after acknowledgment verification' },
+  { text: 'Only 100 program slots are available' },
   { text: 'Acknowledgment receipt issued before issuance of calculated amount' },
 ];
 
@@ -116,24 +119,18 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
     if (!['associate', 'regular'].includes(selected.membership_type))
       issues.push('Must be Associate or Regular Member.');
 
-    const memberSlots = enrollments.filter(
-      e => e.member_id === selected.id && e.status !== 'withdrawn'
-    ).length;
+    const memberSlots = enrollments.filter(e => e.member_id === selected.id).length;
     if (memberSlots >= MAX_SLOTS_MEMBER)
-      issues.push(`Already has ${memberSlots} slot(s) — maximum ${MAX_SLOTS_MEMBER} per member.`);
-    else if (memberSlots > 0)
-      warnings.push(`Already has ${memberSlots} active slot(s). Adding slot #${memberSlots + 1}.`);
+      issues.push('This member already has a Savings Booster slot.');
 
-    const totalUsed = enrollments.filter(e => e.status !== 'withdrawn').length;
+    const totalUsed = enrollments.length;
     if (totalUsed >= TOTAL_SLOTS)
       issues.push(`All ${TOTAL_SLOTS} slots are already filled.`);
     else if (totalUsed >= TOTAL_SLOTS - 5)
       warnings.push(`Only ${TOTAL_SLOTS - totalUsed} slot(s) remaining.`);
 
-    // Compute next slot number for this member
-    const existingSlots = enrollments
-      .filter(e => e.member_id === selected.id)
-      .map(e => e.slot_number || 0);
+    // Slot numbers identify the limited program slots globally.
+    const existingSlots = enrollments.map(e => e.slot_number || 0);
     const nextSlot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1;
 
     setEligibility({ issues, warnings, eligible: issues.length === 0, nextSlot, memberSlots });
@@ -301,9 +298,10 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
                 <span>Slot: <strong>#{eligibility.nextSlot}</strong></span>
                 <span>Initial Deposit: <strong>{formatCurrency(INITIAL_DEPOSIT)}</strong></span>
                 <span>Weekly Deposit: <strong>{formatCurrency(WEEKLY_DEPOSIT)}/week</strong></span>
-                <span>Duration: <strong>52 weeks (1 year)</strong></span>
-                <span>Total to Save: <strong>{formatCurrency(calculateSavingsBoosterLedger().expectedTotal)}</strong></span>
-                <span>Total Withdrawable: <strong className="text-emerald-700">{formatCurrency(calculateSavingsBoosterLedger({ total_deposited: calculateSavingsBoosterLedger().expectedTotal }).withdrawableAmount)}</strong></span>
+                <span>Initial Deposit: <strong>{formatCurrency(INITIAL_DEPOSIT)}</strong></span>
+                <span>Required Weeks: <strong>{SAVINGS_BOOSTER_DEFAULTS.weeksRequired}</strong></span>
+                <span>Total Capital: <strong>{formatCurrency(calculateSavingsBoosterLedger().expectedTotal)}</strong></span>
+                <span>Maturity Receivable: <strong className="text-emerald-700">{formatCurrency(calculateSavingsBoosterLedger().receivableAtMaturity)}</strong></span>
               </div>
             </div>
           </>
@@ -329,7 +327,13 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
-const statusVariant = { active: 'success', matured: 'info', forfeited: 'warning', withdrawn: 'default' };
+const statusVariant = {
+  active: 'success',
+  matured: 'info',
+  forfeited: 'warning',
+  released: 'success',
+  withdrawn: 'default',
+};
 
 export default function SavingsBoosterPage() {
   const { hasPermission } = useAuth();
@@ -343,7 +347,7 @@ export default function SavingsBoosterPage() {
 
   const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(enrollments, { pageSize: 25 });
 
-  const { rows, totalInterest, transactionFee, netInterest, totalSaved, totalWithdrawable } = useMemo(computeSavingsBooster, []);
+  const { rows, totalInterest, totalSaved, totalWithdrawable } = useMemo(computeSavingsBooster, []);
 
   const fetchEnrollments = useCallback(async () => {
     try {
@@ -365,16 +369,16 @@ export default function SavingsBoosterPage() {
   useEffect(() => { fetchEnrollments(); }, [fetchEnrollments]);
 
   const activeCount     = enrollments.filter(e => e.status === 'active').length;
-  const matureCount     = enrollments.filter(e => e.status === 'matured').length;
+  const matureCount     = enrollments.filter(e => ['matured', 'released', 'withdrawn'].includes(e.status)).length;
+  const forfeitedCount  = enrollments.filter(e => e.status === 'forfeited').length;
   const totalDeposited  = enrollments.reduce((s, e) => s + calculateSavingsBoosterLedger(e).totalDeposited, 0);
-  const totalWithdrawableNow = enrollments.reduce((s, e) => s + calculateSavingsBoosterLedger(e).withdrawableAmount, 0);
-  const usedSlots       = enrollments.filter(e => e.status !== 'withdrawn').length;
+  const usedSlots       = enrollments.length;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <PageHeader
         title="Savings Booster"
-        subtitle="P10/day Special Promo — 100 Slots Only"
+        subtitle="One-year member savings program"
         action={
           canCreate ? (
             <Button icon={<Plus size={15} />} onClick={() => setEnrollOpen(true)}>
@@ -385,15 +389,14 @@ export default function SavingsBoosterPage() {
       />
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Enrollments', value: enrollments.length, color: 'bg-emerald-50', text: 'text-emerald-700', icon: <Users size={20} /> },
-          { label: 'Active',            value: activeCount,         color: 'bg-blue-50',    text: 'text-blue-700',    icon: <Sprout size={20} /> },
-          { label: 'Matured',           value: matureCount,         color: 'bg-violet-50',  text: 'text-violet-700',  icon: <CheckCircle size={20} /> },
-          { label: 'Total Deposited',   value: formatCurrency(totalDeposited), color: 'bg-amber-50', text: 'text-amber-700', icon: <TrendingUp size={20} /> },
-          { label: 'Withdrawable',      value: formatCurrency(totalWithdrawableNow), color: 'bg-teal-50', text: 'text-teal-700', icon: <TrendingUp size={20} /> },
+          { label: 'Program Slots', value: `${usedSlots} / ${TOTAL_SLOTS}`, color: 'bg-emerald-50', text: 'text-emerald-700', icon: <Users size={20} /> },
+          { label: 'Active Accounts', value: activeCount, color: 'bg-blue-50', text: 'text-blue-700', icon: <Sprout size={20} /> },
+          { label: 'Completed', value: matureCount, color: 'bg-violet-50', text: 'text-violet-700', icon: <CheckCircle size={20} /> },
+          { label: 'Capital Deposited', value: formatCurrency(totalDeposited), color: forfeitedCount ? 'bg-amber-50' : 'bg-gray-50', text: forfeitedCount ? 'text-amber-700' : 'text-gray-700', icon: <TrendingUp size={20} /> },
         ].map(card => (
-          <div key={card.label} className={`rounded-xl p-4 flex items-center gap-3 ${card.color} border border-gray-100`}>
+          <div key={card.label} className={`rounded-lg p-4 flex items-center gap-3 ${card.color} border border-gray-100`}>
             <span className={card.text}>{card.icon}</span>
             <div>
               <p className="text-xs text-gray-500 font-medium">{card.label}</p>
@@ -404,7 +407,7 @@ export default function SavingsBoosterPage() {
       </div>
 
       {/* Mechanics */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <button onClick={() => setShowMechanics(v => !v)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
             <Info size={16} className="text-emerald-600" />
@@ -426,80 +429,71 @@ export default function SavingsBoosterPage() {
         )}
       </div>
 
-      {/* Computation Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      {/* Program computation */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <button onClick={() => setShowTable(v => !v)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-emerald-600" />
-            <span className="text-sm font-semibold text-gray-700">P10/day Savings Booster Computation Table</span>
-            <span className="text-xs text-gray-400 ml-1">- Excel-style computation with 15% interest fee</span>
+            <span className="text-sm font-semibold text-gray-700">Program Computation</span>
+            <span className="hidden sm:inline text-xs text-gray-400 ml-1">48 weekly deposits over 12 months</span>
           </div>
           {showTable ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
         </button>
         {showTable && (
-          <div className="border-t border-gray-100 overflow-x-auto">
-            <table className="w-full text-xs">
+          <div className="border-t border-gray-100">
+            <div className="grid grid-cols-1 sm:grid-cols-3 border-b border-gray-100 bg-emerald-50">
+              <div className="px-5 py-4">
+                <p className="text-xs text-gray-500">Capital at Completion</p>
+                <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(totalSaved)}</p>
+              </div>
+              <div className="px-5 py-4 sm:border-l border-gray-200">
+                <p className="text-xs text-gray-500">Interest at 52%</p>
+                <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(totalInterest)}</p>
+              </div>
+              <div className="px-5 py-4 sm:border-l border-gray-200">
+                <p className="text-xs text-gray-500">Receivable at Maturity</p>
+                <p className="mt-1 text-lg font-bold text-emerald-700">{formatCurrency(totalWithdrawable)}</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="bg-[#07A04E] text-white">
-                  <th className="px-3 py-2.5 text-left font-semibold">Month</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Wk 1</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Wk 2</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Wk 3</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Wk 4</th>
-                  <th className="px-3 py-2.5 text-right font-semibold border-l border-emerald-400">Total</th>
-                  {Array.from({ length: TOTAL_MONTHS }, (_, i) => (
-                    <th key={i} className="px-2 py-2.5 text-right font-semibold whitespace-nowrap">M{i+1}</th>
-                  ))}
-                  <th className="px-3 py-2.5 text-right font-semibold border-l border-emerald-400">13th m</th>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Month</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Weekly Target</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Monthly Contribution</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Cumulative Capital</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {rows.map(row => (
                   <tr key={row.month} className="hover:bg-emerald-50/30">
-                    <td className="px-3 py-2 font-medium text-gray-700">{row.month}{['st','nd','rd'][row.month-1]||'th'} month</td>
-                    {(row.month === 1
-                      ? [INITIAL_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT]
-                      : [WEEKLY_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT, WEEKLY_DEPOSIT]
-                    ).map((v,i) => <td key={i} className="px-3 py-2 text-right text-gray-600">{v}</td>)}
-                    <td className="px-3 py-2 text-right font-semibold text-gray-800 border-l border-gray-100">{formatCurrency(row.amount)}</td>
-                    {Array.from({ length: TOTAL_MONTHS }, (_, i) => {
-                      const m = i + 1;
-                      const weight = row.month === 1 ? TOTAL_MONTHS : row.month - 1;
-                      const earned = m <= weight ? row.amount * SAVINGS_BOOSTER_DEFAULTS.monthlyInterestRate : 0;
-                      return <td key={m} className={`px-2 py-2 text-right ${earned ? 'text-emerald-600' : 'text-gray-200'}`}>{earned ? earned.toFixed(2) : '-'}</td>;
-                    })}
-                    <td className="px-3 py-2 text-right border-l border-gray-100">
-                      {row.month === TOTAL_MONTHS && <span className="font-bold text-emerald-700">{formatCurrency(totalWithdrawable)}</span>}
-                    </td>
+                    <td className="px-5 py-2.5 font-medium text-gray-700">Month {row.month}</td>
+                    <td className="px-5 py-2.5 text-right text-gray-600">{row.weeklyPayments} × {formatCurrency(WEEKLY_DEPOSIT)}</td>
+                    <td className="px-5 py-2.5 text-right text-gray-700">{formatCurrency(row.weeklyContribution)}</td>
+                    <td className="px-5 py-2.5 text-right font-semibold text-gray-900">{formatCurrency(row.cumulativeCapital)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-50 border-t-2 border-gray-200 font-bold text-gray-700">
-                  <td className="px-3 py-2.5" colSpan={5}>Total</td>
-                  <td className="px-3 py-2.5 text-right border-l border-gray-200">{formatCurrency(totalSaved)}</td>
-                  <td className="px-3 py-2.5 text-right text-xs text-gray-500 font-normal" colSpan={TOTAL_MONTHS - 1}>Gross interest:</td>
-                  <td className="px-3 py-2.5 text-right text-emerald-700">{formatCurrency(totalInterest)}</td>
-                  <td className="px-3 py-2.5 text-right border-l border-gray-200">
-                    <span className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold whitespace-nowrap">
-                      {formatCurrency(totalWithdrawable)}
-                    </span>
-                  </td>
-                </tr>
-                <tr className="bg-emerald-50 text-xs text-gray-500">
-                  <td className="px-3 py-2" colSpan={6}>Monthly interest: <strong>{(SAVINGS_BOOSTER_DEFAULTS.monthlyInterestRate * 100).toFixed(2)}%</strong> - Less 15% interest fee: <strong>{formatCurrency(transactionFee)}</strong> - Net interest: <strong>{formatCurrency(netInterest)}</strong></td>
-                  <td className="px-3 py-2 text-right" colSpan={TOTAL_MONTHS + 1}>
-                    <strong className="text-emerald-700">TOTAL WITHDRAWABLE: {formatCurrency(totalWithdrawable)}</strong>
-                  </td>
+                <tr className="bg-gray-50 border-t border-gray-200 font-semibold">
+                  <td className="px-5 py-3 text-gray-700">Plan Total</td>
+                  <td className="px-5 py-3 text-right text-gray-600">{SAVINGS_BOOSTER_DEFAULTS.weeksRequired} weeks</td>
+                  <td className="px-5 py-3 text-right text-gray-600">{formatCurrency(SAVINGS_BOOSTER_DEFAULTS.weeksRequired * WEEKLY_DEPOSIT)}</td>
+                  <td className="px-5 py-3 text-right text-emerald-700">{formatCurrency(totalSaved)}</td>
                 </tr>
               </tfoot>
             </table>
+            </div>
+            <p className="px-5 py-3 text-xs text-gray-500 border-t border-gray-100">
+              Includes the {formatCurrency(INITIAL_DEPOSIT)} initial deposit. Interest is credited only after successful completion and maturity. A forfeited account receives capital only.
+            </p>
           </div>
         )}
       </div>
 
       {/* Slot Bar */}
-      <div className="flex items-center gap-4 px-5 py-3 bg-amber-50 rounded-xl border border-amber-200">
+      <div className="flex items-center gap-4 px-5 py-3 bg-amber-50 rounded-lg border border-amber-200">
         <AlertCircle size={18} className="text-amber-600 flex-shrink-0" />
         <div className="flex-1 text-sm text-amber-800">
           <strong>{TOTAL_SLOTS} slots total</strong> — {usedSlots} used · {Math.max(0, TOTAL_SLOTS - usedSlots)} remaining
@@ -510,7 +504,7 @@ export default function SavingsBoosterPage() {
       </div>
 
       {/* Enrollments Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-800">Member Enrollments</h2>
           <span className="text-xs text-gray-400">{enrollments.length} records</span>
@@ -524,13 +518,17 @@ export default function SavingsBoosterPage() {
             <p className="text-xs text-gray-400 mt-1">Click <strong>+ Enroll Member</strong> to get started</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div>
+            <table className="hidden w-full table-fixed text-sm md:table">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Member','No.','Slot','Start Date','Maturity','Deposited','Interest','Withdrawable','Status'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                  ))}
+                  <th className="w-[22%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Member</th>
+                  <th className="w-[7%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Slot</th>
+                  <th className="w-[19%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Program Period</th>
+                  <th className="w-[17%] px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Progress</th>
+                  <th className="w-[12%] px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Capital</th>
+                  <th className="w-[14%] px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Receivable</th>
+                  <th className="w-[9%] px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -539,21 +537,83 @@ export default function SavingsBoosterPage() {
                   const ledger = calculateSavingsBoosterLedger(e);
                   const maturityDate = ledger.maturityDate;
                   return (
-                    <tr key={e.id} className="hover:bg-gray-50/60">
-                      <td className="px-4 py-3 font-medium text-gray-800">{m ? `${m.first_name} ${m.last_name}` : '—'}</td>
-                      <td className="px-4 py-3 text-gray-500">{m?.member_no || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">#{e.slot_number || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{formatDate(e.start_date)}</td>
-                      <td className="px-4 py-3 text-gray-600">{formatDate(maturityDate)}</td>
-                      <td className="px-4 py-3 font-medium text-gray-800">{formatCurrency(ledger.totalDeposited)}</td>
-                      <td className="px-4 py-3 text-emerald-600 font-medium">{formatCurrency(ledger.netInterest)}</td>
-                      <td className="px-4 py-3 font-bold text-emerald-700">{formatCurrency(ledger.withdrawableAmount)}</td>
+                    <tr key={e.id} className="hover:bg-gray-50/60 align-middle">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-800 truncate">{m ? `${m.first_name} ${m.last_name}` : 'No member record'}</p>
+                        <p className="mt-0.5 text-xs text-gray-400">{m?.member_no || 'No member number'}</p>
+                      </td>
+                      <td className="px-3 py-3 text-gray-600">#{e.slot_number || '—'}</td>
+                      <td className="px-3 py-3">
+                        <p className="text-gray-700">{formatDate(e.start_date)}</p>
+                        <p className="mt-0.5 text-xs text-gray-400">Matures {formatDate(maturityDate)}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className={`h-full rounded-full ${e.status === 'forfeited' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(100, (ledger.weeksDeposited / SAVINGS_BOOSTER_DEFAULTS.weeksRequired) * 100)}%` }}
+                          />
+                        </div>
+                        <p className="mt-1.5 text-xs text-gray-500">{ledger.weeksDeposited} of {SAVINGS_BOOSTER_DEFAULTS.weeksRequired} weeks</p>
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold text-gray-800">{formatCurrency(ledger.totalDeposited)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <p className="font-bold text-emerald-700">{formatCurrency(ledger.receivableAtMaturity)}</p>
+                        <p className="mt-0.5 text-xs text-gray-400">
+                          {e.status === 'forfeited' ? 'Capital only' : `Includes ${formatCurrency(ledger.projectedInterest)} interest`}
+                        </p>
+                      </td>
                       <td className="px-4 py-3"><Badge variant={statusVariant[e.status] || 'default'}>{e.status || 'active'}</Badge></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            <div className="divide-y divide-gray-100 md:hidden">
+              {pageItems.map(e => {
+                const m = e.members;
+                const ledger = calculateSavingsBoosterLedger(e);
+                return (
+                  <div key={e.id} className="space-y-4 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-900">
+                          {m ? `${m.first_name} ${m.last_name}` : 'No member record'}
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-400">{m?.member_no || 'No member number'} · Slot #{e.slot_number || '-'}</p>
+                      </div>
+                      <Badge variant={statusVariant[e.status] || 'default'}>{e.status || 'active'}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <p className="text-gray-400">Program Period</p>
+                        <p className="mt-1 text-gray-700">{formatDate(e.start_date)} to {formatDate(ledger.maturityDate)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-gray-400">Capital</p>
+                        <p className="mt-1 font-semibold text-gray-900">{formatCurrency(ledger.totalDeposited)}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="text-gray-500">Weekly progress</span>
+                        <span className="font-medium text-gray-700">{ledger.weeksDeposited} of {SAVINGS_BOOSTER_DEFAULTS.weeksRequired}</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className={`h-full rounded-full ${e.status === 'forfeited' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${Math.min(100, (ledger.weeksDeposited / SAVINGS_BOOSTER_DEFAULTS.weeksRequired) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-end justify-between gap-3 border-t border-gray-100 pt-3">
+                      <span className="text-xs text-gray-400">{e.status === 'forfeited' ? 'Capital-only receivable' : 'Projected maturity receivable'}</span>
+                      <span className="text-base font-bold text-emerald-700">{formatCurrency(ledger.receivableAtMaturity)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
             <Pagination
               page={page}

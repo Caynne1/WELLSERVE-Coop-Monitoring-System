@@ -1639,11 +1639,11 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                     info.valueType === 'optional' ? 'Optional' :
                     'Total Deposited';
                   const membershipPaid = cat === 'membership' && info.hasRecord && !info.payable;
-                  const statusText = membershipPaid ? 'PAID' : !info.hasRecord
+                  const statusText = info.statusText || (membershipPaid ? 'PAID' : !info.hasRecord
                     ? 'No Record'
                     : info.valueType === 'optional'
                       ? valueLabel
-                      : `${valueLabel}: ${formatCurrency(info.value)}`;
+                      : `${valueLabel}: ${formatCurrency(info.value)}`);
                   const membershipBreakdown = cat === 'membership'
                     ? getMembershipBreakdown(member, info)
                     : null;

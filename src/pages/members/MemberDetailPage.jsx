@@ -993,13 +993,14 @@ function SavingsBoosterSlotCard({ slot }) {
     active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     matured: 'bg-blue-50 text-blue-700 border-blue-200',
     forfeited: 'bg-amber-50 text-amber-700 border-amber-200',
+    released: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     withdrawn: 'bg-gray-50 text-gray-500 border-gray-200',
   }[slot.status] || 'bg-gray-50 text-gray-500 border-gray-200';
 
   const ledger = calculateSavingsBoosterLedger(slot);
 
   return (
-    <div className="rounded-xl border border-gray-200 p-4">
+    <div className="rounded-lg border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || '-'}</p>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${statusStyle}`}>
@@ -1009,13 +1010,15 @@ function SavingsBoosterSlotCard({ slot }) {
       <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : '-'} />
         <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '-'} />
-        <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '—'} />
-        <AccountInfoCell label="Total Deposited" value={formatCurrency(ledger.totalDeposited)} />
-        <AccountInfoCell label="Net Interest" value={formatCurrency(ledger.netInterest)} />
-        <AccountInfoCell label="Interest Fee" value={formatCurrency(ledger.transactionFee)} />
-        <AccountInfoCell label="Weeks Deposited" value={`${ledger.weeksDeposited || 0} wk(s)`} />
-        <AccountInfoCell label="Remaining Deposit" value={formatCurrency(ledger.remainingDeposit)} />
-        <AccountInfoCell label="Total Withdrawable" value={formatCurrency(ledger.withdrawableAmount)} />
+        <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '-'} />
+        <AccountInfoCell label="Capital Deposited" value={formatCurrency(ledger.totalDeposited)} />
+        <AccountInfoCell
+          label={slot.status === 'forfeited' ? 'Interest' : ledger.interestEarned > 0 ? 'Interest Earned' : 'Projected Interest'}
+          value={slot.status === 'forfeited' ? 'Forfeited' : formatCurrency(ledger.interestEarned || ledger.projectedInterest)}
+        />
+        <AccountInfoCell label="Weekly Progress" value={`${ledger.weeksDeposited} of 48 weeks`} />
+        <AccountInfoCell label="Remaining Capital" value={formatCurrency(ledger.remainingDeposit)} />
+        <AccountInfoCell label="Receivable at Maturity" value={formatCurrency(ledger.receivableAtMaturity)} />
       </div>
     </div>
   );
@@ -1043,7 +1046,7 @@ function MemberSavingsBoosterTab({ slots, transactions, loading }) {
           <Sprout size={20} className="text-teal-600" />
         </div>
         <div>
-          <p className="text-xs text-gray-400">Total Deposited Across {slots.length} Slot{slots.length !== 1 ? 's' : ''}</p>
+          <p className="text-xs text-gray-400">Savings Booster Capital</p>
           <p className="text-2xl font-bold text-teal-700">{formatCurrency(totalDeposited)}</p>
         </div>
       </div>

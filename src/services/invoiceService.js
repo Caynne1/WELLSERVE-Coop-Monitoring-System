@@ -15,6 +15,7 @@ import {
 } from './timeDepositService';
 import {
   buildSavingsBoosterUpdate,
+  calculateSavingsBoosterLedger,
   getBoosterDepositWeeks,
 } from './savingsBoosterService';
 
@@ -378,7 +379,10 @@ export async function deleteInvoiceAndLinkedRecords(id, { deleted_by = null } = 
       const nextTotalDeposited = Math.max(0, Number(booster.total_deposited || 0) - amount);
       const nextWeeksDeposited = Math.max(
         0,
-        Number(booster.weeks_deposited || 0) - getBoosterDepositWeeks(amount, booster)
+        Number(booster.weeks_deposited || 0) - getBoosterDepositWeeks(amount, {
+          ...booster,
+          total_deposited: nextTotalDeposited,
+        })
       );
       await supabase
         .from('savings_booster')
@@ -504,7 +508,9 @@ export async function getMemberPaymentSummary(memberId) {
   const allTimeDeposits = timeDeposits || [];
   const activeTimeDeposits = allTimeDeposits.filter(td => td.status === 'Active');
   const activeBoosterRows = (boosterRows || []).filter(b => b.status === 'active');
-
+  const activeBoosterLedger = activeBoosterRows[0]
+    ? calculateSavingsBoosterLedger(activeBoosterRows[0])
+    : null;
 
   const cbuTotalDeposited = accounts.cbu?.total_deposits ?? accounts.cbu?.balance ?? 0;
   const savingsTotalDeposited = accounts.savings?.total_deposits ?? accounts.savings?.balance ?? 0;
@@ -549,9 +555,10 @@ export async function getMemberPaymentSummary(memberId) {
       hasRecord: (boosterRows || []).length > 0,
       valueType: 'deposited',
       value: boosterTotalDeposited,
-      // Deposit-based, same as CBU/Savings/Time Deposit: only payable once
-      // the member has at least one active enrollment slot.
-      payable: activeBoosterRows.length > 0,
+      statusText: activeBoosterLedger
+        ? `Capital: ₱${activeBoosterLedger.totalDeposited.toFixed(2)} of ₱${activeBoosterLedger.expectedTotal.toFixed(2)} · ${activeBoosterLedger.weeksDeposited}/48 weeks`
+        : null,
+      payable: !!activeBoosterLedger && activeBoosterLedger.remainingDeposit > 0,
     },
   };
 }
@@ -1123,11 +1130,21 @@ export async function createMultiCategoryInvoice({
 
       if (entry.category === 'savings_booster') {
         if (!entry.booster) throw new Error('Savings Booster enrollment not found for this member.');
+        if (String(entry.booster.status || '').toLowerCase() !== 'active') {
+          throw new Error('Deposits are allowed only for an active Savings Booster account.');
+        }
+        if (Math.round(amount * 100) % 1000 !== 0) {
+          throw new Error('Savings Booster deposits must be entered in ₱10.00 increments.');
+        }
         const priorTotalDeposited = entry.booster.total_deposited || 0;
         const priorWeeksDeposited = entry.booster.weeks_deposited || 0;
         const priorLastDepositDate = entry.booster.last_deposit_date || null;
         const weekCount = getBoosterDepositWeeks(amount, entry.booster);
         const nextTotalDeposited = priorTotalDeposited + amount;
+        const boosterLedger = calculateSavingsBoosterLedger(entry.booster);
+        if (nextTotalDeposited > boosterLedger.expectedTotal) {
+          throw new Error(`This deposit exceeds the Savings Booster capital target by ₱${(nextTotalDeposited - boosterLedger.expectedTotal).toFixed(2)}.`);
+        }
         const nextWeeksDeposited = priorWeeksDeposited + weekCount;
         const { data: updatedBooster, error: boosterErr } = await supabase
           .from('savings_booster')
@@ -1151,6 +1168,8 @@ export async function createMultiCategoryInvoice({
             total_deposited: priorTotalDeposited,
             weeks_deposited: priorWeeksDeposited,
             last_deposit_date: priorLastDepositDate,
+            interest_earned: entry.booster.interest_earned || 0,
+            withdrawable_amount: entry.booster.withdrawable_amount || 0,
           }).eq('id', entry.booster.id);
         });
 
@@ -1169,7 +1188,7 @@ export async function createMultiCategoryInvoice({
         rollbacks.push(async () => {
           await supabase.from('transactions').delete().eq('id', boosterTx.id);
         });
-        const { error: boosterPaymentErr } = await supabase
+        const { data: boosterPayment, error: boosterPaymentErr } = await supabase
           .from('savings_booster_payments')
           .insert({
             booster_id: entry.booster.id,
@@ -1183,10 +1202,13 @@ export async function createMultiCategoryInvoice({
             reference: invoiceReference,
             notes,
             created_by,
-          });
-        if (boosterPaymentErr && boosterPaymentErr.code !== '42P01') {
-          throw boosterPaymentErr;
-        }
+          })
+          .select('id')
+          .single();
+        if (boosterPaymentErr) throw boosterPaymentErr;
+        rollbacks.push(async () => {
+          await supabase.from('savings_booster_payments').delete().eq('id', boosterPayment.id);
+        });
         ref_id = updatedBooster?.id || entry.booster.id;
         purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
         invoiceLines.push({ label: purpose, amount, payment_type: 'savings_booster', ref_id, account_id });

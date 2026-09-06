@@ -429,7 +429,7 @@ export async function getDashboardStats(period = 'month') {
       timeDepositCount: tdData.filter(td => td.status === 'active').length,
       totalKiddySavings: kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),
       kiddySavingsCount: kiddySavingsData.length,
-      totalSavingsBooster: savingsBoosterData.reduce((s, a) => s + calculateSavingsBoosterLedger(a).withdrawableAmount, 0),
+      totalSavingsBooster: savingsBoosterData.reduce((s, a) => s + calculateSavingsBoosterLedger(a).totalDeposited, 0),
       savingsBoosterCount: savingsBoosterData.length,
 
       // ── Charts ──────────────────────────────────────────────────────────────
@@ -668,7 +668,7 @@ export async function getDashboardStats(period = 'month') {
     timeDepositCount:     tdData.filter(td => td.status === 'active').length,
     totalKiddySavings:    kiddySavingsData.reduce((s, a) => s + (a.balance || 0), 0),
     kiddySavingsCount:    kiddySavingsData.length,
-    totalSavingsBooster:  savingsBoosterData.reduce((s, a) => s + calculateSavingsBoosterLedger(a).withdrawableAmount, 0),
+    totalSavingsBooster:  savingsBoosterData.reduce((s, a) => s + calculateSavingsBoosterLedger(a).totalDeposited, 0),
     savingsBoosterCount:  savingsBoosterData.length,
 
     // ── Period product flow ──────────────────────────────────────────────────
