@@ -9,4 +9,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const authStorage = typeof window !== 'undefined' ? window.sessionStorage : undefined;
+
+if (typeof window !== 'undefined') {
+  const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+  window.localStorage.removeItem(`sb-${projectRef}-auth-token`);
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: authStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
