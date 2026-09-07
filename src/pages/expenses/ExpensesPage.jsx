@@ -88,7 +88,7 @@ const STATUS_PILL_CLASS = {
 
 function voucherDisplay(value) {
   if (!value) return '';
-  if (String(value || '').startsWith('FOR-TRACING-')) return 'For Tracing';
+  if (String(value || '').startsWith('FOR-TRACING-')) return 'FOR TRACING';
   return isNeedVoucherNumber(value) ? 'Need Voucher Number' : value;
 }
 

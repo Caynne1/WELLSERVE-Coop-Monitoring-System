@@ -69,7 +69,11 @@ export function MemberPaymentNavigation({ memberId, children }) {
               className="flex w-full items-center gap-3 py-3 text-left text-sm hover:bg-gray-50 focus-visible:outline-green-600">
               <Eye size={16} className="shrink-0 text-green-700" />
               <span className="min-w-0 flex-1 break-words">
-                <span className="block font-medium">{invoice.invoice_no || 'Without SI number'}</span>
+                <span className="block font-medium">
+                  {/^(?:not traceable|for tracing)$/i.test(String(invoice.invoice_no || '').trim())
+                    ? 'FOR TRACING'
+                    : (invoice.invoice_no || 'FOR TRACING')}
+                </span>
                 <span className="text-xs text-gray-500">{formatDate(invoice.payment_date || invoice.date)} | {invoice.purpose || ''} | {invoice.status}</span>
               </span>
               <span className="shrink-0 font-semibold">{formatCurrency(invoice.amount)}</span>

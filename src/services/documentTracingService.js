@@ -92,7 +92,7 @@ export async function traceDocumentNumber(document, newNumber, userId) {
   const nextNumber = text(newNumber);
   if (!nextNumber) throw new Error(`${config.label} is required.`);
   if (/FOR[- ]TRACING/i.test(nextNumber)) {
-    throw new Error(`Enter the actual ${config.label}, not "For Tracing".`);
+    throw new Error(`Enter the actual ${config.label}, not "FOR TRACING".`);
   }
 
   const { data: duplicate, error: duplicateError } = await supabase
@@ -105,7 +105,7 @@ export async function traceDocumentNumber(document, newNumber, userId) {
   if (duplicateError) throw duplicateError;
   if (duplicate?.length) throw new Error(`${config.label} "${nextNumber}" is already in use.`);
 
-  const previousNumber = text(document.current_number) || 'For Tracing';
+  const previousNumber = text(document.current_number) || 'FOR TRACING';
   const { data: updated, error } = await supabase
     .from(config.table)
     .update({ [config.field]: nextNumber })

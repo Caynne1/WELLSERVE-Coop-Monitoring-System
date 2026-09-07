@@ -229,8 +229,6 @@ function TimeDepositForm({ form, onChange, showSiNumber }) {
         <input type="number" min="0" value={form.business_years} onChange={set('business_years')} placeholder="0" className={inputCls} />
       </Field>
 
-      <SectionHeading>Deposit Terms</SectionHeading>
-
       {showSiNumber && (
         <>
           <Field label="SI#" required>

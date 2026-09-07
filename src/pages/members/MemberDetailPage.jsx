@@ -83,9 +83,16 @@ const PAYMENT_MODE_OPTIONS = [
 
 function displayTracingText(value) {
   return String(value ?? '')
-    .replace(/\bnot\s+traceable\b/gi, 'FOR TRACING')
+    .replace(/\b(?:not\s+traceable|for\s+tracing)\b/gi, 'FOR TRACING')
     .replace(/\u00e2\u20ac\u201d/g, '-')
     .replace(/\u00c3\u00a2\u00e2\u201a\u00ac\u00e2\u20ac\u009d/g, '-');
+}
+
+function displaySiNumber(row) {
+  const value = displayTracingText(row?.si_number || row?.invoice_no || row?.reference).trim();
+  if (/^(?:not traceable|for tracing)$/i.test(value)) return 'FOR TRACING';
+  if (!value || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value)) return 'FOR TRACING';
+  return value;
 }
 
 function displayPaymentMode(row) {
@@ -144,6 +151,7 @@ export default function MemberDetailPage() {
   const [accounts, setAccounts] = useState([]);
   const [loans, setLoans] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [memberInvoices, setMemberInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [payModal, setPayModal] = useState({ open: false, loan: null });
@@ -170,11 +178,18 @@ export default function MemberDetailPage() {
     try {
       setLoading(true);
 
-      const [memberData, loansData, txData] = await Promise.all([
+      const [memberData, loansData, txData, invoiceResult] = await Promise.all([
         getMemberById(id),
         getLoansByMemberId(id),
         getTransactionsByMemberId(id),
+        supabase
+          .from('invoices')
+          .select('id, invoice_no, member_id, date, payment_date, amount, payment_type, ref_id, account_id, created_at')
+          .eq('member_id', id)
+          .order('created_at', { ascending: false }),
       ]);
+
+      if (invoiceResult.error) throw invoiceResult.error;
 
       await initializeMemberAccounts(id);
       const finalAccounts = await getAccountsByMemberId(id);
@@ -183,6 +198,7 @@ export default function MemberDetailPage() {
       setAccounts(finalAccounts || []);
       setLoans(loansData || []);
       setTransactions(txData || []);
+      setMemberInvoices(invoiceResult.data || []);
     } catch (err) {
       console.error('[MemberDetailPage] fetchAll failed:', err);
       toast.error('Failed to load member data');
@@ -298,17 +314,44 @@ export default function MemberDetailPage() {
   );
   const displayMembershipType = membership?.membership_type || member?.membership_type || null;
 
+  const transactionsWithInvoiceDetails = useMemo(() => transactions.map(transaction => {
+    const reference = String(transaction.reference || '').trim();
+    const transactionDay = String(paymentDate(transaction) || '').slice(0, 10);
+    const exactInvoice = memberInvoices.find(invoice =>
+      invoice.id === transaction.invoice_id ||
+      (reference && invoice.id === reference) ||
+      (reference && String(invoice.invoice_no || '').trim() === reference)
+    );
+    const candidates = exactInvoice ? [] : memberInvoices.filter(invoice => {
+      const invoiceDay = String(invoice.payment_date || invoice.date || '').slice(0, 10);
+      if (!transactionDay || invoiceDay !== transactionDay) return false;
+      if (transaction.account_id && invoice.account_id === transaction.account_id) return true;
+      if (transaction.loan_id && invoice.ref_id === transaction.loan_id) return true;
+      return invoice.payment_type === transaction.category &&
+        Number(invoice.amount || 0) === Number(transaction.amount || 0);
+    });
+    const matchedInvoice = exactInvoice || (candidates.length === 1 ? candidates[0] : null);
+
+    return {
+      ...transaction,
+      invoice_id: matchedInvoice?.id || transaction.invoice_id,
+      invoice_no: matchedInvoice
+        ? (String(matchedInvoice.invoice_no || '').trim() || 'FOR TRACING')
+        : 'FOR TRACING',
+    };
+  }), [transactions, memberInvoices]);
+
   const loanTransactions = useMemo(
-    () => transactions.filter(t => t.category === 'loan'),
-    [transactions]
+    () => transactionsWithInvoiceDetails.filter(t => t.category === 'loan'),
+    [transactionsWithInvoiceDetails]
   );
   const cbuTransactions = useMemo(
-    () => transactions.filter(t => ['cbu', 'cbu_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['cbu', 'cbu_withdrawal'].includes(String(t.type || '').toLowerCase())),
-    [transactions]
+    () => transactionsWithInvoiceDetails.filter(t => ['cbu', 'cbu_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['cbu', 'cbu_withdrawal'].includes(String(t.type || '').toLowerCase())),
+    [transactionsWithInvoiceDetails]
   );
   const savingsTransactions = useMemo(
-    () => transactions.filter(t => ['savings', 'savings_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['savings', 'savings_withdrawal'].includes(String(t.type || '').toLowerCase())),
-    [transactions]
+    () => transactionsWithInvoiceDetails.filter(t => ['savings', 'savings_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['savings', 'savings_withdrawal'].includes(String(t.type || '').toLowerCase())),
+    [transactionsWithInvoiceDetails]
   );
   const cbuDisplayBalance = useMemo(
     () => cbuTransactions.reduce((sum, tx) => {
@@ -327,22 +370,22 @@ export default function MemberDetailPage() {
     [savingsTransactions]
   );
   const timeDepositTransactions = useMemo(
-    () => transactions.filter(t => t.category === 'time_deposit'),
-    [transactions]
+    () => transactionsWithInvoiceDetails.filter(t => t.category === 'time_deposit'),
+    [transactionsWithInvoiceDetails]
   );
   const savingsBoosterTransactions = useMemo(
-    () => transactions.filter(t => t.category === 'savings_booster'),
-    [transactions]
+    () => transactionsWithInvoiceDetails.filter(t => t.category === 'savings_booster'),
+    [transactionsWithInvoiceDetails]
   );
   const wellifeVipTransactions = useMemo(
-    () => transactions.filter(t => {
+    () => transactionsWithInvoiceDetails.filter(t => {
       const text = `${t.category || ''} ${t.type || ''} ${t.notes || ''}`.toLowerCase();
       return text.includes('wellife') || text.includes('vip');
     }),
-    [transactions]
+    [transactionsWithInvoiceDetails]
   );
 
-  const paymentHistoryRows = useMemo(() => loanPaymentHistoryRows(transactions, loans), [transactions, loans]);
+  const paymentHistoryRows = useMemo(() => loanPaymentHistoryRows(transactionsWithInvoiceDetails, loans), [transactionsWithInvoiceDetails, loans]);
 
   const loanPaymentCount = loanTransactions.filter(t => t.type === 'loan_payment').length;
   const cbuPaymentCount = cbuTransactions.filter(t => t.type === 'deposit').length;
@@ -662,7 +705,7 @@ export default function MemberDetailPage() {
             />
           )}
 
-          {activeTab === 'transactions' && <TransactionsTab transactions={transactions} />}
+          {activeTab === 'transactions' && <TransactionsTab transactions={transactionsWithInvoiceDetails} />}
 
           {activeTab === 'membership' && (
             <MembershipTab
@@ -678,6 +721,7 @@ export default function MemberDetailPage() {
               cbuTransactions={cbuTransactions}
               savingsTransactions={savingsTransactions}
               wellifeVipTransactions={wellifeVipTransactions}
+              paymentTransactions={transactionsWithInvoiceDetails}
               onRefresh={refreshEverything}
               memberRecordType={member?.record_type}
               memberMembershipType={member?.membership_type}
@@ -691,7 +735,10 @@ export default function MemberDetailPage() {
               memberId={id}
               memberName={memberFullName}
               userId={user?.id}
-              onRefresh={fetchTimeDeposits}
+              transactions={timeDepositTransactions}
+              onRefresh={async () => {
+                await Promise.all([fetchTimeDeposits(), fetchAll()]);
+              }}
             />
           )}
 
@@ -1501,7 +1548,7 @@ function HistoryTable({ rows }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
-            {['Payment Date', 'Type', 'Amount', 'Mode', 'Assisted By'].map(h => (
+            {['Payment Date', 'Type', 'Amount', 'SI#', 'Mode', 'Assisted By'].map(h => (
               <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 {h}
               </th>
@@ -1516,6 +1563,7 @@ function HistoryTable({ rows }) {
               <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
                 {formatCurrency(row.amount || 0)}
               </td>
+              <td className="px-4 py-3 text-gray-500">{displaySiNumber(row)}</td>
               <td className="px-4 py-3 text-gray-500">{displayPaymentMode(row)}</td>
               <td className="px-4 py-3 text-gray-500">{row.created_by_name || '-'}</td>
             </PaymentHistoryRow>
@@ -2373,6 +2421,7 @@ function MembershipTab({
   cbuTransactions = [],
   savingsTransactions = [],
   wellifeVipTransactions = [],
+  paymentTransactions = [],
   onRefresh,
   memberRecordType,
   memberMembershipType,
@@ -2514,8 +2563,34 @@ function MembershipTab({
       });
     }
 
-    return [...actualPayments, ...syntheticPayments];
-  }, [membership, payments, feePaid, membershipFees, adjustedImportedComponentTotals]);
+    return [...actualPayments, ...syntheticPayments].map(payment => {
+      if (payment.is_stored_payment) {
+        return { ...payment, reference: 'FOR TRACING', payment_mode: 'FOR TRACING' };
+      }
+
+      const paymentDay = String(payment.payment_date || '').slice(0, 10);
+      const paymentTime = new Date(payment.created_at || payment.payment_date || 0).getTime();
+      const related = paymentTransactions
+        .filter(tx => {
+          if (String(paymentDate(tx) || '').slice(0, 10) !== paymentDay) return false;
+          const text = `${tx.category || ''} ${tx.type || ''} ${tx.notes || ''}`.toLowerCase();
+          return text.includes('membership') || text.includes('admin') || text.includes('wellife');
+        })
+        .sort((a, b) => {
+          const aDistance = Math.abs(new Date(a.created_at || paymentDate(a) || 0).getTime() - paymentTime);
+          const bDistance = Math.abs(new Date(b.created_at || paymentDate(b) || 0).getTime() - paymentTime);
+          return aDistance - bDistance;
+        })[0];
+
+      return {
+        ...payment,
+        reference: payment.reference || related?.reference || '',
+        invoice_no: payment.invoice_no || related?.invoice_no || '',
+        invoice_id: payment.invoice_id || related?.invoice_id || '',
+        payment_mode: payment.payment_mode || related?.payment_mode || '',
+      };
+    });
+  }, [membership, payments, feePaid, membershipFees, adjustedImportedComponentTotals, paymentTransactions]);
   const totalPaidForDisplay = Math.max(
     feePaid,
     displayPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
@@ -3163,7 +3238,7 @@ function MembershipTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Date', 'Amount', 'Breakdown / Notes', 'Assisted By'].map(h => (
+                  {['Date', 'Amount', 'Breakdown / Notes', 'SI#', 'Mode', 'Assisted By'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {h}
                     </th>
@@ -3176,6 +3251,8 @@ function MembershipTab({
                     <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-3 font-semibold text-green-700">{formatCurrency(p.amount)}</td>
                     <td className="px-4 py-3 text-gray-500">{parsePaymentNotes(p.notes)}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{displaySiNumber(p)}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{displayPaymentMode(p)}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                       {p.created_by_name || ''}
                     </td>
@@ -3376,7 +3453,7 @@ const EMPTY_TD_FORM = {
   termination_date: '',
 };
 
-function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, userId, onRefresh }) {
+function MemberTimeDepositTab({ timeDeposits, transactions = [], loading, memberId, memberName, userId, onRefresh }) {
   const { hasPermission } = useAuth();
   const canCreate = hasPermission('time_deposit', 'create');
   const canEdit = hasPermission('time_deposit', 'edit');
@@ -3394,6 +3471,16 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
   const [withdrawOpen, setWithdrawOpen]   = useState(false);
 
   const tdFieldClass = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500';
+
+  function paymentTransaction(payment) {
+    const siNumber = String(payment.si_number || '').trim();
+    const paymentDay = String(payment.payment_date || '').slice(0, 10);
+    return transactions.find(tx =>
+      (siNumber && String(tx.reference || '').trim() === siNumber) ||
+      (String(paymentDate(tx) || '').slice(0, 10) === paymentDay &&
+        Number(tx.amount || 0) === Number(payment.amount || 0))
+    );
+  }
 
   function openAdd() {
     if (!canCreate) {
@@ -3629,22 +3716,28 @@ function MemberTimeDepositTab({ timeDeposits, loading, memberId, memberName, use
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-gray-50 bg-gray-50">
-                        {['SI#', 'Date', 'Amount'].map(h => (
+                        {['SI#', 'Date', 'Amount', 'Mode'].map(h => (
                           <th key={h} className="px-4 py-2 text-left font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {td.time_deposit_payments.map(p => (
-                        <PaymentHistoryRow key={p.id} record={p}>
-                          <td className="px-4 py-2 text-gray-500">{displayTracingText(p.si_number) || '-'}</td>
-                          <td className="px-4 py-2 text-gray-500">{formatDate(p.payment_date)}</td>
-                          <td className="px-4 py-2 font-medium text-gray-800">{formatCurrency(p.amount || 0)}</td>
-                        </PaymentHistoryRow>
-                      ))}
+                      {td.time_deposit_payments.map(p => {
+                        const transaction = paymentTransaction(p);
+                        const payment = { ...p, reference: p.si_number || transaction?.reference, payment_mode: transaction?.payment_mode };
+                        return (
+                          <PaymentHistoryRow key={p.id} record={payment}>
+                            <td className="px-4 py-2 text-gray-500">{displaySiNumber(payment)}</td>
+                            <td className="px-4 py-2 text-gray-500">{formatDate(p.payment_date)}</td>
+                            <td className="px-4 py-2 font-medium text-gray-800">{formatCurrency(p.amount || 0)}</td>
+                            <td className="px-4 py-2 text-gray-500">{displayPaymentMode(payment)}</td>
+                          </PaymentHistoryRow>
+                        );
+                      })}
                       <tr className="bg-gray-50">
                         <td colSpan={2} className="px-4 py-2 font-semibold text-gray-600">Total Paid</td>
                         <td className="px-4 py-2 font-bold text-emerald-700">{formatCurrency(totalPaid)}</td>
+                        <td />
                       </tr>
                     </tbody>
                   </table>

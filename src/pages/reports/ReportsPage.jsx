@@ -1064,7 +1064,7 @@ export default function ReportsPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <FileSearch size={17} className="text-emerald-600" />
-                  <h3 className="text-sm font-semibold text-gray-800">Documents For Tracing</h3>
+                  <h3 className="text-sm font-semibold text-gray-800">Documents FOR TRACING</h3>
                 </div>
                 <p className="mt-1 text-xs text-gray-400">Update missing SI, voucher, and check numbers without changing financial transactions.</p>
               </div>
@@ -1123,13 +1123,13 @@ export default function ReportsPage() {
                   ) : filteredTracingDocuments.map(document => (
                     <tr key={`${document.document_type}-${document.id}`} className="hover:bg-emerald-50/30">
                       <td className="px-4 py-3 text-center font-medium text-gray-800">{document.document_label}</td>
-                      <td className="px-4 py-3 text-center font-mono text-xs text-gray-500">For Tracing</td>
+                      <td className="px-4 py-3 text-center font-mono text-xs text-gray-500">FOR TRACING</td>
                       <td className="px-4 py-3 text-center font-medium text-gray-700 truncate" title={document.party}>{document.party}</td>
                       <td className="px-4 py-3 text-center text-xs text-gray-500">{formatDate(document.date || document.created_at)}</td>
                       <td className="px-4 py-3 text-center font-semibold text-gray-800">{formatCurrency(document.amount || 0)}</td>
                       <td className="px-4 py-3 text-center">
                         <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                          For Tracing
+                          FOR TRACING
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -1201,5 +1201,3 @@ export default function ReportsPage() {
     </div>
   );
 }
-
-

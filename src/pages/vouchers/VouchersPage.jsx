@@ -56,7 +56,7 @@ const PAYMENT_MODE_OPTIONS = [
   { value: 'GCash', label: 'GCash' },
   { value: 'Bank Transfer', label: 'Bank Transfer' },
   { value: 'Check', label: 'Check' },
-  { value: 'For Tracing', label: 'For Tracing' },
+  { value: 'FOR TRACING', label: 'FOR TRACING' },
 ];
 
 const VOUCHER_FOR_TRACING_PREFIX = 'FOR-TRACING';
@@ -142,7 +142,7 @@ function voucherStatusPillClass(voucher) {
 
 function voucherNoDisplay(value) {
   if (!value) return '';
-  if (isVoucherForTracing(value)) return 'For Tracing';
+  if (isVoucherForTracing(value)) return 'FOR TRACING';
   return isNeedVoucherNumber(value) ? 'Need Voucher Number' : value;
 }
 
@@ -543,7 +543,7 @@ export default function VouchersPage() {
       voucher_no: isNeedVoucherNumber(voucher.voucher_no)
         ? ''
         : isVoucherForTracing(voucher.voucher_no)
-          ? 'For Tracing'
+          ? 'FOR TRACING'
           : (voucher.voucher_no || ''),
       voucher_kind: voucher.voucher_kind || 'expense',
       date: voucher.date || '',
@@ -1191,14 +1191,14 @@ export default function VouchersPage() {
             />
             <button
               type="button"
-              onClick={() => setField('voucher_no', isVoucherForTracing(form.voucher_no) ? '' : 'For Tracing')}
+              onClick={() => setField('voucher_no', isVoucherForTracing(form.voucher_no) ? '' : 'FOR TRACING')}
               className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
               isVoucherForTracing(form.voucher_no)
                   ? 'border-[#07A04E]/25 bg-[#D6FADC] text-[#07A04E]'
                   : 'border-gray-200 bg-white text-gray-500 hover:border-[#07A04E]/30 hover:bg-[#D6FADC]/40 hover:text-[#07A04E]'
               }`}
             >
-              {isVoucherForTracing(form.voucher_no) ? 'For Tracing selected' : 'Mark as For Tracing'}
+              {isVoucherForTracing(form.voucher_no) ? 'FOR TRACING selected' : 'Mark as FOR TRACING'}
             </button>
             <p className="text-xs text-gray-400">
               Use this only when the voucher number still needs audit tracing.

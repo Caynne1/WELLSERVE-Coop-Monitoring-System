@@ -72,6 +72,15 @@ const PAYMENT_TYPE_STYLE = {
   savings_booster: 'bg-teal-100 text-teal-700',
 };
 
+const MEMBER_PAYMENT_FILTER_TYPES = [
+  'membership',
+  'loan_payment',
+  'cbu',
+  'savings',
+  'time_deposit',
+  'savings_booster',
+];
+
 const EMPTY_FORM = {
   date: new Date().toISOString().split('T')[0],
   payee: '',
@@ -92,7 +101,16 @@ function getAccountNoDisplay(invoice) {
 }
 
 function getPaymentMode(invoice) {
-  return invoice.payment_mode || '—';
+  const mode = String(invoice.payment_mode || '').trim();
+  return /^(?:not traceable|for tracing)$/i.test(mode) ? 'FOR TRACING' : (mode || '—');
+}
+
+function getInvoiceNumberDisplay(invoiceOrNumber) {
+  const value = typeof invoiceOrNumber === 'object'
+    ? invoiceOrNumber?.invoice_no
+    : invoiceOrNumber;
+  const text = String(value || '').trim();
+  return !text || /^(?:not traceable|for tracing)$/i.test(text) ? 'FOR TRACING' : text;
 }
 
 export default function InvoicesPage() {
@@ -203,7 +221,7 @@ export default function InvoicesPage() {
         !typeFilter
           ? true
           : typeFilter === 'others'
-            ? !['loan_payment', 'cbu', 'savings'].includes(inv.payment_type || '')
+            ? !MEMBER_PAYMENT_FILTER_TYPES.includes(inv.payment_type || '')
             : (inv.payment_type || '') === typeFilter;
 
       return matchSearch && matchStat && matchType;
@@ -341,7 +359,7 @@ export default function InvoicesPage() {
     setMarking(true);
     try {
       await markInvoicePaid(paidTarget.id);
-      toast.success(`Invoice ${paidTarget.invoice_no} marked as paid.`);
+      toast.success(`Invoice ${getInvoiceNumberDisplay(paidTarget)} marked as paid.`);
       setPaidTarget(null);
       fetchInvoices();
     } catch (err) {
@@ -361,7 +379,7 @@ export default function InvoicesPage() {
     setVoiding(true);
     try {
       await voidInvoice(voidTarget.id);
-      toast.success(`Invoice ${voidTarget.invoice_no} voided.`);
+      toast.success(`Invoice ${getInvoiceNumberDisplay(voidTarget)} voided.`);
       setVoidTarget(null);
       fetchInvoices();
     } catch (err) {
@@ -422,7 +440,7 @@ export default function InvoicesPage() {
     const html = `
       <h1 class="report-title">Sales Invoice</h1>
       <div class="report-meta">
-        SI# <strong>${invoice.invoice_no}</strong> &nbsp;|&nbsp;
+        SI# <strong>${getInvoiceNumberDisplay(invoice)}</strong> &nbsp;|&nbsp;
         Date: ${formatDate(invoice.date)} &nbsp;|&nbsp;
         Generated: ${new Date().toLocaleString('en-PH')}
       </div>
@@ -460,7 +478,7 @@ export default function InvoicesPage() {
       <div class="confidential">WELLSERVE Cooperative Monitoring System — Authorized personnel only.</div>
     `;
 
-    const win = printHtmlDocument(wrapWithLetterhead(html, { title: `Invoice ${invoice.invoice_no} — WELLSERVE` }), {
+    const win = printHtmlDocument(wrapWithLetterhead(html, { title: `Invoice ${getInvoiceNumberDisplay(invoice)} — WELLSERVE` }), {
       width: 800,
       height: 700,
       delay: 900,
@@ -481,7 +499,7 @@ export default function InvoicesPage() {
         : '';
       const statusColor = invoice.status === 'paid' ? '#065f46' : invoice.status === 'voided' ? '#6b7280' : '#b45309';
       return `<tr${invoice.status === 'voided' ? ' style="opacity:0.5"' : ''}>
-        <td style="font-family:monospace;font-size:8.5pt;font-weight:600">${invoice.invoice_no||'—'}</td>
+        <td style="font-family:monospace;font-size:8.5pt;font-weight:600">${getInvoiceNumberDisplay(invoice)}</td>
         <td style="white-space:nowrap">${formatDate(invoice.date)}</td>
         <td>${invoice.payee||'—'}${memberLine}</td>
         <td style="max-width:160px">${invoice.purpose||'—'}</td>
@@ -569,7 +587,7 @@ export default function InvoicesPage() {
       ];
 
       const rows = filtered.map(invoice => [
-        invoice.invoice_no || '',
+        getInvoiceNumberDisplay(invoice),
         formatDate(invoice.date),
         invoice.payee || '',
         invoice.purpose || '',
@@ -651,9 +669,12 @@ export default function InvoicesPage() {
           className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751] bg-white text-gray-700 transition"
         >
           <option value="">All Type</option>
+          <option value="membership">Membership Fee</option>
           <option value="loan_payment">Loan Payment</option>
           <option value="cbu">CBU Deposit</option>
           <option value="savings">Savings Deposit</option>
+          <option value="time_deposit">Time Deposit</option>
+          <option value="savings_booster">Savings Booster</option>
           <option value="others">Others</option>
         </select>
 
@@ -691,10 +712,21 @@ export default function InvoicesPage() {
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[17%]" />
+                <col className="w-[15%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[11%]" />
+              </colgroup>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['SI No.', 'Date', 'Payee', 'Purpose', 'Payment Type', 'Mode of Payment', 'Amount', 'Status', 'Actions'].map(h => (
+                  {['SI No.', 'Date', 'Payee', 'Purpose', 'Payment Type', 'Mode of Payment', 'Amount', 'Status'].map(h => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
@@ -702,6 +734,9 @@ export default function InvoicesPage() {
                       {h}
                     </th>
                   ))}
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -723,7 +758,7 @@ export default function InvoicesPage() {
                   >
                     <td className="px-4 py-3">
                       <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
-                        {invoice.invoice_no}
+                        {getInvoiceNumberDisplay(invoice)}
                       </span>
                     </td>
 
@@ -733,10 +768,9 @@ export default function InvoicesPage() {
 
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{invoice.payee}</p>
-                      {invoice.members && (
+                      {invoice.members?.member_no && (
                         <p className="text-xs text-[#07A04E] font-mono mt-0.5">
-                          {invoice.members.first_name} {invoice.members.last_name}
-                          {invoice.members.member_no && ` · ${invoice.members.member_no}`}
+                          {invoice.members.member_no}
                         </p>
                       )}
                     </td>
@@ -770,7 +804,7 @@ export default function InvoicesPage() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => handlePrintSingleInvoice(invoice)}
                           title="Print Invoice"
@@ -997,7 +1031,7 @@ export default function InvoicesPage() {
           <>
             <div className="flex items-center justify-between mb-5">
               <span className="font-mono text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">
-                {viewTarget.invoice_no}
+                {getInvoiceNumberDisplay(viewTarget)}
               </span>
               <div className="flex items-center gap-2">
                 <span className={`inline-flex min-w-[86px] items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${STATUS_PILL_CLASS[viewTarget.status] || 'border-gray-200 bg-gray-50 text-gray-600'}`}>
@@ -1130,7 +1164,7 @@ export default function InvoicesPage() {
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-mono text-xs font-bold text-gray-600 mb-1">
-                {paidTarget.invoice_no}
+                {getInvoiceNumberDisplay(paidTarget)}
               </p>
               <p className="font-medium text-gray-900 text-sm">{paidTarget.payee}</p>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -1181,7 +1215,7 @@ export default function InvoicesPage() {
             </p>
             <div className="bg-gray-50 rounded-lg px-4 py-3 mb-4 border border-gray-100">
               <p className="font-mono text-xs font-bold text-gray-600 mb-1">
-                {voidTarget.invoice_no}
+                {getInvoiceNumberDisplay(voidTarget)}
               </p>
               <p className="font-medium text-gray-900 text-sm">{voidTarget.payee}</p>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -1225,7 +1259,7 @@ export default function InvoicesPage() {
             </p>
             <div className="bg-red-50 rounded-lg px-4 py-3 mb-4 border border-red-100">
               <p className="font-mono text-xs font-bold text-red-700 mb-1">
-                {deleteTarget.invoice_no || 'No SI#'}
+                {getInvoiceNumberDisplay(deleteTarget)}
               </p>
               <p className="font-medium text-gray-900 text-sm">{deleteTarget.payee}</p>
               <p className="text-xs text-gray-500 mt-0.5">
@@ -1824,7 +1858,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                   if (invoiceNoInvalid) setInvoiceNoInvalid(false);
                   if (errorMsg) setErrorMsg('');
                 }}
-                placeholder={isOldTransaction ? 'Leave blank if no SI# exists' : 'e.g. SI-000123'}
+                placeholder={isOldTransaction ? 'FOR TRACING' : 'e.g. SI-000123'}
                 className={`${fieldClass} font-mono ${invoiceNoInvalid ? 'border-red-400 ring-2 ring-red-200 focus:ring-red-300' : ''}`}
               />
               {invoiceNoInvalid && errorMsg && (
@@ -1863,7 +1897,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                 <option value="GCash">GCash</option>
                 <option value="Bank Transfer">Bank Transfer</option>
                 <option value="Check">Check</option>
-                <option value="For Tracing">For Tracing</option>
+                <option value="FOR TRACING">FOR TRACING</option>
               </select>
             </div>
             <div>

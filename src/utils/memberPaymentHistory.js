@@ -3,7 +3,7 @@ export function paymentDate(row) {
 }
 
 export function loanPaymentSiNumber(row, invoices = [], loans = []) {
-  const clean = value => String(value ?? '').trim().replace(/\bnot\s+traceable\b/gi, 'FOR TRACING');
+  const clean = value => String(value ?? '').trim().replace(/\b(?:not\s+traceable|for\s+tracing)\b/gi, 'FOR TRACING');
   const reference = clean(row.reference);
   const invoice = invoices.find(item => item.member_id === row.member_id &&
     (item.id === row.invoice_id || item.id === reference));
@@ -11,15 +11,15 @@ export function loanPaymentSiNumber(row, invoices = [], loans = []) {
   const explicit = clean(row.si_number || row.invoice_no);
   if (explicit) return explicit;
   if (/^for tracing$/i.test(reference)) return 'FOR TRACING';
-  if (loans.some(loan => reference === loan.id || reference === loan.loan_no)) return '';
-  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(reference)) return '';
+  if (loans.some(loan => reference === loan.id || reference === loan.loan_no)) return 'FOR TRACING';
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(reference)) return 'FOR TRACING';
   if (!reference && /^for tracing$/i.test(clean(row.payment_mode))) return 'FOR TRACING';
-  return reference;
+  return reference || 'FOR TRACING';
 }
 
 export function loanPaymentMode(row) {
   const mode = String(row.payment_mode ?? '').trim()
-    .replace(/\bnot\s+traceable\b/gi, 'FOR TRACING')
+    .replace(/\b(?:not\s+traceable|for\s+tracing)\b/gi, 'FOR TRACING')
     .replace(/\u00e2\u20ac\u201d/g, '-')
     .replace(/\u00c3\u00a2\u00e2\u201a\u00ac\u00e2\u20ac\u009d/g, '-');
   return /^[-\u2013\u2014]$/.test(mode) ? '' : mode;

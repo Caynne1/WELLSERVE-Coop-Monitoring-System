@@ -34,7 +34,7 @@ const CHECK_FOR_TRACING_PREFIX = 'CHECK-FOR-TRACING';
 
 function voucherNoDisplay(value) {
   if (!value) return '';
-  return String(value || '').startsWith('FOR-TRACING-') ? 'For Tracing' : value;
+  return String(value || '').startsWith('FOR-TRACING-') ? 'FOR TRACING' : value;
 }
 
 function isCheckForTracing(value = '') {
@@ -44,7 +44,7 @@ function isCheckForTracing(value = '') {
 
 function checkNoDisplay(value) {
   if (!value) return '';
-  return isCheckForTracing(value) ? 'For Tracing' : value;
+  return isCheckForTracing(value) ? 'FOR TRACING' : value;
 }
 
 function makeCheckForTracingNumber(seed = '') {
@@ -301,7 +301,7 @@ export default function CheckbookPage() {
     }
     setEditTarget(entry);
     setForm({
-      check_no:   isCheckForTracing(entry.check_no) ? 'For Tracing' : (entry.check_no || ''),
+      check_no:   isCheckForTracing(entry.check_no) ? 'FOR TRACING' : (entry.check_no || ''),
       date:       entry.date       || '',
       payee:      entry.payee      || '',
       amount:     entry.amount?.toString() || '',
@@ -811,14 +811,14 @@ export default function CheckbookPage() {
               />
               <button
                 type="button"
-                onClick={() => setField('check_no', isCheckForTracing(form.check_no) ? '' : 'For Tracing')}
+                onClick={() => setField('check_no', isCheckForTracing(form.check_no) ? '' : 'FOR TRACING')}
                 className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                   isCheckForTracing(form.check_no)
                     ? 'border-[#07A04E]/25 bg-[#D6FADC] text-[#07A04E]'
                     : 'border-gray-200 bg-white text-gray-500 hover:border-[#07A04E]/30 hover:bg-[#D6FADC]/40 hover:text-[#07A04E]'
                 }`}
               >
-                {isCheckForTracing(form.check_no) ? 'For Tracing selected' : 'Mark as For Tracing'}
+                {isCheckForTracing(form.check_no) ? 'FOR TRACING selected' : 'Mark as FOR TRACING'}
               </button>
             </div>
             <Input
