@@ -172,6 +172,24 @@ export default function InvoicesPage() {
   const [deleting, setDeleting] = useState(false);
 
   const [multiOpen, setMultiOpen] = useState(false);
+  const [multiInitialSelection, setMultiInitialSelection] = useState(null);
+
+  useEffect(() => {
+    if (searchParams.get('new') !== '1' || !searchParams.get('member')) return;
+    if (!canCreate) {
+      toast.error('You do not have permission to create invoices');
+      return;
+    }
+    setMultiInitialSelection({
+      memberId: searchParams.get('member'),
+      loanId: searchParams.get('loan') || '',
+      period: searchParams.get('period') || '',
+    });
+    setMultiOpen(true);
+    const next = new URLSearchParams(searchParams);
+    ['new', 'member', 'loan', 'period'].forEach(key => next.delete(key));
+    setSearchParams(next, { replace: true });
+  }, [canCreate, searchParams, setSearchParams]);
 
   const fetchInvoices = useCallback(async () => {
     try {
@@ -1196,10 +1214,15 @@ export default function InvoicesPage() {
 
       <AddInvoiceModal
         open={multiOpen}
-        onClose={() => setMultiOpen(false)}
+        initialSelection={multiInitialSelection}
+        onClose={() => {
+          setMultiOpen(false);
+          setMultiInitialSelection(null);
+        }}
         userId={user?.id}
         onSuccess={() => {
           setMultiOpen(false);
+          setMultiInitialSelection(null);
           fetchInvoices();
         }}
       />
@@ -1346,7 +1369,7 @@ function getLoanInterestDue(loan) {
 }
 
 
-function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
+function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = null }) {
   const [step, setStep] = useState(1); // 1 = pick member, 2 = choose payments
   const [member, setMember] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -1407,8 +1430,25 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       const data = await getMemberPaymentSummary(m.id);
       setMember(data.member || m);
       setSummary(data);
-      setSelectedLoanId(data.loan.records?.[0]?.id || '');
-      setSelectedLoanScheduleTarget('');
+      const requestedLoan = data.loan.records?.find(loan => loan.id === initialSelection?.loanId);
+      const selectedLoan = requestedLoan || data.loan.records?.[0] || null;
+      setSelectedLoanId(selectedLoan?.id || '');
+      setSelectedLoanScheduleTarget(requestedLoan && initialSelection?.period ? String(initialSelection.period) : '');
+      if (requestedLoan && initialSelection?.period) {
+        const schedule = parseInvoiceJSONSafe(requestedLoan.preview_schedule_json, []);
+        const selectedRow = Array.isArray(schedule)
+          ? schedule.find((row, index) => String(row.period ?? index + 1) === String(initialSelection.period))
+          : null;
+        if (selectedRow) {
+          const principalDue = Math.max(0, Number(selectedRow.principal || 0) - Number(selectedRow.principal_paid_amount || 0));
+          const interestDue = Math.max(0, Number(selectedRow.interest ?? selectedRow.interest_amount ?? 0) - Number(selectedRow.interest_paid_amount || 0));
+          setAmounts(current => ({
+            ...current,
+            loan: principalDue ? String(principalDue) : '',
+            loan_interest: interestDue ? String(interestDue) : '',
+          }));
+        }
+      }
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
       setSelectedBoosterId(data.savings_booster.records?.[0]?.id || '');
       setKiddySavingsType(m.kiddy_savings_type || 'regular_savings');
@@ -1419,6 +1459,11 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       setLoadingSummary(false);
     }
   }
+
+  useEffect(() => {
+    if (!open || !initialSelection?.memberId) return;
+    handlePickMember({ id: initialSelection.memberId });
+  }, [open, initialSelection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function setAmount(category, value) {
     setAmounts(a => ({ ...a, [category]: value }));

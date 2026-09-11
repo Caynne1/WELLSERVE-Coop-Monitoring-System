@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Upload, Eye, Search, UserPlus, Pencil, Trash2, Users, Printer,
   Download, Filter, RotateCcw, CheckSquare,
-  X, UserCheck, UserX, ChevronDown, CalendarDays, Baby, Archive,
+  X, UserCheck, UserX, ChevronDown, CalendarDays, Baby,
   LayoutGrid, List, FileSpreadsheet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -72,9 +72,9 @@ const membershipTypeClass = {
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
 const MEMBER_VIEWS = [
-  { id: 'regular', label: 'Members', icon: Users },
-  { id: 'kiddy',   label: 'Kiddy & Youth', icon: Baby },
-  { id: 'closed',  label: 'Closed Account', icon: Archive },
+  { id: 'regular', label: 'Members' },
+  { id: 'kiddy',   label: 'Kiddy & Youth' },
+  { id: 'closed',  label: 'Closed Account' },
 ];
 
 // ─── Bulk Action Toolbar ──────────────────────────────────────────────────────
@@ -651,7 +651,6 @@ export default function MembersPage() {
       {/* ── View Tabs ── */}
       <div className="mt-6 flex gap-2 overflow-x-auto pb-1 print:hidden">
         {MEMBER_VIEWS.map(view => {
-          const Icon = view.icon;
           const count = view.id === 'kiddy'
             ? kiddyMemberCount
             : view.id === 'closed'
@@ -668,7 +667,6 @@ export default function MembersPage() {
                   : 'border-gray-100 bg-white text-gray-600 shadow-sm hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700'
               }`}
             >
-              <Icon size={16} />
               {view.label}
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                 isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'

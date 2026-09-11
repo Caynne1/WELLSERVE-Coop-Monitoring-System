@@ -16,6 +16,7 @@ import LoanTypeModal from '../../components/shared/LoanTypeModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/ui/Button';
 import LoanTable from './LoanTable';
+import LoanCollectionsTab from './LoanCollectionsTab';
 import SetLoanProductModal from '../../components/shared/SetLoanProductModal';
 import { LOAN_PRODUCT_FILTER_OPTIONS, matchesLoanProduct } from '../../utils/loanProducts';
 import LoanReleasedSummary, { LoanReleaseDateFilter } from './LoanReleasedSummary';
@@ -23,6 +24,7 @@ import { computeCoopSummaryFromInvoices } from '../../services/coopFundService';
 import { filterFundLedgerByDate, sumPostedLoanReleases, parseLedgerDate, txDisplayDate } from '../../utils/fundLoanReleases';
 import { getLoanFilterDate, matchesLoanDateRange } from '../../utils/loanDateFilter';
 import { getLoanBalanceWithInterest, getLoanFinancials, getLoanDueState, normalizeLoanStatus, isLoanReleased, getLoanWorkflowTarget, getLoanTypeLabel } from '../../utils/loanListState';
+import { buildLoanCollectionRows } from '../../utils/loanCollections';
 import Spinner from '../../components/ui/Spinner';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
 import Modal from '../../components/ui/Modal';
@@ -62,13 +64,6 @@ const METHOD_FILTER_OPTIONS = [
   { value: 'all', label: 'All Method' },
   { value: 'straight', label: 'Straight' },
   { value: 'diminishing', label: 'Diminishing' },
-];
-
-const DUE_FILTER_OPTIONS = [
-  { value: 'all', label: 'All Due Status' },
-  { value: 'due_7', label: 'Due in 7 Days' },
-  { value: 'due_2', label: 'Due in 2 Days' },
-  { value: 'overdue', label: 'Overdue' },
 ];
 
 const STATUS_FILTER_OPTIONS = [
@@ -126,6 +121,7 @@ export default function LoansPage() {
   const canCreate = hasPermission('loans', 'create');
   const canEdit = hasPermission('loans', 'edit');
   const canDelete = hasPermission('loans', 'delete');
+  const canRecordPayment = hasPermission('invoices', 'create');
   // Admins are allowed automatically; every other role requires an explicit
   // Loans "approve" permission assigned by an administrator.
   const canApproveLoan = hasPermission('loans', 'approve');
@@ -144,10 +140,10 @@ export default function LoansPage() {
     return [...new Set([...baseYears, ...ledgerYears, ...loanYears])].sort((a, b) => b - a);
   }, [releaseLedger, loans]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('records');
   const [search, setSearch] = useState('');
   const [frequencyFilter, setFrequencyFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
-  const [dueFilter, setDueFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [productFilter, setProductFilter] = useState('all');
   const [productAssignmentLoan, setProductAssignmentLoan] = useState(null);
@@ -290,23 +286,12 @@ export default function LoansPage() {
       const matchesMethod =
         methodFilter === 'all' || (loan.loan_method || '') === methodFilter;
 
-      const dueInfo = getLoanDueState(loan);
-      let matchesDue = true;
-
-      if (dueFilter === 'due_7') {
-        matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays >= 0 && dueInfo.diffDays <= 7;
-      } else if (dueFilter === 'due_2') {
-        matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays >= 0 && dueInfo.diffDays <= 2;
-      } else if (dueFilter === 'overdue') {
-        matchesDue = dueInfo.diffDays !== null && dueInfo.diffDays < 0;
-      }
-
       const matchesStatus =
         statusFilter === 'all' || normalizeLoanStatus(loan.status) === statusFilter;
 
-      return matchesSearch && matchesFrequency && matchesMethod && matchesDue && matchesStatus;
+      return matchesSearch && matchesFrequency && matchesMethod && matchesStatus;
     });
-  }, [loans, search, frequencyFilter, methodFilter, dueFilter, statusFilter, productFilter, releaseDateRange]);
+  }, [loans, search, frequencyFilter, methodFilter, statusFilter, productFilter, releaseDateRange]);
 
   function handleSort(key) {
     setSortConfig(prev => {
@@ -382,7 +367,7 @@ export default function LoansPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, frequencyFilter, methodFilter, dueFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, frequencyFilter, methodFilter, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
     const activeLoans = loans.filter(l => isLoanReleased(l) && getLoanBalanceWithInterest(l) > 0);
@@ -399,6 +384,7 @@ export default function LoansPage() {
       totalOutstanding,
     };
   }, [loans, releaseLedger, releaseDateRange]);
+  const collectionCount = useMemo(() => buildLoanCollectionRows(loans).length, [loans]);
 
   function handlePrint() {
     const rowsHtml = filtered.map(loan => {
@@ -490,7 +476,7 @@ export default function LoansPage() {
         subtitle="Manage and monitor member loans"
         action={
           <div className="flex items-center gap-2">
-            {canCreate && (
+            {canCreate && activeTab === 'records' && (
               <Button icon={<Plus size={15} />} onClick={() => setLoanTypeModalOpen(true)}>
                 New Loan
               </Button>
@@ -499,7 +485,26 @@ export default function LoansPage() {
         }
       />
 
-      <LoanReleaseDateFilter range={releaseDateRange} onRangeChange={setReleaseDateRange} years={releaseYears} />
+      <div className="mt-6 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Loan sections">
+        {[
+          { id: 'records', label: 'Loan Records', count: loans.length },
+          { id: 'collections', label: 'Collections', count: collectionCount },
+        ].map(tab => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button key={tab.id} type="button" role="tab" aria-selected={isActive} onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${isActive ? 'border-[#07A04E] bg-[#07A04E] text-white shadow-sm shadow-emerald-200' : 'border-gray-100 bg-white text-gray-600 shadow-sm hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700'}`}>
+              {tab.label}
+              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'records' ? (
+        <>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 mb-5">
         <SummaryCard
@@ -558,16 +563,6 @@ export default function LoansPage() {
           </select>
 
           <select
-            value={dueFilter}
-            onChange={e => setDueFilter(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
-          >
-            {DUE_FILTER_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          <select
             aria-label="Loan product filter"
             value={productFilter}
             onChange={e => setProductFilter(e.target.value)}
@@ -587,6 +582,8 @@ export default function LoansPage() {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+
+          <LoanReleaseDateFilter range={releaseDateRange} onRangeChange={setReleaseDateRange} years={releaseYears} />
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -631,7 +628,7 @@ export default function LoansPage() {
             onSetProduct={setProductAssignmentLoan}
             onWorkflow={handleWorkflowAction}
             onDelete={setToDelete}
-            emptyMessage={search || frequencyFilter !== 'all' || methodFilter !== 'all' || dueFilter !== 'all' || statusFilter !== 'all' || productFilter !== 'all'
+            emptyMessage={search || frequencyFilter !== 'all' || methodFilter !== 'all' || statusFilter !== 'all' || productFilter !== 'all'
               ? 'No loans match your search/filter.' : 'No loans yet.'}
           />
 
@@ -662,6 +659,10 @@ export default function LoansPage() {
             itemLabel="loans"
           />
         </div>
+      )}
+        </>
+      ) : (
+        <LoanCollectionsTab loans={loans} navigate={navigate} canRecordPayment={canRecordPayment} />
       )}
 
       <ConfirmDialog
