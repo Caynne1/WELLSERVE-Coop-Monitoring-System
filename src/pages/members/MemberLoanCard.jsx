@@ -105,6 +105,7 @@ export default function MemberLoanCard({ loan, navigate, onPay, paymentCount, tr
                 showPaymentTracking={true}
                 released={released}
                 collections={collections}
+                transactions={transactions}
                 title=""
               />
             </div>

@@ -18,6 +18,7 @@ import {
   calculateSavingsBoosterLedger,
   getBoosterDepositWeeks,
 } from './savingsBoosterService';
+import { paymentModeStorageValue } from '../utils/paymentMode';
 
 const INVOICE_COLUMNS = [
   'invoice_no',
@@ -205,7 +206,7 @@ function buildPaymentInvoicePayload({
     account_id,
     notes,
     created_by,
-    payment_mode,
+    payment_mode: paymentModeStorageValue(payment_mode),
     payment_mode_note,
   });
 }
@@ -620,6 +621,19 @@ export async function createMultiCategoryInvoice({
       if (entry.category === 'loan') {
         const loan = current.loan.records.find(record => record.id === entry.loan?.id);
         if (!loan) throw new Error('Only released loans with an outstanding balance can receive payment.');
+        const target = entry.schedule_target;
+        if (Number(entry.principal_amount || 0) + Number(entry.interest_amount || 0) > 0) {
+          if (!['scheduled', 'advance'].includes(target?.type)) {
+            throw new Error('Choose the scheduled due date for this loan payment, or select Advance Payment.');
+          }
+          if (target.type === 'scheduled') {
+            const schedule = typeof loan.preview_schedule_json === 'string'
+              ? JSON.parse(loan.preview_schedule_json || '[]')
+              : loan.preview_schedule_json;
+            const exists = Array.isArray(schedule) && schedule.some(row => String(row.period) === String(target.period));
+            if (!exists) throw new Error('The selected loan due date is no longer available. Please select it again.');
+          }
+        }
         return { ...entry, loan };
       }
       return entry;
@@ -1020,7 +1034,10 @@ export async function createMultiCategoryInvoice({
         }
         if (scheduleAmount > 0) {
           await applyLoanPaymentToSchedule(entry.loan.id, scheduleAmount, effectivePaymentDate, {
-            principal: principalAmount, interest: interestAmount, paymentId: savedInvoice.id,
+            principal: principalAmount,
+            interest: interestAmount,
+            paymentId: savedInvoice.id,
+            scheduleTarget: entry.schedule_target || null,
           });
         }
         ref_id = entry.loan.id;

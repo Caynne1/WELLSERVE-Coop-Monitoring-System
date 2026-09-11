@@ -1063,6 +1063,7 @@ export default function LoanDetailPage() {
           defaultOpen={scheduleOpen}
           showPaymentTracking={true}
           released={isLoanReleased(loan)}
+          transactions={paymentHistory}
           title="Amortization Schedule"
         />
       </div>

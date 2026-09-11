@@ -61,29 +61,65 @@ export function applyLoanAllocation(schedule, allocation, paidAt) {
   const balance = schedulePaymentBalances(rows);
   if (principal > balance.principal) throw new Error('Principal payment exceeds the remaining principal balance.');
   if (interest > balance.interest) throw new Error('Interest payment exceeds the remaining scheduled interest.');
+
+  let eligibleIndexes = rows.map((_, index) => index);
+  const target = allocation.scheduleTarget;
+  if (target?.type === 'scheduled') {
+    const targetIndex = rows.findIndex((row, index) =>
+      String(row.period ?? index + 1) === String(target.period));
+    if (targetIndex < 0) throw new Error('The selected scheduled due date is no longer available.');
+    eligibleIndexes = eligibleIndexes.filter(index => index >= targetIndex);
+  } else if (target?.type === 'advance') {
+    const paymentDay = String(paidAt || '').slice(0, 10);
+    const targetIndex = rows.findIndex(row =>
+      String(row.due_date || '').slice(0, 10) >= paymentDay
+      && (cents(row.principal_remaining) > 0 || cents(row.interest_remaining) > 0));
+    if (targetIndex < 0) throw new Error('No upcoming scheduled due date is available for this advance payment.');
+    eligibleIndexes = eligibleIndexes.filter(index => index >= targetIndex);
+  }
+
+  const eligibleBalance = schedulePaymentBalances(eligibleIndexes.map(index => rows[index]));
+  if (principal > eligibleBalance.principal) {
+    throw new Error('Principal payment exceeds the balance available from the selected due date onward.');
+  }
+  if (interest > eligibleBalance.interest) {
+    throw new Error('Interest payment exceeds the interest available from the selected due date onward.');
+  }
+
   let principalLeft = principal;
   let interestLeft = interest;
-  // Apply each component independently, oldest installment first.
-  return rows.map(row => {
+  const updatedRows = [...rows];
+  // Keep principal and interest separate while applying from the chosen date forward.
+  for (const index of eligibleIndexes) {
+    const row = updatedRows[index];
     const principalNow = Math.min(principalLeft, cents(row.principal_remaining));
     const interestNow = Math.min(interestLeft, cents(row.interest_remaining));
     principalLeft -= principalNow;
     interestLeft -= interestNow;
-    if (!principalNow && !interestNow) return row;
+    if (!principalNow && !interestNow) continue;
     const updated = refresh({ ...row,
       principal_paid_amount: money(cents(row.principal_paid_amount) + principalNow),
       interest_paid_amount: money(cents(row.interest_paid_amount) + interestNow),
     });
-    if (allocation.paymentId) updated.payment_allocations.push({ id: allocation.paymentId,
-      principal: money(principalNow), interest: money(interestNow), paid_at: paidAt });
+    if (allocation.paymentId) updated.payment_allocations.push({
+      id: allocation.paymentId,
+      principal: money(principalNow),
+      interest: money(interestNow),
+      paid_at: paidAt,
+      receipt_total: money(principal + interest),
+      application_type: allocation.scheduleTarget?.type || 'automatic',
+      target_period: allocation.scheduleTarget?.period ?? null,
+      target_due_date: allocation.scheduleTarget?.dueDate ?? null,
+    });
     updated.paid_at = updated.paid ? paidAt : null;
     updated.last_partial_paid_at = updated.partial_paid ? paidAt : row.last_partial_paid_at;
     if (interestNow > 0) {
       updated.last_interest_paid_amount = money(interestNow);
       updated.last_interest_paid_at = paidAt;
     }
-    return updated;
-  });
+    updatedRows[index] = updated;
+  }
+  return updatedRows;
 }
 
 export function reverseLoanAllocation(schedule, allocation) {

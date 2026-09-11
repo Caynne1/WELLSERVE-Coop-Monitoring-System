@@ -29,6 +29,8 @@ import { formatCurrency, formatDate, formatDateTime, formatAmountInput, cleanAmo
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { trackActivity } from '../../services/logService';
 import { getMembershipBreakdown } from '../../utils/invoicePaymentState';
+import { installmentPresentation } from '../../utils/loanPaymentDisplay';
+import { paymentModeDisplayValue } from '../../utils/paymentMode';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -101,8 +103,8 @@ function getAccountNoDisplay(invoice) {
 }
 
 function getPaymentMode(invoice) {
-  const mode = String(invoice.payment_mode || '').trim();
-  return /^(?:not traceable|for tracing)$/i.test(mode) ? 'FOR TRACING' : (mode || '—');
+  const mode = String(invoice.payment_mode || '').trim().replace(/^not traceable$/i, 'For Tracing');
+  return paymentModeDisplayValue(mode, '—');
 }
 
 function getInvoiceNumberDisplay(invoiceOrNumber) {
@@ -1044,7 +1046,7 @@ export default function InvoicesPage() {
               {[
                 ['Invoice Date', formatDate(viewTarget.date)],
                 ['Payee', viewTarget.payee],
-                ['Mode of Payment', viewTarget.payment_mode || '—'],
+                ['Mode of Payment', getPaymentMode(viewTarget)],
                 ['Notes', viewTarget.notes || '—'],
                 ['Created', formatDateTime(viewTarget.created_at)],
               ].map(([label, value]) => (
@@ -1352,6 +1354,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
 
   const [amounts, setAmounts] = useState({}); // { category: amountString }
   const [selectedLoanId, setSelectedLoanId] = useState('');
+  const [selectedLoanScheduleTarget, setSelectedLoanScheduleTarget] = useState('');
   const [selectedTdId, setSelectedTdId] = useState('');
   const [selectedBoosterId, setSelectedBoosterId] = useState('');
   const [kiddySavingsType, setKiddySavingsType] = useState('regular_savings');
@@ -1376,6 +1379,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     setSummary(null);
     setAmounts({});
     setSelectedLoanId('');
+    setSelectedLoanScheduleTarget('');
     setSelectedTdId('');
     setSelectedBoosterId('');
     setKiddySavingsType('regular_savings');
@@ -1404,6 +1408,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
       setMember(data.member || m);
       setSummary(data);
       setSelectedLoanId(data.loan.records?.[0]?.id || '');
+      setSelectedLoanScheduleTarget('');
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
       setSelectedBoosterId(data.savings_booster.records?.[0]?.id || '');
       setKiddySavingsType(m.kiddy_savings_type || 'regular_savings');
@@ -1436,6 +1441,16 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
   const selectedLoanForDisplay = summary?.loan.records?.find(loan => loan.id === selectedLoanId)
     || summary?.loan.records?.[0] || null;
+  const selectedLoanSchedule = parseInvoiceJSONSafe(selectedLoanForDisplay?.preview_schedule_json, []);
+  const loanScheduleOptions = Array.isArray(selectedLoanSchedule)
+    ? selectedLoanSchedule
+      .filter(row => !['Paid', 'Prepaid'].includes(installmentPresentation(row, selectedLoanSchedule).status))
+      .map((row, index) => ({
+        value: String(row.period ?? index + 1),
+        dueDate: row.due_date || null,
+        label: `Payment ${row.period ?? index + 1}${row.due_date ? ` - ${formatDate(row.due_date)}` : ''}`,
+      }))
+    : [];
 
   async function handleSave() {
     setErrorMsg('');
@@ -1524,7 +1539,12 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
     const loanAmount = parseFloat(amounts.loan) || 0;
     const interestAmount = parseFloat(amounts.loan_interest) || 0;
     const penaltyAmount = parseFloat(amounts.loan_penalty) || 0;
+    if (loanAmount + interestAmount > 0 && !selectedLoanScheduleTarget) {
+      showSaveError('Choose the scheduled due date for this loan payment, or select Advance Payment.');
+      return;
+    }
     if (loanAmount + interestAmount + penaltyAmount > 0) {
+      const selectedScheduleOption = loanScheduleOptions.find(option => option.value === selectedLoanScheduleTarget);
       entries.push({
         category: 'loan',
         amount: loanAmount + interestAmount + penaltyAmount,
@@ -1532,6 +1552,13 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
         interest_amount: interestAmount,
         penalty_amount: penaltyAmount,
         loan: selectedLoan,
+        schedule_target: selectedLoanScheduleTarget === 'advance'
+          ? { type: 'advance' }
+          : {
+            type: 'scheduled',
+            period: selectedScheduleOption?.value,
+            dueDate: selectedScheduleOption?.dueDate || null,
+          },
       });
     }
     if (parseFloat(amounts.cbu) > 0) {
@@ -1759,6 +1786,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                             aria-label="Loan principal balance"
                             onChange={e => {
                               setSelectedLoanId(e.target.value);
+                              setSelectedLoanScheduleTarget('');
                               setAmounts(current => ({ ...current, loan: '', loan_interest: '', loan_penalty: '' }));
                             }}
                           >
@@ -1804,6 +1832,24 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                               </option>
                             ))}
                           </select>
+                        )}
+                        {cat === 'loan' && info.payable && (
+                          <div className="mt-2 max-w-xs">
+                            <label className="block text-[11px] font-medium text-gray-500 mb-1">
+                              Apply payment to
+                            </label>
+                            <select
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
+                              value={selectedLoanScheduleTarget}
+                              onChange={event => setSelectedLoanScheduleTarget(event.target.value)}
+                            >
+                              <option value="">Choose scheduled due date</option>
+                              {loanScheduleOptions.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                              <option value="advance">Advance Payment</option>
+                            </select>
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -1897,7 +1943,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess }) {
                 <option value="GCash">GCash</option>
                 <option value="Bank Transfer">Bank Transfer</option>
                 <option value="Check">Check</option>
-                <option value="FOR TRACING">FOR TRACING</option>
+                <option value="For Tracing">FOR TRACING</option>
               </select>
             </div>
             <div>
