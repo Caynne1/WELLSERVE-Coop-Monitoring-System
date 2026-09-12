@@ -211,9 +211,16 @@ export default function LoansPage() {
 
     setDeleting(true);
     try {
+      const memberName = `${toDelete.members?.first_name || ''} ${toDelete.members?.last_name || ''}`.trim() || 'Unknown member';
       await deleteLoan(toDelete.id);
       toast.success('Loan deleted');
-      trackActivity({ userId: user?.id, module: 'loan', action: 'delete', description: `Deleted loan ID: ${toDelete.id}` });
+      trackActivity({
+        userId: user?.id,
+        module: 'loan',
+        action: 'delete',
+        description: `Deleted loan for ${memberName}`,
+        recordId: toDelete.id,
+      });
       setLoans(prev => prev.filter(l => l.id !== toDelete.id));
       setToDelete(null);
     } catch {
@@ -240,7 +247,14 @@ export default function LoansPage() {
       setStatusSavingId(loan.id);
       await updateLoanDetails(loan.id, { status: newStatus, approval_status: newStatus });
       toast.success('Loan status updated');
-      trackActivity({ userId: user?.id, module: 'loan', action: newStatus, description: `Loan status changed to ${newStatus} (ID: ${loan.id})` });
+      const memberName = `${loan.members?.first_name || ''} ${loan.members?.last_name || ''}`.trim() || 'Unknown member';
+      trackActivity({
+        userId: user?.id,
+        module: 'loan',
+        action: newStatus,
+        description: `Loan status for ${memberName} changed to ${newStatus}`,
+        recordId: loan.id,
+      });
       await fetchLoans();
     } catch (err) {
       toast.error(err.message || 'Failed to update loan status');

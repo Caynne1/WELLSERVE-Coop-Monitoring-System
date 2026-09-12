@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { isLoanWorkflowLocked } from '../utils/loanListState';
 import {
   applyLoanAllocation,
+  legacyLedgerOnlyReversalBalances,
   reconcileSchedulePrincipal,
   reverseLoanAllocation,
   schedulePaymentBalances,
@@ -521,7 +522,25 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allo
     throw new Error('Principal and interest must equal the reversal amount.');
   }
   let remaining = amount;
-  const updatedSchedule = allocation ? reverseLoanAllocation(schedule, allocation) : schedule.map(r => ({ ...r }));
+  const reversalPaymentIds = new Set([allocation?.paymentId, ...(allocation?.paymentIds || [])].filter(Boolean));
+  const hasTrackedReceipt = reversalPaymentIds.size > 0 && schedule.some(row =>
+    (row.payment_allocations || []).some(item => reversalPaymentIds.has(item.id)));
+  const storedPrincipal = Number(summary.outstanding_principal ?? loan.balance);
+  const storedTotal = Number(summary.outstanding_total);
+  const storedInterest = Number(summary.outstanding_interest ?? (
+    Number.isFinite(storedTotal) && Number.isFinite(storedPrincipal)
+      ? Math.max(0, storedTotal - storedPrincipal)
+      : Number.NaN
+  ));
+  const ledgerOnlyBalances = allocation && !hasTrackedReceipt
+    ? legacyLedgerOnlyReversalBalances(schedule, {
+      principal: storedPrincipal,
+      interest: storedInterest,
+    }, allocation)
+    : null;
+  const updatedSchedule = allocation
+    ? (ledgerOnlyBalances ? schedule.map(row => ({ ...row })) : reverseLoanAllocation(schedule, allocation))
+    : schedule.map(r => ({ ...r }));
 
   for (let i = updatedSchedule.length - 1; !allocation && i >= 0 && remaining > 0; i--) {
     const row = updatedSchedule[i];
@@ -556,10 +575,10 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allo
   }
 
   const paymentBalances = allocation ? schedulePaymentBalances(updatedSchedule) : null;
-  const unpaidPrincipal = allocation ? paymentBalances.principal / 100 : round2(
+  const unpaidPrincipal = ledgerOnlyBalances?.principal ?? (allocation ? paymentBalances.principal / 100 : round2(
     updatedSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
-  );
-  const outstandingInterest = allocation ? paymentBalances.interest / 100 : 0;
+  ));
+  const outstandingInterest = ledgerOnlyBalances?.interest ?? (allocation ? paymentBalances.interest / 100 : 0);
   const outstandingTotal = round2(unpaidPrincipal + outstandingInterest);
   const nextUnpaid = updatedSchedule.find(r => !r.paid);
   const newStatus = computeLoanStatus(outstandingTotal, nextUnpaid?.due_date, updatedSchedule);

@@ -327,7 +327,14 @@ export async function deleteInvoiceAndLinkedRecords(id, { deleted_by = null } = 
     const loanGroups = relatedTransactions.reduce((map, tx) => {
       if (!tx.loan_id) return map;
       if (!['loan_payment', 'loan_interest'].includes(String(tx.type || '').toLowerCase())) return map;
-      const current = map.get(tx.loan_id) || { principal: 0, interest: 0, paymentId: invoice.id };
+      const current = map.get(tx.loan_id) || {
+        principal: 0,
+        interest: 0,
+        paymentId: invoice.id,
+        paymentIds: [invoice.id],
+        paidAt: tx.transaction_date || tx.payment_date || paymentDate,
+      };
+      if (tx.id && !current.paymentIds.includes(tx.id)) current.paymentIds.push(tx.id);
       current[tx.type === 'loan_interest' ? 'interest' : 'principal'] += Number(tx.amount || 0);
       map.set(tx.loan_id, current);
       return map;

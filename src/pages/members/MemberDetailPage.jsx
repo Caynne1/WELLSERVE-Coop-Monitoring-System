@@ -54,6 +54,7 @@ import { createInvoiceForPayment, createInvoice, checkInvoiceNoExists } from '..
 import { calculateSavingsBoosterLedger } from '../../services/savingsBoosterService';
 import { trackActivity } from '../../services/logService';
 import { getLoanOutstandingComponents } from '../../utils/loanListState';
+import { computeScheduledLoanPerformance } from '../../utils/creditProfile';
 
 import { formatDate, formatCurrency, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -770,7 +771,7 @@ export default function MemberDetailPage() {
           )}
 
           {activeTab === 'credit_profile' && (
-            <CreditProfileTab loans={loans} memberName={memberFullName} />
+            <CreditProfileTab loans={loans} transactions={loanTransactions} memberName={memberFullName} />
           )}
         </div>
       </div>
@@ -1382,8 +1383,12 @@ function computeCreditProfile(loans) {
   return { total, paid, active, overdue, defaulted, partial, totalBorrowed, totalOutstanding, repaymentRate, score, grade, gradeColor, recommendations };
 }
 
-function CreditProfileTab({ loans, memberName }) {
+function CreditProfileTab({ loans, transactions, memberName }) {
   const profile = useMemo(() => computeCreditProfile(loans || []), [loans]);
+  const performance = useMemo(
+    () => computeScheduledLoanPerformance(loans || [], transactions || []),
+    [loans, transactions],
+  );
 
   const statItems = [
     { label: 'Total Loans', value: profile.total, color: 'text-gray-800' },
@@ -1391,7 +1396,7 @@ function CreditProfileTab({ loans, memberName }) {
     { label: 'Active',      value: profile.active, color: 'text-blue-700' },
     { label: 'Overdue',     value: profile.overdue, color: profile.overdue > 0 ? 'text-red-700' : 'text-gray-400' },
     { label: 'Defaulted',   value: profile.defaulted, color: profile.defaulted > 0 ? 'text-rose-700' : 'text-gray-400' },
-    { label: 'Repayment Rate', value: `${profile.repaymentRate}%`, color: profile.repaymentRate >= 70 ? 'text-emerald-700' : 'text-orange-600' },
+    { label: 'On-Time Rate', value: `${performance.onTimeRate}%`, color: performance.onTimeRate >= 70 ? 'text-emerald-700' : 'text-orange-600' },
   ];
 
   return (
@@ -1433,6 +1438,42 @@ function CreditProfileTab({ loans, memberName }) {
             <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Scheduled payment performance */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-700">Scheduled Payment Performance</p>
+            <p className="text-xs text-gray-400 mt-0.5">Historical installment results</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-bold tabular-nums text-gray-800">{performance.onTimeRate}%</p>
+            <p className="text-[10px] text-gray-400">On-Time Rate</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 lg:grid-cols-7">
+          {[
+            ['Due Installments', performance.dueInstallments, 'text-gray-800'],
+            ['Paid On Time', performance.paidOnTime, 'text-emerald-700'],
+            ['Paid Late', performance.paidLate, 'text-amber-700'],
+            ['Missed', performance.missed, 'text-red-700'],
+            ['Still Overdue', performance.overdue, 'text-orange-700'],
+            ['Timing Unknown', performance.timingUnknown, 'text-gray-500'],
+            ['Balance Payments', performance.balancePayments, 'text-blue-700'],
+          ].map(([label, value, color]) => (
+            <div key={label} className="border-l-2 border-gray-100 pl-3">
+              <p className={`text-lg font-bold tabular-nums ${color}`}>{value}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+        {performance.balancePayments > 0 && (
+          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-sm">
+            <span className="text-gray-500">Applied directly to loan balance</span>
+            <span className="font-semibold tabular-nums text-blue-700">{formatCurrency(performance.balancePaymentAmount)}</span>
+          </div>
+        )}
       </div>
 
       {/* Exposure */}

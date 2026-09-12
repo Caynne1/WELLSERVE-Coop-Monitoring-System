@@ -102,7 +102,8 @@ function receiptTotals(rows, paymentId = null) {
       receipts.set(key, receipt);
     });
   });
-  return [...receipts.values()].map(receipt => ({
+  return [...receipts.entries()].map(([key, receipt]) => ({
+    key,
     principal: receipt.explicitPrincipal ?? receipt.appliedPrincipal,
     interest: receipt.explicitInterest ?? receipt.appliedInterest,
     appliedPrincipal: receipt.appliedPrincipal,
@@ -133,6 +134,26 @@ export function schedulePaymentBalances(schedule) {
   return {
     principal: Math.max(0, totalPrincipal - untrackedPrincipalPaid - tracked.principal),
     interest: Math.max(0, totalInterest - untrackedInterestPaid - tracked.interest),
+  };
+}
+
+export function legacyLedgerOnlyReversalBalances(schedule, current, allocation) {
+  const currentPrincipal = Number(current?.principal);
+  const currentInterest = Number(current?.interest);
+  if (!Number.isFinite(currentPrincipal) || !Number.isFinite(currentInterest)) return null;
+
+  const scheduled = schedulePaymentBalances(schedule);
+  const principal = amount(allocation?.principal);
+  const interest = amount(allocation?.interest);
+  const currentPrincipalCents = cents(currentPrincipal);
+  const currentInterestCents = cents(currentInterest);
+  const principalGap = scheduled.principal - currentPrincipalCents;
+  const interestGap = scheduled.interest - currentInterestCents;
+  if (principalGap !== principal || interestGap !== interest) return null;
+
+  return {
+    principal: money(currentPrincipalCents + principal),
+    interest: money(currentInterestCents + interest),
   };
 }
 
@@ -235,9 +256,28 @@ export function applyLoanAllocation(schedule, allocation, paidAt) {
 
 export function reverseLoanAllocation(schedule, allocation) {
   const rows = schedule.map(normalize);
-  const trackedReceipts = allocation.paymentId ? receiptTotals(rows, allocation.paymentId) : [];
+  const paymentIds = new Set([allocation.paymentId, ...(allocation.paymentIds || [])].filter(Boolean));
+  let trackedReceipts = [...paymentIds].flatMap(paymentId => receiptTotals(rows, paymentId));
   const expectedPrincipal = amount(allocation.principal);
   const expectedInterest = amount(allocation.interest);
+  if (!trackedReceipts.length) {
+    const candidateIds = [...new Set(rows.flatMap(row =>
+      (row.payment_allocations || []).map(item => item.id).filter(Boolean)))];
+    const exactCandidates = candidateIds.map(paymentId => ({
+      paymentId,
+      receipts: receiptTotals(rows, paymentId),
+    })).filter(candidate => {
+      const totals = candidate.receipts.reduce((sum, receipt) => ({
+        principal: sum.principal + receipt.principal,
+        interest: sum.interest + receipt.interest,
+      }), { principal: 0, interest: 0 });
+      return totals.principal === expectedPrincipal && totals.interest === expectedInterest;
+    });
+    if (exactCandidates.length === 1) {
+      paymentIds.add(exactCandidates[0].paymentId);
+      trackedReceipts = exactCandidates[0].receipts;
+    }
+  }
   if (trackedReceipts.length) {
     const recorded = trackedReceipts.reduce((totals, receipt) => ({
       principal: totals.principal + receipt.principal,
@@ -254,9 +294,20 @@ export function reverseLoanAllocation(schedule, allocation) {
   let interestLeft = trackedReceipts.length
     ? trackedReceipts.reduce((sum, receipt) => sum + receipt.appliedInterest, 0)
     : expectedInterest;
-  for (let i = rows.length - 1; i >= 0; i--) {
+  const paymentDay = String(allocation.paidAt || '').slice(0, 10);
+  const datedIndexes = !trackedReceipts.length && paymentDay
+    ? rows.map((row, index) => ({ row, index })).filter(({ row }) => [
+      row.paid_at,
+      row.last_partial_paid_at,
+      row.last_interest_paid_at,
+    ].some(value => String(value || '').slice(0, 10) === paymentDay)).map(({ index }) => index)
+    : [];
+  const indexes = datedIndexes.length
+    ? datedIndexes.sort((a, b) => b - a)
+    : rows.map((_, index) => index).reverse();
+  for (const i of indexes) {
     const row = rows[i];
-    const matches = row.payment_allocations.filter(item => allocation.paymentId && item.id === allocation.paymentId);
+    const matches = row.payment_allocations.filter(item => paymentIds.has(item.id));
     const availablePrincipal = trackedReceipts.length
       ? matches.reduce((sum, item) => sum + cents(item.principal), 0)
       : Math.max(0, cents(row.principal_paid_amount)
@@ -275,7 +326,7 @@ export function reverseLoanAllocation(schedule, allocation) {
       principal_paid_amount: money(cents(row.principal_paid_amount) - principalNow),
       interest_paid_amount: money(cents(row.interest_paid_amount) - interestNow),
       payment_allocations: trackedReceipts.length
-        ? row.payment_allocations.filter(item => item.id !== allocation.paymentId)
+        ? row.payment_allocations.filter(item => !paymentIds.has(item.id))
         : row.payment_allocations,
       paid_at: null,
       last_interest_paid_amount: interestNow ? 0 : row.last_interest_paid_amount,
@@ -285,3 +336,4 @@ export function reverseLoanAllocation(schedule, allocation) {
   if (principalLeft || interestLeft) throw new Error('The payment could not be safely reversed from the stored schedule.');
   return rows;
 }
+  

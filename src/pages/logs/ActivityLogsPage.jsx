@@ -8,12 +8,14 @@ import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
 import Pagination from '../../components/ui/Pagination';
+import Modal from '../../components/ui/Modal';
 import usePagination from '../../hooks/usePagination';
 import { getLogs, subscribeToLogs, trackActivity } from '../../services/logService';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 import { formatDateTime } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
+import { activityActionOptions, formatActivityLogDescription } from '../../utils/activityLogActions';
 
 const MODULE_COLORS = {
   loan: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
@@ -76,7 +78,7 @@ function exportLogsToCSV(logs) {
     displayUser(log),
     log.module || '',
     displayText(log.action),
-    (log.description || '').replace(/,/g, ';'),
+    formatActivityLogDescription(log).replace(/,/g, ';'),
   ]);
 
   const csv = [headers, ...rows]
@@ -114,6 +116,29 @@ function StatCard({ icon, label, value, sub, tone = 'gray' }) {
   );
 }
 
+function DescriptionCell({ log, onView }) {
+  const description = formatActivityLogDescription(log);
+  const limit = 100;
+  const canExpand = description.length > limit;
+  const preview = canExpand
+    ? `${description.slice(0, limit).trimEnd()}...`
+    : description;
+
+  if (!canExpand) return <span>{preview}</span>;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onView(log)}
+      className="block w-full text-left text-gray-500 hover:text-[#000066] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#000066]/30 rounded-sm transition-colors"
+      title="View full description"
+      aria-label="View full activity description"
+    >
+      {preview}
+    </button>
+  );
+}
+
 export default function ActivityLogsPage() {
   const { user } = useAuth();
   const [logs, setLogs] = useState([]);
@@ -125,6 +150,7 @@ export default function ActivityLogsPage() {
   const [dateTo, setDateTo] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
+  const [descriptionTarget, setDescriptionTarget] = useState(null);
 
   const fetchLogs = useCallback(async ({ quiet = false } = {}) => {
     try {
@@ -156,7 +182,7 @@ export default function ActivityLogsPage() {
   }), [logs, moduleFilter, actionFilter]);
 
   const moduleOptions = useMemo(() => uniqueOptions(logs, 'module'), [logs]);
-  const actionOptions = useMemo(() => uniqueOptions(logs, 'action'), [logs]);
+  const actionOptions = useMemo(() => activityActionOptions(logs), [logs]);
   const userCount = useMemo(
     () => new Set(filteredLogs.map(log => displayUser(log)).filter(Boolean)).size,
     [filteredLogs]
@@ -230,7 +256,7 @@ export default function ActivityLogsPage() {
       <td>${displayUser(log)}</td>
       <td style="text-transform:capitalize">${displayText(log.module)}</td>
       <td style="text-transform:capitalize">${displayText(log.action)}</td>
-      <td style="max-width:240px">${log.description || '-'}</td>
+      <td style="max-width:240px">${formatActivityLogDescription(log)}</td>
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Activity Logs</h1>
@@ -446,8 +472,8 @@ export default function ActivityLogsPage() {
                         {displayText(log.action)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-md truncate" title={log.description}>
-                      {log.description || '-'}
+                    <td className="px-4 py-3 text-gray-500 max-w-md">
+                      <DescriptionCell log={log} onView={setDescriptionTarget} />
                     </td>
                   </tr>
                 ))}
@@ -472,6 +498,34 @@ export default function ActivityLogsPage() {
           />
         </div>
       )}
+
+      <Modal
+        open={!!descriptionTarget}
+        onClose={() => setDescriptionTarget(null)}
+        title="Activity Details"
+        size="md"
+      >
+        {descriptionTarget && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-xs text-gray-400 mb-1">Date &amp; Time</p>
+                <p className="font-medium text-gray-800">{formatDateTime(descriptionTarget.created_at)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 mb-1">User</p>
+                <p className="font-medium text-gray-800">{displayUser(descriptionTarget)}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 mb-1">Description</p>
+              <p className="text-sm text-gray-700 leading-6 whitespace-pre-wrap break-words">
+                {formatActivityLogDescription(descriptionTarget)}
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
