@@ -25,6 +25,10 @@ export function loanPaymentMode(row) {
   return /^[-\u2013\u2014]$/.test(mode) ? '' : mode;
 }
 
+export function loanPaymentApplication(row) {
+  return /\bLoan Balance Payment\b/i.test(String(row.notes || '')) ? 'Loan Balance Payment' : '';
+}
+
 export function loanPaymentHistoryRows(transactions, loans = []) {
   const money = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
   const loanReferences = new Set(loans.flatMap(loan => [loan.id, loan.loan_no]).filter(Boolean));

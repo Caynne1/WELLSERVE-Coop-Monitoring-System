@@ -173,6 +173,24 @@ export function applyLoanAllocation(schedule, allocation, paidAt) {
   if (target.type === 'settlement' && (principal !== balance.principal || interest !== balance.interest)) {
     throw new Error('Full Settlement must equal the remaining principal and fixed interest balance.');
   }
+  if (target.type === 'balance') {
+    const ledgerIndex = rows.length - 1;
+    if (allocation.paymentId) {
+      rows[ledgerIndex].payment_allocations.push({
+        id: allocation.paymentId,
+        principal: 0,
+        interest: 0,
+        receipt_principal: money(principal),
+        receipt_interest: money(interest),
+        receipt_total: money(principal + interest),
+        paid_at: paidAt,
+        application_type: 'balance',
+        target_period: null,
+        target_due_date: null,
+      });
+    }
+    return rows;
+  }
   const targetIndex = targetIndexFor(rows, target, paidAt);
   if (targetIndex < 0) {
     throw new Error(target.type === 'advance'

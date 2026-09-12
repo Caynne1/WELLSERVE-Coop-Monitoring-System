@@ -655,8 +655,8 @@ export async function createMultiCategoryInvoice({
         if (!loan) throw new Error('Only released loans with an outstanding balance can receive payment.');
         const target = entry.schedule_target;
         if (Number(entry.principal_amount || 0) + Number(entry.interest_amount || 0) > 0) {
-          if (!['scheduled', 'advance', 'settlement'].includes(target?.type)) {
-            throw new Error('Choose the scheduled due date, Advance Payment, or Full Settlement.');
+          if (!['scheduled', 'balance', 'advance', 'settlement'].includes(target?.type)) {
+            throw new Error('Choose a scheduled due date, Loan Balance Payment, Advance Payment, or Full Settlement.');
           }
           if (target.type === 'scheduled') {
             const schedule = typeof loan.preview_schedule_json === 'string'
@@ -717,6 +717,7 @@ export async function createMultiCategoryInvoice({
       const interestAmount = Number(entry.interest_amount) || 0;
       const penaltyAmount = Number(entry.penalty_amount) || 0;
       const outstanding = getLoanOutstandingComponents(entry.loan);
+      const isBalancePayment = entry.schedule_target?.type === 'balance';
       if (principalAmount > outstanding.principal) {
         throw new Error(`Principal payment exceeds the remaining principal balance of ${outstanding.principal}.`);
       }
@@ -728,7 +729,7 @@ export async function createMultiCategoryInvoice({
       }
       return [
         principalAmount > 0 ? {
-          label: `Loan Payment${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+          label: `${isBalancePayment ? 'Loan Balance Payment' : 'Loan Payment'}${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
           amount: principalAmount,
           payment_type: 'loan_payment',
           ref_id: entry.loan.id,
@@ -989,6 +990,9 @@ export async function createMultiCategoryInvoice({
         const penaltyAmount = Number(entry.penalty_amount) || 0;
         const scheduleAmount = principalAmount + interestAmount;
         const outstanding = getLoanOutstandingComponents(entry.loan);
+        const isBalancePayment = entry.schedule_target?.type === 'balance';
+        const loanPaymentNotes = [isBalancePayment ? 'Loan Balance Payment' : null, notes]
+          .filter(Boolean).join(' - ') || null;
         if (principalAmount > outstanding.principal) {
           throw new Error(`Principal payment exceeds the remaining principal balance of ${outstanding.principal}.`);
         }
@@ -1013,7 +1017,7 @@ export async function createMultiCategoryInvoice({
             type: 'loan_payment',
             amount: principalAmount,
             reference: invoiceReference || entry.loan.loan_no || null,
-            notes,
+            notes: loanPaymentNotes,
             created_by,
             transaction_date: effectivePaymentDate,
             payment_mode,
@@ -1023,7 +1027,7 @@ export async function createMultiCategoryInvoice({
             await supabase.from('transactions').delete().eq('id', loanTx.id);
           });
           invoiceLines.push({
-            label: `Loan Payment${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
+            label: `${isBalancePayment ? 'Loan Balance Payment' : 'Loan Payment'}${entry.loan.loan_no ? ` - ${entry.loan.loan_no}` : ''}`,
             amount: principalAmount,
             payment_type: 'loan_payment',
             ref_id: entry.loan.id,
@@ -1037,7 +1041,7 @@ export async function createMultiCategoryInvoice({
             type: 'loan_interest',
             amount: interestAmount,
             reference: invoiceReference || entry.loan.loan_no || null,
-            notes,
+            notes: loanPaymentNotes,
             created_by,
             transaction_date: effectivePaymentDate,
             payment_mode,
@@ -1086,7 +1090,7 @@ export async function createMultiCategoryInvoice({
           });
         }
         ref_id = entry.loan.id;
-        purpose = purpose || `Loan Payment${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;
+        purpose = purpose || `${isBalancePayment ? 'Loan Balance Payment' : 'Loan Payment'}${entry.loan.loan_no ? ` — ${entry.loan.loan_no}` : ''}`;
       }
 
       if (entry.category === 'cbu' || entry.category === 'savings') {

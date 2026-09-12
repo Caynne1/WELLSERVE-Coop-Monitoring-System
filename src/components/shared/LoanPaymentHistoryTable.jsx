@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabase';
 import { PaymentHistoryRow } from '../../pages/members/MemberPaymentNavigation';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { loanPaymentMode, loanPaymentSiNumber, paymentDate } from '../../utils/memberPaymentHistory';
+import { loanPaymentApplication, loanPaymentMode, loanPaymentSiNumber, paymentDate } from '../../utils/memberPaymentHistory';
 
-const columns = ['Payment Date', 'SI#', 'Principal Paid', 'Interest Paid', 'Total Paid', 'Mode', 'Assisted By'];
+const columns = ['Payment Date', 'SI#', 'Principal Paid', 'Interest Paid', 'Total Paid', 'Application', 'Mode', 'Assisted By'];
 const amounts = ['loan_amount', 'interest_amount', 'total_paid'];
 
 export default function LoanPaymentHistoryTable({ rows, loans = [], memberId }) {
@@ -45,6 +45,7 @@ export default function LoanPaymentHistoryTable({ rows, loans = [], memberId }) 
             {amounts.map(key => <td key={key} className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${key === 'total_paid' ? 'font-semibold text-emerald-700' : 'font-medium'}`}>
               {formatCurrency(row[key] || 0)}
             </td>)}
+            <td className="whitespace-nowrap px-4 py-3 text-gray-500">{loanPaymentApplication(row)}</td>
             <td className="px-4 py-3 text-gray-500">{loanPaymentMode(row)}</td>
             <td className="px-4 py-3 text-gray-500">{row.created_by_name || ''}</td>
           </PaymentHistoryRow>)}
@@ -54,7 +55,7 @@ export default function LoanPaymentHistoryTable({ rows, loans = [], memberId }) 
           {amounts.map(key => <td key={key} className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
             {formatCurrency(rows.reduce((sum, row) => sum + Number(row[key] || 0), 0))}
           </td>)}
-          <td colSpan={2} />
+          <td colSpan={3} />
         </tr></tfoot>}
       </table>
     </div>

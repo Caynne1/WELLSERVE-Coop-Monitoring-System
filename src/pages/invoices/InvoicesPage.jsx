@@ -1585,7 +1585,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
     const interestAmount = parseFloat(amounts.loan_interest) || 0;
     const penaltyAmount = parseFloat(amounts.loan_penalty) || 0;
     if (loanAmount + interestAmount > 0 && !selectedLoanScheduleTarget) {
-      showSaveError('Choose the scheduled due date, Advance Payment, or Full Settlement.');
+      showSaveError('Choose a scheduled due date, Loan Balance Payment, Advance Payment, or Full Settlement.');
       return;
     }
     if (loanAmount + interestAmount + penaltyAmount > 0) {
@@ -1597,7 +1597,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
         interest_amount: interestAmount,
         penalty_amount: penaltyAmount,
         loan: selectedLoan,
-        schedule_target: ['advance', 'settlement'].includes(selectedLoanScheduleTarget)
+        schedule_target: ['balance', 'advance', 'settlement'].includes(selectedLoanScheduleTarget)
           ? { type: selectedLoanScheduleTarget }
           : {
             type: 'scheduled',
@@ -1904,6 +1904,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
                               {loanScheduleOptions.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
                               ))}
+                              <option value="balance">Loan Balance Payment</option>
                               <option value="advance">Advance Payment</option>
                               <option value="settlement">Full Settlement</option>
                             </select>
