@@ -2,20 +2,13 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp, CheckCircle, XCircle, AlertCircle, Banknote, Percent, Wallet } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { installmentPaid, installmentPresentation, installmentRemaining, installmentStatus, scheduleCollections } from '../../utils/loanPaymentDisplay';
+import { reconcileSchedulePrincipal } from '../../utils/loanPaymentAllocation';
 
 function StatusPill({ status }) {
   if (status === 'Paid') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">
         <CheckCircle size={10} /> Paid
-      </span>
-    );
-  }
-
-  if (status === 'Prepaid' || status === 'Partially Prepaid') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700">
-        <CheckCircle size={10} /> {status}
       </span>
     );
   }
@@ -36,10 +29,10 @@ function StatusPill({ status }) {
     );
   }
 
-  if (status === 'Partial') {
+  if (status === 'Partially Paid') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
-        <AlertCircle size={10} /> Partial
+        <AlertCircle size={10} /> Partially Paid
       </span>
     );
   }
@@ -61,6 +54,7 @@ export default function LoanScheduleTable({
   defaultOpen = true,
   showPaymentTracking = false,
   released = false,
+  loanPaid = false,
   collections = null,
   transactions = [],
   title = 'Amortization Schedule',
@@ -69,7 +63,8 @@ export default function LoanScheduleTable({
 
   if (!schedule || schedule.length === 0) return null;
 
-  const displaySchedule = schedule.map((row, idx) => {
+  const trackedSchedule = reconcileSchedulePrincipal(schedule, loanAmount);
+  const displaySchedule = trackedSchedule.map((row, idx) => {
     const storedInterest = Number(row.interest ?? row.interest_amount ?? 0);
     const shouldComputeWeeklyInterest =
       frequency === 'weekly' &&
@@ -81,7 +76,7 @@ export default function LoanScheduleTable({
       return { ...row, displayInterest: storedInterest };
     }
 
-    const previousRow = idx > 0 ? schedule[idx - 1] : null;
+    const previousRow = idx > 0 ? trackedSchedule[idx - 1] : null;
     const beginningBalance = Number(
       row.beginning_balance ??
       previousRow?.balance ??
@@ -103,12 +98,12 @@ export default function LoanScheduleTable({
     : rawTotalPrincipalAmort;
   const totalInterest = displaySchedule.reduce((s, r) => s + (r.displayInterest || 0), 0);
   const totalLoanPayment = totalPrincipalAmort + totalInterest;
-  const presentations = new Map(schedule.map(row => [
-    row,
-    installmentPresentation(row, schedule, released, new Date(), transactions),
-  ]));
-  const paidCount = schedule.filter(row => ['Paid', 'Prepaid'].includes(presentations.get(row)?.status)).length;
-  const collected = collections ?? scheduleCollections(schedule);
+  const presentations = new Map(trackedSchedule.map(row => {
+    const presentation = installmentPresentation(row, trackedSchedule, released, new Date(), transactions);
+    return [row, loanPaid ? { ...presentation, status: 'Paid' } : presentation];
+  }));
+  const paidCount = trackedSchedule.filter(row => presentations.get(row)?.status === 'Paid').length;
+  const collected = collections ?? scheduleCollections(trackedSchedule);
   const collectedValue = value => value == null ? 'Not recorded' : formatCurrency(value);
 
   const textSize = memberLayout ? 'text-sm' : compact ? 'text-[11px]' : 'text-xs';
@@ -149,7 +144,7 @@ export default function LoanScheduleTable({
             </thead>
             <tbody className="divide-y divide-gray-50">
               {displaySchedule.map((row, idx) => {
-                const presentation = presentations.get(schedule[idx]) || {
+                const presentation = presentations.get(trackedSchedule[idx]) || {
                   actualPaid: installmentPaid(row),
                   paidAt: row.paid_at || row.last_partial_paid_at || null,
                   status: installmentStatus(row, released),
@@ -173,7 +168,7 @@ export default function LoanScheduleTable({
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.principal || 0)}</td>
                     <td className={`${cellPad} text-right`}>{formatCurrency(row.displayInterest || 0)}</td>
                     {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(presentation.actualPaid)}</td>}
-                    {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(installmentRemaining(row))}</td>}
+                    {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(loanPaid ? 0 : installmentRemaining(row))}</td>}
                     <td className={`${cellPad} text-center`}>
                       <StatusPill status={presentation.status} />
                     </td>
@@ -186,8 +181,8 @@ export default function LoanScheduleTable({
                 <td className={`${cellPad}`} colSpan={3}>Totals ({schedule.length} payments)</td>
                 <td className={`${cellPad} text-right`}>{formatCurrency(totalPrincipalAmort)}</td>
                 <td className={`${cellPad} text-right`}>{formatCurrency(totalInterest)}</td>
-                {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(schedule.reduce((sum, row) => sum + presentations.get(row).actualPaid, 0))}</td>}
-                {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(schedule.reduce((sum, row) => sum + installmentRemaining(row), 0))}</td>}
+                {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(trackedSchedule.reduce((sum, row) => sum + presentations.get(row).actualPaid, 0))}</td>}
+                {showPaymentTracking && <td className={`${cellPad} text-right`}>{formatCurrency(loanPaid ? 0 : trackedSchedule.reduce((sum, row) => sum + installmentRemaining(row), 0))}</td>}
                 <td className={`${cellPad} text-center`}>
                   <span className="text-[10px] text-gray-400">{paidCount}/{schedule.length}</span>
                 </td>

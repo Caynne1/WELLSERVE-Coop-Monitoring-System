@@ -23,7 +23,7 @@ import LoanReleasedSummary, { LoanReleaseDateFilter } from './LoanReleasedSummar
 import { computeCoopSummaryFromInvoices } from '../../services/coopFundService';
 import { filterFundLedgerByDate, sumPostedLoanReleases, parseLedgerDate, txDisplayDate } from '../../utils/fundLoanReleases';
 import { getLoanFilterDate, matchesLoanDateRange } from '../../utils/loanDateFilter';
-import { getLoanBalanceWithInterest, getLoanFinancials, getLoanDueState, normalizeLoanStatus, isLoanReleased, getLoanWorkflowTarget, getLoanTypeLabel } from '../../utils/loanListState';
+import { getLoanBalanceWithInterest, getLoanFinancials, getLoanDueState, getLoanOutstandingComponents, normalizeLoanStatus, isLoanReleased, getLoanWorkflowTarget, getLoanTypeLabel } from '../../utils/loanListState';
 import { buildLoanCollectionRows } from '../../utils/loanCollections';
 import Spinner from '../../components/ui/Spinner';
 import ConfirmDialog from '../../components/shared/ConfirmDialog';
@@ -819,8 +819,9 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
       return;
     }
 
-    if (loanPay > 0 && loanPay > (loan.balance ?? 0)) {
-      toast.error(`Loan payment exceeds remaining balance of ${formatCurrency(loan.balance)}.`);
+    const principalBalance = getLoanOutstandingComponents(loan).principal;
+    if (loanPay > 0 && loanPay > principalBalance) {
+      toast.error(`Loan payment exceeds remaining balance of ${formatCurrency(principalBalance)}.`);
       return;
     }
 
@@ -1027,7 +1028,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
               {memberName}
             </p>
             <p className="text-sm text-orange-700 mt-1">
-              Loan balance: <span className="font-semibold">{formatCurrency(loan.balance ?? 0)}</span>
+              Loan balance: <span className="font-semibold">{formatCurrency(getLoanOutstandingComponents(loan).principal)}</span>
             </p>
             {membership && membershipBalance > 0 && (
               <p className="text-sm text-orange-700 mt-1">
@@ -1038,7 +1039,7 @@ function LoansPaymentModal({ open, onClose, loan, userId, onSuccess }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <PaymentField
-              label={`Loan ${loan.balance != null ? `(max ${formatCurrency(loan.balance)})` : ''}`}
+              label={`Loan ${loan.balance != null ? `(max ${formatCurrency(getLoanOutstandingComponents(loan).principal)})` : ''}`}
               value={loanAmt}
               onChange={setLoanAmt}
             />

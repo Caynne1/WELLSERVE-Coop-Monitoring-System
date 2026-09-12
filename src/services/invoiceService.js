@@ -19,6 +19,38 @@ import {
   getBoosterDepositWeeks,
 } from './savingsBoosterService';
 import { paymentModeStorageValue } from '../utils/paymentMode';
+import { getLoanBalanceWithInterest, parseLoanJSON } from '../utils/loanListState';
+
+const loanMoney = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+function getLoanOutstandingComponents(loan) {
+  const summary = parseLoanJSON(loan?.preview_summary_json, {});
+  const schedule = parseLoanJSON(loan?.preview_schedule_json, []);
+  const scheduledPrincipal = Array.isArray(schedule)
+    ? schedule.reduce((sum, row) => sum + (Number(row?.principal) || 0), 0)
+    : 0;
+  const difference = (Number(loan?.amount) || 0) - scheduledPrincipal;
+  const savedPrincipal = Number(summary.outstanding_principal);
+  const rawBalance = Number(loan?.balance);
+  const alreadyCorrected = Number.isFinite(savedPrincipal) && Number.isFinite(rawBalance)
+    && Math.abs((savedPrincipal - rawBalance) - difference) < 0.005;
+  const roundingAdjustment = scheduledPrincipal > 0 && Math.abs(difference) <= 1 && !alreadyCorrected
+    ? difference
+    : 0;
+  if (Object.prototype.hasOwnProperty.call(summary, 'outstanding_principal')
+    || Object.prototype.hasOwnProperty.call(summary, 'outstanding_interest')) {
+    const principal = loanMoney(Math.max(
+      0,
+      (Number(summary.outstanding_principal ?? loan?.balance) || 0) + roundingAdjustment,
+    ));
+    const interest = loanMoney(Math.max(0, Number(summary.outstanding_interest) || 0));
+    return { principal, interest, total: loanMoney(principal + interest) };
+  }
+  const principal = loanMoney(Math.max(0, (Number(loan?.balance ?? loan?.amount) || 0)
+    + roundingAdjustment));
+  const total = loanMoney(Math.max(0, Number(loan?.outstanding_balance) || getLoanBalanceWithInterest(loan)));
+  return { principal, interest: loanMoney(Math.max(0, total - principal)), total };
+}
 
 const INVOICE_COLUMNS = [
   'invoice_no',
@@ -623,8 +655,8 @@ export async function createMultiCategoryInvoice({
         if (!loan) throw new Error('Only released loans with an outstanding balance can receive payment.');
         const target = entry.schedule_target;
         if (Number(entry.principal_amount || 0) + Number(entry.interest_amount || 0) > 0) {
-          if (!['scheduled', 'advance'].includes(target?.type)) {
-            throw new Error('Choose the scheduled due date for this loan payment, or select Advance Payment.');
+          if (!['scheduled', 'advance', 'settlement'].includes(target?.type)) {
+            throw new Error('Choose the scheduled due date, Advance Payment, or Full Settlement.');
           }
           if (target.type === 'scheduled') {
             const schedule = typeof loan.preview_schedule_json === 'string'
@@ -684,8 +716,15 @@ export async function createMultiCategoryInvoice({
       const principalAmount = Number(entry.principal_amount ?? entry.loan_amount ?? amount) || 0;
       const interestAmount = Number(entry.interest_amount) || 0;
       const penaltyAmount = Number(entry.penalty_amount) || 0;
-      if (principalAmount > (entry.loan.balance || 0)) {
-        throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
+      const outstanding = getLoanOutstandingComponents(entry.loan);
+      if (principalAmount > outstanding.principal) {
+        throw new Error(`Principal payment exceeds the remaining principal balance of ${outstanding.principal}.`);
+      }
+      if (interestAmount > outstanding.interest) {
+        throw new Error(`Interest payment exceeds the remaining fixed interest balance of ${outstanding.interest}.`);
+      }
+      if (principalAmount + interestAmount > outstanding.total) {
+        throw new Error(`Loan payment exceeds the total outstanding balance of ${outstanding.total}.`);
       }
       return [
         principalAmount > 0 ? {
@@ -949,9 +988,15 @@ export async function createMultiCategoryInvoice({
         const interestAmount = Number(entry.interest_amount) || 0;
         const penaltyAmount = Number(entry.penalty_amount) || 0;
         const scheduleAmount = principalAmount + interestAmount;
-
-        if (principalAmount > (entry.loan.balance || 0)) {
-          throw new Error(`Loan payment exceeds remaining balance of ${entry.loan.balance}.`);
+        const outstanding = getLoanOutstandingComponents(entry.loan);
+        if (principalAmount > outstanding.principal) {
+          throw new Error(`Principal payment exceeds the remaining principal balance of ${outstanding.principal}.`);
+        }
+        if (interestAmount > outstanding.interest) {
+          throw new Error(`Interest payment exceeds the remaining fixed interest balance of ${outstanding.interest}.`);
+        }
+        if (scheduleAmount > outstanding.total) {
+          throw new Error(`Loan payment exceeds the total outstanding balance of ${outstanding.total}.`);
         }
         const loanBeforePayment = Object.fromEntries([
           'balance', 'status', 'due_date', 'preview_schedule_json', 'preview_summary_json',

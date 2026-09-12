@@ -5,6 +5,7 @@ import { getLoanProductLabel } from '../../utils/loanProducts';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { parseLoanJSON as parseJSONSafe, getLoanFinancials, getLoanRecordDate, isLoanReleased } from '../../utils/loanListState';
 import { installmentRemaining, installmentStatus, loanFrequencyLabel, memberLoanCollections } from '../../utils/loanPaymentDisplay';
+import { reconcileSchedulePrincipal } from '../../utils/loanPaymentAllocation';
 
 export default function MemberLoanCard({ loan, navigate, onPay, paymentCount, transactions = [] }) {
   const [showSchedule, setShowSchedule] = useState(false);
@@ -18,7 +19,10 @@ export default function MemberLoanCard({ loan, navigate, onPay, paymentCount, tr
 
   const summary = parseJSONSafe(loan.preview_summary_json, {});
   const parsedSchedule = parseJSONSafe(loan.preview_schedule_json, []);
-  const schedule = Array.isArray(parsedSchedule) ? parsedSchedule : [];
+  const schedule = reconcileSchedulePrincipal(
+    Array.isArray(parsedSchedule) ? parsedSchedule : [],
+    loan.amount,
+  );
   const nextDue = schedule.find(row => installmentRemaining(row) > 0);
   const collections = memberLoanCollections(loan, transactions, schedule);
   const financials = getLoanFinancials(loan);
@@ -104,8 +108,9 @@ export default function MemberLoanCard({ loan, navigate, onPay, paymentCount, tr
                 defaultOpen={true}
                 showPaymentTracking={true}
                 released={released}
+                loanPaid={String(loan.status || '').toLowerCase() === 'paid'}
                 collections={collections}
-                transactions={transactions}
+                transactions={transactions.filter(transaction => transaction.loan_id === loan.id)}
                 title=""
               />
             </div>

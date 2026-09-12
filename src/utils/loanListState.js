@@ -48,8 +48,29 @@ export function getLoanRecordDate(loan) {
   return null;
 }
 
+function getPrincipalRoundingAdjustment(loan, summary = {}) {
+  const schedule = parseLoanJSON(loan?.preview_schedule_json, []);
+  if (!Array.isArray(schedule) || !schedule.length) return 0;
+  const scheduledPrincipal = schedule.reduce((sum, row) => sum + (Number(row?.principal) || 0), 0);
+  const difference = (Number(loan?.amount) || 0) - scheduledPrincipal;
+  if (!scheduledPrincipal || Math.abs(difference) > 1) return 0;
+
+  const savedPrincipal = Number(summary.outstanding_principal);
+  const rawBalance = Number(loan?.balance);
+  const summaryAlreadyCorrected = Number.isFinite(savedPrincipal) && Number.isFinite(rawBalance)
+    && Math.abs((savedPrincipal - rawBalance) - difference) < 0.005;
+  return summaryAlreadyCorrected ? 0 : difference;
+}
+
 export function getLoanBalanceWithInterest(loan) {
   const summary = parseLoanJSON(loan?.preview_summary_json, {});
+  const roundingAdjustment = getPrincipalRoundingAdjustment(loan, summary);
+  if (Object.prototype.hasOwnProperty.call(summary, 'outstanding_total')) {
+    return Math.round((Math.max(
+      0,
+      (Number(summary.outstanding_total) || 0) + roundingAdjustment,
+    ) + Number.EPSILON) * 100) / 100;
+  }
   const schedule = parseLoanJSON(loan?.preview_schedule_json, []);
   if (Array.isArray(schedule) && schedule.length > 0) {
     // total_due can include CBU/savings; compare the summary with loan-only payments.
@@ -82,8 +103,26 @@ export function getLoanBalanceWithInterest(loan) {
   return rawBalance;
 }
 
-
 const money = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+export function getLoanOutstandingComponents(loan) {
+  const summary = parseLoanJSON(loan?.preview_summary_json, {});
+  const roundingAdjustment = getPrincipalRoundingAdjustment(loan, summary);
+  if (Object.prototype.hasOwnProperty.call(summary, 'outstanding_principal')
+    || Object.prototype.hasOwnProperty.call(summary, 'outstanding_interest')) {
+    const principal = money(Math.max(
+      0,
+      (Number(summary.outstanding_principal ?? loan?.balance) || 0) + roundingAdjustment,
+    ));
+    const interest = money(Math.max(0, Number(summary.outstanding_interest) || 0));
+    return { principal, interest, total: money(principal + interest) };
+  }
+  const correctedBalance = (Number(loan?.balance ?? loan?.amount) || 0)
+    + roundingAdjustment;
+  const principal = money(Math.max(0, correctedBalance));
+  const total = money(getLoanBalanceWithInterest(loan));
+  return { principal, interest: money(Math.max(0, total - principal)), total };
+}
 
 export function getLoanFinancials(loan) {
   const summary = parseLoanJSON(loan?.preview_summary_json);
@@ -95,7 +134,11 @@ export function getLoanFinancials(loan) {
   const savedPayable = summary.total_loan_payable ?? loan?.total_loan_payable;
   const interest = money(summary.total_interest_earned ?? summary.total_interest
     ?? (scheduledInterest || Math.max(0, (Number(savedPayable) || amount) - amount)));
-  const payable = money(savedPayable ?? amount + interest);
+  const calculatedPayable = money(amount + interest);
+  const storedPayable = savedPayable == null ? null : money(savedPayable);
+  const payable = storedPayable != null && Math.abs(storedPayable - calculatedPayable) > 1
+    ? storedPayable
+    : calculatedPayable;
   const balance = money(getLoanBalanceWithInterest(loan));
   return { amount, interest, payable, paid: money(Math.max(0, payable - balance)), balance };
 }

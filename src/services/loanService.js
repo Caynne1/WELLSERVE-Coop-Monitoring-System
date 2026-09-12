@@ -1,6 +1,11 @@
 import { supabase } from './supabase';
 import { isLoanWorkflowLocked } from '../utils/loanListState';
-import { applyLoanAllocation, reverseLoanAllocation, schedulePaymentBalances } from '../utils/loanPaymentAllocation';
+import {
+  applyLoanAllocation,
+  reconcileSchedulePrincipal,
+  reverseLoanAllocation,
+  schedulePaymentBalances,
+} from '../utils/loanPaymentAllocation';
 
 // ── Inlined helpers (no external engine dependency) ───────────────────────────
 // These are kept here so loanService.js never fails to load due to a missing file.
@@ -84,8 +89,7 @@ function applyPaymentToSchedule(schedule, paymentAmount, paidAt = new Date().toI
 
 function computeLoanStatus(balance, dueDate, schedule = []) {
   const bal = safeNum(balance);
-  const scheduledOutstanding = schedule.some(row => !row.paid && Number(row.remaining_due ?? row.total_due ?? row.payment ?? 0) > 0);
-  if (bal <= 0 && !scheduledOutstanding) return 'paid';
+  if (bal <= 0) return 'paid';
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -438,7 +442,10 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
   if (!loanId || amount <= 0) throw new Error('Valid loan ID and payment amount are required.');
 
   const loan = await getLoanById(loanId);
-  const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+  const schedule = reconcileSchedulePrincipal(
+    parseJSONSafe(loan.preview_schedule_json, []),
+    loan.amount,
+  );
   const summary = parseJSONSafe(loan.preview_summary_json, {});
 
   if (!Array.isArray(schedule) || schedule.length === 0) return loan;
@@ -451,15 +458,19 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
     ? applyLoanAllocation(schedule, allocation, paymentDate || new Date().toISOString())
     : applyPaymentToSchedule(schedule, amount, paymentDate || undefined).schedule;
 
-  // Recompute balance from remaining unpaid principal
+  // The schedule remains the fixed payment guide. Receipt totals independently
+  // reduce the actual outstanding principal and fixed interest.
   const unpaidPrincipal = round2(
     updatedSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
   );
-  const newBalance = allocation ? schedulePaymentBalances(updatedSchedule).principal / 100 : unpaidPrincipal;
+  const paymentBalances = allocation ? schedulePaymentBalances(updatedSchedule) : null;
+  const newBalance = allocation ? paymentBalances.principal / 100 : unpaidPrincipal;
+  const outstandingInterest = allocation ? paymentBalances.interest / 100 : 0;
+  const outstandingTotal = round2(newBalance + outstandingInterest);
 
   // Recompute status using engine
   const nextUnpaid = updatedSchedule.find(r => !r.paid);
-  const newStatus = computeLoanStatus(newBalance, nextUnpaid?.due_date, updatedSchedule);
+  const newStatus = computeLoanStatus(outstandingTotal, nextUnpaid?.due_date, updatedSchedule);
 
   // Rebuild summary
   const updatedSummary = buildScheduleSummary(updatedSchedule, {
@@ -474,9 +485,13 @@ export async function applyLoanPaymentToSchedule(loanId, paymentAmount, paymentD
     .update({
       balance: newBalance,
       status: newStatus,
-      due_date: nextUnpaid?.due_date || loan.due_date || null,
+      due_date: outstandingTotal > 0 ? (nextUnpaid?.due_date || loan.due_date || null) : null,
       preview_schedule_json: JSON.stringify(updatedSchedule),
       preview_summary_json: JSON.stringify({ ...updatedSummary,
+        outstanding_principal: newBalance,
+        outstanding_interest: outstandingInterest,
+        outstanding_total: outstandingTotal,
+        actual_payments_collected: round2(Math.max(0, (updatedSummary.total_loan_payable || 0) - outstandingTotal)),
         ...(summary.loan_product ? { loan_product: summary.loan_product } : {}),
         ...(summary.loan_product_assignment ? { loan_product_assignment: summary.loan_product_assignment } : {}),
       }),
@@ -494,7 +509,10 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allo
   if (!loanId || amount <= 0) throw new Error('Valid loan ID and payment amount are required.');
 
   const loan = await getLoanById(loanId);
-  const schedule = parseJSONSafe(loan.preview_schedule_json, []);
+  const schedule = reconcileSchedulePrincipal(
+    parseJSONSafe(loan.preview_schedule_json, []),
+    loan.amount,
+  );
   const summary = parseJSONSafe(loan.preview_summary_json, {});
 
   if (!Array.isArray(schedule) || schedule.length === 0) return loan;
@@ -537,11 +555,14 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allo
     remaining = round2(remaining - reversal);
   }
 
-  const unpaidPrincipal = allocation ? schedulePaymentBalances(updatedSchedule).principal / 100 : round2(
+  const paymentBalances = allocation ? schedulePaymentBalances(updatedSchedule) : null;
+  const unpaidPrincipal = allocation ? paymentBalances.principal / 100 : round2(
     updatedSchedule.filter(r => !r.paid).reduce((s, r) => s + (r.principal || 0), 0)
   );
+  const outstandingInterest = allocation ? paymentBalances.interest / 100 : 0;
+  const outstandingTotal = round2(unpaidPrincipal + outstandingInterest);
   const nextUnpaid = updatedSchedule.find(r => !r.paid);
-  const newStatus = computeLoanStatus(unpaidPrincipal, nextUnpaid?.due_date, updatedSchedule);
+  const newStatus = computeLoanStatus(outstandingTotal, nextUnpaid?.due_date, updatedSchedule);
   const updatedSummary = buildScheduleSummary(updatedSchedule, {
     amount: loan.amount,
     frequency: loan.repayment_frequency,
@@ -554,9 +575,13 @@ export async function reverseLoanPaymentFromSchedule(loanId, paymentAmount, allo
     .update({
       balance: unpaidPrincipal,
       status: newStatus,
-      due_date: nextUnpaid?.due_date || loan.due_date || null,
+      due_date: outstandingTotal > 0 ? (nextUnpaid?.due_date || loan.due_date || null) : null,
       preview_schedule_json: JSON.stringify(updatedSchedule),
       preview_summary_json: JSON.stringify({ ...updatedSummary,
+        outstanding_principal: unpaidPrincipal,
+        outstanding_interest: outstandingInterest,
+        outstanding_total: outstandingTotal,
+        actual_payments_collected: round2(Math.max(0, (updatedSummary.total_loan_payable || 0) - outstandingTotal)),
         ...(summary.loan_product ? { loan_product: summary.loan_product } : {}),
         ...(summary.loan_product_assignment ? { loan_product_assignment: summary.loan_product_assignment } : {}),
       }),

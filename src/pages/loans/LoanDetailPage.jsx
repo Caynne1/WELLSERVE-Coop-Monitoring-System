@@ -31,7 +31,12 @@ import SetLoanProductModal from '../../components/shared/SetLoanProductModal';
 import LoanPaymentHistoryTable from '../../components/shared/LoanPaymentHistoryTable';
 import { MemberPaymentNavigation } from '../members/MemberPaymentNavigation';
 import { loanPaymentHistoryRows } from '../../utils/memberPaymentHistory';
-import { isLoanReleased, getLoanApprovalStage, isLoanWorkflowLocked } from '../../utils/loanListState';
+import {
+  getLoanApprovalStage,
+  getLoanOutstandingComponents,
+  isLoanReleased,
+  isLoanWorkflowLocked,
+} from '../../utils/loanListState';
 import {
   buildScheduleByFrequency,
   computeTotalRoiPercent,
@@ -538,7 +543,7 @@ export default function LoanDetailPage() {
           <div class="col">
             <h3>Loan Terms</h3>
             ${kvRow('Loan Amount', formatCurrency(loan.amount))}
-            ${kvRow('Outstanding Balance', formatCurrency(loan.balance ?? loan.amount), true)}
+            ${kvRow('Outstanding Balance', formatCurrency(getLoanOutstandingComponents(loan).principal), true)}
             ${kvRow('Monthly Interest Rate', `${round2(monthlyInterestRate)}%`)}
             ${kvRow('Weekly Interest', `${round4(weeklyInterestRate)}%`)}
             ${kvRow('Term', loan.term_months ? `${loan.term_months} months` : '—')}
@@ -711,7 +716,7 @@ export default function LoanDetailPage() {
           </div>
           <div class="hero-card red">
             <div class="hc-label">Outstanding Balance</div>
-            <div class="hc-value">${formatCurrency(loan.balance ?? loan.amount)}</div>
+            <div class="hc-value">${formatCurrency(getLoanOutstandingComponents(loan).principal)}</div>
           </div>
           <div class="hero-card green">
             <div class="hc-label">Payments Made</div>
@@ -821,7 +826,7 @@ export default function LoanDetailPage() {
         ['Loan No.', loan.loan_no || '—'],
         ['Loan Type', resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan'],
         ['Loan Amount', loan.amount || 0],
-        ['Outstanding Balance', loan.balance ?? loan.amount ?? 0],
+        ['Outstanding Balance', getLoanOutstandingComponents(loan).principal],
         ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
         ['Weekly Interest', `${round4(weeklyInterestRate)}%`],
         ['Term', loan.term_months ? `${loan.term_months} months` : '—'],
@@ -946,7 +951,7 @@ export default function LoanDetailPage() {
               ...(loan.funding_source === 'financing' ? [['Financing Note', loan.financing_note || '—']] : []),
               ['Notes', resolvedLoanNotes],
               ['Loan Principal', formatCurrency(loan.amount)],
-              ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(loan.balance ?? loan.amount)}</span>],
+              ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(getLoanOutstandingComponents(loan).principal)}</span>],
               ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
               ['Weekly Interest', `${round4(weeklyInterestRate)}%`],
               ['Start Date', formatDate(loan.release_date)],
@@ -1063,6 +1068,7 @@ export default function LoanDetailPage() {
           defaultOpen={scheduleOpen}
           showPaymentTracking={true}
           released={isLoanReleased(loan)}
+          loanPaid={String(loan.status || '').toLowerCase() === 'paid'}
           transactions={paymentHistory}
           title="Amortization Schedule"
         />

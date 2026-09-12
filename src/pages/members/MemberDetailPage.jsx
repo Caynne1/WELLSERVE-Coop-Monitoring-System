@@ -53,6 +53,7 @@ import { exportMemberReport } from '../../utils/excelExport.js';
 import { createInvoiceForPayment, createInvoice, checkInvoiceNoExists } from '../../services/invoiceService';
 import { calculateSavingsBoosterLedger } from '../../services/savingsBoosterService';
 import { trackActivity } from '../../services/logService';
+import { getLoanOutstandingComponents } from '../../utils/loanListState';
 
 import { formatDate, formatCurrency, formatDateTime, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
@@ -306,7 +307,10 @@ export default function MemberDetailPage() {
   const savingsAccount = accounts.find(a => String(a.account_type).toLowerCase() === 'savings');
   const activeLoans = loans.filter(isCurrentLoan);
   const totalCurrentLoanAmount = activeLoans.reduce((sum, loan) => sum + getLoanPayableAmount(loan), 0);
-  const totalCurrentLoanBalance = activeLoans.reduce((sum, loan) => sum + Number(loan.balance || 0), 0);
+  const totalCurrentLoanBalance = activeLoans.reduce(
+    (sum, loan) => sum + getLoanOutstandingComponents(loan).principal,
+    0,
+  );
   const totalTimeDepositAmount = memberTimeDeposits.reduce((sum, td) => sum + Number(td.amount || 0), 0);
   const totalSavingsBoosterAmount = memberBoosterSlots.reduce(
     (sum, slot) => sum + calculateSavingsBoosterLedger(slot).withdrawableAmount,
@@ -1504,8 +1508,8 @@ function CreditProfileTab({ loans, memberName }) {
                     <td className="px-4 py-3 font-mono text-xs text-gray-600">{loan.loan_no || '-'}</td>
                     <td className="px-4 py-3 font-semibold tabular-nums">{formatCurrency(loan.amount)}</td>
                     <td className="px-4 py-3 tabular-nums">
-                      <span className={(loan.balance || 0) > 0 ? 'text-orange-600 font-semibold' : 'text-emerald-600'}>
-                        {formatCurrency(loan.balance ?? loan.amount)}
+                      <span className={getLoanOutstandingComponents(loan).principal > 0 ? 'text-orange-600 font-semibold' : 'text-emerald-600'}>
+                        {formatCurrency(getLoanOutstandingComponents(loan).principal)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{loan.term_months ? `${loan.term_months} mo.` : '-'}</td>
@@ -1673,8 +1677,8 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
     if (loanPay > 0 && !loan) {
       return toast.error('Loan record not found.');
     }
-    if (loanPay > 0 && loanPay > (loan?.balance ?? 0)) {
-      return toast.error(`Loan payment exceeds remaining balance of ${formatCurrency(loan.balance)}.`);
+    if (loanPay > 0 && loanPay > getLoanOutstandingComponents(loan).principal) {
+      return toast.error(`Loan payment exceeds remaining balance of ${formatCurrency(getLoanOutstandingComponents(loan).principal)}.`);
     }
     if (cbuPay > 0 && !cbuAccount) {
       return toast.error('No CBU account found for this member.');
@@ -1819,7 +1823,7 @@ function PaymentModal({ open, onClose, loan, cbuAccount, savingsAccount, memberI
             {formatCurrency(loan.amount)} loan
           </p>
           <p className="text-sm text-orange-700 mt-1">
-            Remaining balance: <span className="font-semibold">{formatCurrency(loan.balance)}</span>
+            Remaining balance: <span className="font-semibold">{formatCurrency(getLoanOutstandingComponents(loan).principal)}</span>
           </p>
         </div>
       )}

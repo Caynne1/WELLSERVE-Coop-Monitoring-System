@@ -1,4 +1,9 @@
-import { getLoanBalanceWithInterest, isLoanReleased, normalizeLoanStatus } from './loanListState.js';
+import {
+  getLoanBalanceWithInterest,
+  getLoanOutstandingComponents,
+  isLoanReleased,
+  normalizeLoanStatus,
+} from './loanListState.js';
 
 const OLD_MEMBERSHIP_BREAKDOWN = {
   associate: [
@@ -59,11 +64,14 @@ export function getInvoiceLoanState(loans = []) {
   const released = loans.filter(isLoanReleased);
   const records = released
     .filter(loan => normalizeLoanStatus(loan.status) !== 'paid')
-    .map(loan => ({
-      ...loan,
-      principal_balance: Math.max(0, Number(loan.balance ?? loan.amount) || 0),
-      outstanding_balance: getLoanBalanceWithInterest(loan),
-    }))
+    .map(loan => {
+      const outstanding = getLoanOutstandingComponents(loan);
+      return {
+        ...loan,
+        principal_balance: outstanding.principal,
+        outstanding_balance: getLoanBalanceWithInterest(loan),
+      };
+    })
     .filter(loan => loan.outstanding_balance > 0);
   return {
     key: 'loan', label: 'Loan', records, hasRecord: released.length > 0,

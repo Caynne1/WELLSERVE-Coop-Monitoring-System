@@ -1489,7 +1489,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
   const selectedLoanSchedule = parseInvoiceJSONSafe(selectedLoanForDisplay?.preview_schedule_json, []);
   const loanScheduleOptions = Array.isArray(selectedLoanSchedule)
     ? selectedLoanSchedule
-      .filter(row => !['Paid', 'Prepaid'].includes(installmentPresentation(row, selectedLoanSchedule).status))
+      .filter(row => installmentPresentation(row, selectedLoanSchedule).status !== 'Paid')
       .map((row, index) => ({
         value: String(row.period ?? index + 1),
         dueDate: row.due_date || null,
@@ -1585,7 +1585,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
     const interestAmount = parseFloat(amounts.loan_interest) || 0;
     const penaltyAmount = parseFloat(amounts.loan_penalty) || 0;
     if (loanAmount + interestAmount > 0 && !selectedLoanScheduleTarget) {
-      showSaveError('Choose the scheduled due date for this loan payment, or select Advance Payment.');
+      showSaveError('Choose the scheduled due date, Advance Payment, or Full Settlement.');
       return;
     }
     if (loanAmount + interestAmount + penaltyAmount > 0) {
@@ -1597,8 +1597,8 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
         interest_amount: interestAmount,
         penalty_amount: penaltyAmount,
         loan: selectedLoan,
-        schedule_target: selectedLoanScheduleTarget === 'advance'
-          ? { type: 'advance' }
+        schedule_target: ['advance', 'settlement'].includes(selectedLoanScheduleTarget)
+          ? { type: selectedLoanScheduleTarget }
           : {
             type: 'scheduled',
             period: selectedScheduleOption?.value,
@@ -1886,13 +1886,26 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
                             <select
                               className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                               value={selectedLoanScheduleTarget}
-                              onChange={event => setSelectedLoanScheduleTarget(event.target.value)}
+                              onChange={event => {
+                                const value = event.target.value;
+                                setSelectedLoanScheduleTarget(value);
+                                if (value === 'settlement' && selectedLoanForDisplay) {
+                                  const principal = Number(selectedLoanForDisplay.principal_balance || 0);
+                                  const total = Number(selectedLoanForDisplay.outstanding_balance || 0);
+                                  setAmounts(current => ({
+                                    ...current,
+                                    loan: String(principal),
+                                    loan_interest: String(Math.max(0, Math.round((total - principal + Number.EPSILON) * 100) / 100)),
+                                  }));
+                                }
+                              }}
                             >
                               <option value="">Choose scheduled due date</option>
                               {loanScheduleOptions.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
                               ))}
                               <option value="advance">Advance Payment</option>
+                              <option value="settlement">Full Settlement</option>
                             </select>
                           </div>
                         )}
