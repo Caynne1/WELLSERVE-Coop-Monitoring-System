@@ -1,5 +1,4 @@
 import {
-  getLoanBalanceWithInterest,
   getLoanOutstandingComponents,
   isLoanReleased,
   normalizeLoanStatus,
@@ -69,13 +68,14 @@ export function getInvoiceLoanState(loans = []) {
       return {
         ...loan,
         principal_balance: outstanding.principal,
-        outstanding_balance: getLoanBalanceWithInterest(loan),
+        outstanding_interest: outstanding.interest,
+        outstanding_balance: outstanding.total,
       };
     })
     .filter(loan => loan.outstanding_balance > 0);
   return {
     key: 'loan', label: 'Loan', records, hasRecord: released.length > 0,
-    valueType: 'balance', value: records[0]?.principal_balance || 0,
+    valueType: 'balance', value: records[0]?.outstanding_balance || 0,
     payable: records.length > 0,
   };
 }

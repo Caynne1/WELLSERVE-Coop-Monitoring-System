@@ -30,6 +30,7 @@ import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { trackActivity } from '../../services/logService';
 import { getMembershipBreakdown } from '../../utils/invoicePaymentState';
 import { installmentPresentation } from '../../utils/loanPaymentDisplay';
+import { reconcileSchedulePrincipal } from '../../utils/loanPaymentAllocation';
 import { paymentModeDisplayValue } from '../../utils/paymentMode';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1358,14 +1359,34 @@ function parseInvoiceJSONSafe(value, fallback = {}) {
   }
 }
 
-function getLoanInterestDue(loan) {
-  const schedule = parseInvoiceJSONSafe(loan?.preview_schedule_json, []);
-  if (!Array.isArray(schedule)) return 0;
-  const nextDue = schedule.find(row => !row.paid && Number(row.remaining_due ?? row.total_due ?? row.payment ?? 0) > 0)
-    || schedule.find(row => !row.paid)
+function getLoanOutstandingInterest(loan) {
+  const summary = parseInvoiceJSONSafe(loan?.preview_summary_json, {});
+  const stored = Number(summary?.outstanding_interest);
+  if (Number.isFinite(stored)) return Math.max(0, stored);
+  return Math.max(0,
+    Number(loan?.outstanding_balance || 0) - Number(loan?.principal_balance || loan?.balance || 0));
+}
+
+function getLoanInterestDue(loan, scheduleTarget = '') {
+  const parsed = parseInvoiceJSONSafe(loan?.preview_schedule_json, []);
+  const schedule = Array.isArray(parsed)
+    ? reconcileSchedulePrincipal(parsed, loan?.amount)
+    : [];
+  if (['balance', 'settlement'].includes(scheduleTarget)) {
+    return getLoanOutstandingInterest(loan);
+  }
+  const selected = schedule.find((row, index) =>
+    String(row.period ?? index + 1) === String(scheduleTarget));
+  const nextDue = selected
+    || schedule.find(row => !row.paid && !row.schedule_payment_recorded
+      && Number(row.remaining_due ?? row.total_due ?? row.payment ?? 0) > 0)
+    || schedule.find(row => !row.paid && !row.schedule_payment_recorded)
     || null;
-  return Math.max(0, Number(nextDue?.interest_remaining ??
-    (Number(nextDue?.interest ?? nextDue?.interest_amount ?? 0) - Number(nextDue?.interest_paid_amount || 0))) || 0);
+  if (!nextDue) return getLoanOutstandingInterest(loan);
+  return Math.max(0, Number(nextDue.interest_remaining ??
+    (Number(nextDue.interest ?? nextDue.interest_amount ?? 0)
+      + Number(nextDue.guide_interest_adjustment || 0)
+      - Number(nextDue.interest_paid_amount || 0))) || 0);
 }
 
 
@@ -1435,8 +1456,11 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
       setSelectedLoanId(selectedLoan?.id || '');
       setSelectedLoanScheduleTarget(requestedLoan && initialSelection?.period ? String(initialSelection.period) : '');
       if (requestedLoan && initialSelection?.period) {
-        const schedule = parseInvoiceJSONSafe(requestedLoan.preview_schedule_json, []);
-        const selectedRow = Array.isArray(schedule)
+        const parsedSchedule = parseInvoiceJSONSafe(requestedLoan.preview_schedule_json, []);
+        const schedule = Array.isArray(parsedSchedule)
+          ? reconcileSchedulePrincipal(parsedSchedule, requestedLoan.amount)
+          : [];
+        const selectedRow = schedule.length
           ? schedule.find((row, index) => String(row.period ?? index + 1) === String(initialSelection.period))
           : null;
         if (selectedRow) {
@@ -1486,13 +1510,21 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
   const referenceRequired = ['GCash', 'Bank Transfer', 'Check'].includes(paymentMode);
   const selectedLoanForDisplay = summary?.loan.records?.find(loan => loan.id === selectedLoanId)
     || summary?.loan.records?.[0] || null;
-  const selectedLoanSchedule = parseInvoiceJSONSafe(selectedLoanForDisplay?.preview_schedule_json, []);
+  const selectedLoanScheduleRaw = parseInvoiceJSONSafe(selectedLoanForDisplay?.preview_schedule_json, []);
+  const selectedLoanSchedule = Array.isArray(selectedLoanScheduleRaw)
+    ? reconcileSchedulePrincipal(selectedLoanScheduleRaw, selectedLoanForDisplay?.amount)
+    : [];
   const loanScheduleOptions = Array.isArray(selectedLoanSchedule)
     ? selectedLoanSchedule
-      .filter(row => installmentPresentation(row, selectedLoanSchedule).status !== 'Paid')
+      .filter(row => !row.schedule_payment_recorded
+        && installmentPresentation(row, selectedLoanSchedule).status !== 'Paid')
       .map((row, index) => ({
         value: String(row.period ?? index + 1),
         dueDate: row.due_date || null,
+        principalDue: Math.max(0, Number(row.principal_remaining ??
+          (Number(row.principal || 0) - Number(row.principal_paid_amount || 0))) || 0),
+        interestDue: Math.max(0, Number(row.interest_remaining ??
+          (Number(row.interest ?? row.interest_amount ?? 0) - Number(row.interest_paid_amount || 0))) || 0),
         label: `Payment ${row.period ?? index + 1}${row.due_date ? ` - ${formatDate(row.due_date)}` : ''}`,
       }))
     : [];
@@ -1729,16 +1761,20 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
               <tbody className="divide-y divide-gray-50">
                 {CATEGORY_ORDER.map(cat => {
                   const selectedLoanForRow = selectedLoanForDisplay;
-                  const loanInterestDue = getLoanInterestDue(selectedLoanForRow);
+                  const loanInterestDue = getLoanInterestDue(selectedLoanForRow, selectedLoanScheduleTarget);
                   const info = cat === 'loan'
-                    ? { ...summary.loan, value: selectedLoanForRow?.principal_balance || 0 }
-                    : summary[cat] || (
-                    cat === 'loan_interest'
-                      ? { ...summary.loan, valueType: 'interest_due', value: loanInterestDue, payable: summary.loan.payable }
-                      : cat === 'loan_penalty'
+                    ? { ...summary.loan, value: selectedLoanForRow?.outstanding_balance || 0 }
+                    : cat === 'loan_interest'
+                      ? {
+                        ...summary.loan,
+                        ...(summary.loan_interest || {}),
+                        valueType: 'interest_due',
+                        value: loanInterestDue,
+                        payable: summary.loan.payable,
+                      }
+                      : summary[cat] || (cat === 'loan_penalty'
                         ? { hasRecord: true, payable: summary.loan.payable, valueType: 'optional', value: 0 }
-                      : { hasRecord: false, payable: false, valueType: 'balance', value: 0 }
-                  );
+                        : { hasRecord: false, payable: false, valueType: 'balance', value: 0 });
                   const valueLabel =
                     info.valueType === 'balance' ? 'Balance' :
                     info.valueType === 'interest_due' ? 'Interest Due' :
@@ -1837,7 +1873,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
                           >
                             {summary.loan.records.map(l => (
                               <option key={l.id} value={l.id}>
-                                {formatCurrency(l.principal_balance)}
+                                {formatCurrency(l.outstanding_balance)}
                               </option>
                             ))}
                           </select>
@@ -1897,6 +1933,20 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
                                     loan: String(principal),
                                     loan_interest: String(Math.max(0, Math.round((total - principal + Number.EPSILON) * 100) / 100)),
                                   }));
+                                } else if (value === 'balance' && selectedLoanForDisplay) {
+                                  setAmounts(current => ({
+                                    ...current,
+                                    loan_interest: current.loan_interest || String(getLoanOutstandingInterest(selectedLoanForDisplay) || ''),
+                                  }));
+                                } else {
+                                  const option = loanScheduleOptions.find(item => item.value === value);
+                                  if (option) {
+                                    setAmounts(current => ({
+                                      ...current,
+                                      loan: option.principalDue ? String(option.principalDue) : '',
+                                      loan_interest: option.interestDue ? String(option.interestDue) : '',
+                                    }));
+                                  }
                                 }
                               }}
                             >

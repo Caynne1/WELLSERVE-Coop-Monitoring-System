@@ -8,17 +8,24 @@ function amount(value) {
 }
 
 function refresh(row) {
-  const principalRemaining = Math.max(0, cents(row.principal) - cents(row.principal_paid_amount));
-  const interestRemaining = Math.max(0, cents(row.interest ?? row.interest_amount) - cents(row.interest_paid_amount));
-  const paid = cents(row.principal_paid_amount) + cents(row.interest_paid_amount);
+  const principalPaid = cents(row.principal_paid_amount);
+  const interestPaid = cents(row.interest_paid_amount);
+  const principalGuide = Math.max(principalPaid,
+    cents(row.principal) + cents(row.guide_principal_adjustment));
+  const interestGuide = Math.max(interestPaid,
+    cents(row.interest ?? row.interest_amount) + cents(row.guide_interest_adjustment));
+  const guideSatisfied = Boolean(row.schedule_satisfied);
+  const principalRemaining = guideSatisfied ? 0 : Math.max(0, principalGuide - principalPaid);
+  const interestRemaining = guideSatisfied ? 0 : Math.max(0, interestGuide - interestPaid);
+  const paid = principalPaid + interestPaid;
   return {
     ...row,
     principal_remaining: money(principalRemaining),
     interest_remaining: money(interestRemaining),
     paid_amount: money(paid),
     remaining_due: money(principalRemaining + interestRemaining),
-    paid: principalRemaining + interestRemaining === 0,
-    partial_paid: paid > 0 && principalRemaining + interestRemaining > 0,
+    paid: guideSatisfied || principalRemaining + interestRemaining === 0,
+    partial_paid: !guideSatisfied && paid > 0 && principalRemaining + interestRemaining > 0,
     partial_paid_amount: principalRemaining + interestRemaining > 0 ? money(paid) : 0,
   };
 }
@@ -36,7 +43,9 @@ function normalize(row) {
   if (interestPaid == null || principalPaid == null) {
     throw new Error('A historical partial payment has no principal/interest split. Review that record before applying another payment.');
   }
-  if (principalPaid < 0 || interestPaid < 0 || principalPaid > principal || interestPaid > interest) {
+  const principalLimit = Math.max(principal, principal + cents(row.guide_principal_adjustment));
+  const interestLimit = Math.max(interest, interest + cents(row.guide_interest_adjustment));
+  if (principalPaid < 0 || interestPaid < 0 || principalPaid > principalLimit || interestPaid > interestLimit) {
     throw new Error('The stored payment split does not match the loan schedule. Review the historical payment record.');
   }
   return refresh({
@@ -47,6 +56,75 @@ function normalize(row) {
   });
 }
 
+function isGuidePayment(row, index) {
+  if (row.schedule_payment_recorded) return true;
+  if (cents(row.paid_amount ?? row.partial_paid_amount) <= 0) return false;
+  const period = String(row.period ?? index + 1);
+  const allocations = row.payment_allocations || [];
+  if (allocations.some(item => ['scheduled', 'advance', 'automatic', 'settlement'].includes(item.application_type)
+    && String(item.target_period ?? period) === period)) return true;
+  return Boolean(row.partial_paid && (row.last_partial_paid_at || row.paid_at));
+}
+
+function removeForeignGuideApplications(schedule) {
+  const periods = new Set(schedule.map((row, index) => String(row.period ?? index + 1)));
+  return schedule.map((row, index) => {
+    if (row.principal_paid_amount == null || row.interest_paid_amount == null) return row;
+
+    const period = String(row.period ?? index + 1);
+    const allocations = row.payment_allocations || [];
+    const foreign = allocations.filter(item =>
+      ['scheduled', 'advance', 'automatic', 'settlement'].includes(item.application_type)
+      && item.target_period != null
+      && String(item.target_period) !== period
+      && periods.has(String(item.target_period)));
+    if (!foreign.length) return row;
+
+    const foreignPrincipal = foreign.reduce((sum, item) => sum + cents(item.principal), 0);
+    const foreignInterest = foreign.reduce((sum, item) => sum + cents(item.interest), 0);
+    const hasLocalGuidePayment = allocations.some(item =>
+      ['scheduled', 'advance', 'automatic', 'settlement'].includes(item.application_type)
+      && String(item.target_period ?? period) === period);
+    return {
+      ...row,
+      principal_paid_amount: money(Math.max(0, cents(row.principal_paid_amount) - foreignPrincipal)),
+      interest_paid_amount: money(Math.max(0, cents(row.interest_paid_amount) - foreignInterest)),
+      schedule_payment_recorded: hasLocalGuidePayment,
+      schedule_satisfied: hasLocalGuidePayment ? row.schedule_satisfied : false,
+    };
+  });
+}
+
+function reconcileGuideSchedule(schedule) {
+  if (!schedule.length) return schedule;
+  const lastIndex = schedule.length - 1;
+  let rows = removeForeignGuideApplications(schedule).map(row => normalize({
+    ...row,
+    guide_principal_adjustment: 0,
+    guide_interest_adjustment: 0,
+  }));
+
+  rows = rows.map((row, index) => {
+    if (index === lastIndex || row.paid || !isGuidePayment(row, index)) return row;
+    return refresh({
+      ...row,
+      schedule_payment_recorded: true,
+      schedule_satisfied: true,
+    });
+  });
+
+  const expected = schedulePaymentBalances(rows);
+  const shownPrincipal = rows.reduce((sum, row) => sum + cents(row.principal_remaining), 0);
+  const shownInterest = rows.reduce((sum, row) => sum + cents(row.interest_remaining), 0);
+  const finalRow = rows[lastIndex];
+  rows[lastIndex] = refresh({
+    ...finalRow,
+    guide_principal_adjustment: money(expected.principal - shownPrincipal),
+    guide_interest_adjustment: money(expected.interest - shownInterest),
+  });
+  return rows;
+}
+
 export function reconcileSchedulePrincipal(schedule, expectedPrincipal) {
   const rows = (schedule || []).map(row => ({ ...row }));
   if (!rows.length) return rows;
@@ -55,13 +133,15 @@ export function reconcileSchedulePrincipal(schedule, expectedPrincipal) {
   const difference = expected - scheduled;
   // Only reconcile cent-level installment rounding. Larger differences may be
   // intentional imported data and must be reviewed instead of changed here.
-  if (!expected || difference === 0 || Math.abs(difference) > 100) return rows;
+  if (!expected || difference === 0 || Math.abs(difference) > 100) {
+    return reconcileGuideSchedule(rows);
+  }
 
   let targetIndex = rows.length - 1;
   while (targetIndex > 0 && rows[targetIndex].paid) targetIndex -= 1;
   const row = rows[targetIndex];
   const nextPrincipal = cents(row.principal) + difference;
-  if (nextPrincipal < 0) return rows;
+  if (nextPrincipal < 0) return reconcileGuideSchedule(rows);
 
   const adjustment = money(difference);
   const next = { ...row, principal: money(nextPrincipal) };
@@ -80,7 +160,7 @@ export function reconcileSchedulePrincipal(schedule, expectedPrincipal) {
   }
   next.rounding_adjustment = money(cents(next.rounding_adjustment) + cents(adjustment));
   rows[targetIndex] = next;
-  return rows;
+  return reconcileGuideSchedule(rows);
 }
 
 function receiptTotals(rows, paymentId = null) {
@@ -210,7 +290,7 @@ export function applyLoanAllocation(schedule, allocation, paidAt) {
         target_due_date: null,
       });
     }
-    return rows;
+    return reconcileGuideSchedule(rows);
   }
   const targetIndex = targetIndexFor(rows, target, paidAt);
   if (targetIndex < 0) {
@@ -225,10 +305,16 @@ export function applyLoanAllocation(schedule, allocation, paidAt) {
   }
   const principalApplied = Math.min(principal, cents(row.principal_remaining));
   const interestApplied = Math.min(interest, cents(row.interest_remaining));
+  const closesSelectedGuideRow = ['scheduled', 'advance', 'settlement'].includes(target.type)
+    && targetIndex < rows.length - 1;
   const updated = refresh({
     ...row,
     principal_paid_amount: money(cents(row.principal_paid_amount) + principalApplied),
     interest_paid_amount: money(cents(row.interest_paid_amount) + interestApplied),
+    schedule_payment_recorded: ['scheduled', 'advance', 'settlement'].includes(target.type)
+      ? true
+      : row.schedule_payment_recorded,
+    schedule_satisfied: closesSelectedGuideRow ? true : row.schedule_satisfied,
   });
   if (allocation.paymentId) {
     updated.payment_allocations.push({
@@ -251,7 +337,7 @@ export function applyLoanAllocation(schedule, allocation, paidAt) {
     updated.last_interest_paid_at = paidAt;
   }
   rows[targetIndex] = updated;
-  return rows;
+  return reconcileGuideSchedule(rows);
 }
 
 export function reverseLoanAllocation(schedule, allocation) {
@@ -321,19 +407,23 @@ export function reverseLoanAllocation(schedule, allocation) {
     principalLeft -= principalNow;
     interestLeft -= interestNow;
     if (!principalNow && !interestNow && !matches.length) continue;
+    const remainingAllocations = trackedReceipts.length
+      ? row.payment_allocations.filter(item => !paymentIds.has(item.id))
+      : row.payment_allocations;
+    const stillHasGuidePayment = remainingAllocations.some(item =>
+      ['scheduled', 'advance', 'settlement'].includes(item.application_type));
     rows[i] = refresh({
       ...row,
       principal_paid_amount: money(cents(row.principal_paid_amount) - principalNow),
       interest_paid_amount: money(cents(row.interest_paid_amount) - interestNow),
-      payment_allocations: trackedReceipts.length
-        ? row.payment_allocations.filter(item => !paymentIds.has(item.id))
-        : row.payment_allocations,
+      payment_allocations: remainingAllocations,
       paid_at: null,
       last_interest_paid_amount: interestNow ? 0 : row.last_interest_paid_amount,
+      schedule_payment_recorded: stillHasGuidePayment,
+      schedule_satisfied: i < rows.length - 1 && stillHasGuidePayment,
     });
     if (!rows[i].paid_amount) rows[i].last_partial_paid_at = null;
   }
   if (principalLeft || interestLeft) throw new Error('The payment could not be safely reversed from the stored schedule.');
-  return rows;
+  return reconcileGuideSchedule(rows);
 }
-  
