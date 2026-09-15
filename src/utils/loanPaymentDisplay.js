@@ -105,12 +105,25 @@ export function installmentPresentation(row, schedule = [], released = false, no
     transactionDates.push(paymentDate);
     if (transaction.id) transactionByPaymentId.set(String(transaction.id), paymentDate);
     if (transaction.invoice_id) transactionByPaymentId.set(String(transaction.invoice_id), paymentDate);
+    if (transaction.reference) transactionByPaymentId.set(String(transaction.reference), paymentDate);
   }
 
   for (const scheduleRow of schedule) {
     for (const item of scheduleRow?.payment_allocations || []) {
+      const isBalanceReceipt = scheduleRow === row && item.application_type === 'balance';
       const hasScheduleAssignment = ['scheduled', 'advance', 'settlement', 'automatic'].includes(item.application_type)
         && item.target_period != null;
+      if (isBalanceReceipt) {
+        const key = item.id || `${item.paid_at || ''}|balance`;
+        if (!receipts.has(key)) {
+          receipts.set(key, {
+            amount: money(item.receipt_total ?? Number(item.receipt_principal || 0)
+              + Number(item.receipt_interest || 0)),
+            paidAt: transactionByPaymentId.get(String(item.id || '')) || item.paid_at || null,
+          });
+        }
+        continue;
+      }
       if (scheduleRow === row && hasScheduleAssignment) taggedOnRow += allocationAmount(item);
       if (scheduleRow === row && !hasScheduleAssignment) hasUnassignedAllocationOnRow = true;
       if (!hasScheduleAssignment || String(item.target_period) !== period) continue;

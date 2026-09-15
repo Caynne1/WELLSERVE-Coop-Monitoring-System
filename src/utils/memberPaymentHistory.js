@@ -25,8 +25,30 @@ export function loanPaymentMode(row) {
   return /^[-\u2013\u2014]$/.test(mode) ? '' : mode;
 }
 
-export function loanPaymentApplication(row) {
-  return /\bLoan Balance Payment\b/i.test(String(row.notes || '')) ? 'Loan Balance Payment' : '';
+export function loanPaymentApplication(row, loans = []) {
+  if (/\bLoan Balance Payment\b/i.test(String(row.notes || ''))) return 'Loan Balance Payment';
+
+  const loan = loans.find(item => item.id === row.loan_id);
+  if (!loan) return '';
+  let schedule = loan.preview_schedule_json;
+  try {
+    schedule = typeof schedule === 'string' ? JSON.parse(schedule) : schedule;
+    if (typeof schedule === 'string') schedule = JSON.parse(schedule);
+  } catch {
+    return '';
+  }
+  if (!Array.isArray(schedule)) return '';
+
+  const references = new Set([
+    row.invoice_id,
+    row.reference,
+    row.id,
+    ...(row.ids || []),
+  ].filter(Boolean).map(String));
+  const application = schedule
+    .flatMap(item => item?.payment_allocations || [])
+    .find(item => references.has(String(item?.id || '')))?.application_type;
+  return application === 'balance' ? 'Loan Balance Payment' : '';
 }
 
 export function loanPaymentHistoryRows(transactions, loans = []) {

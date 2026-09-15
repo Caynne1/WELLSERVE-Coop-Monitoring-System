@@ -45,7 +45,7 @@ export default function LoanPaymentHistoryTable({ rows, loans = [], memberId }) 
             {amounts.map(key => <td key={key} className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${key === 'total_paid' ? 'font-semibold text-emerald-700' : 'font-medium'}`}>
               {formatCurrency(row[key] || 0)}
             </td>)}
-            <td className="whitespace-nowrap px-4 py-3 text-gray-500">{loanPaymentApplication(row)}</td>
+            <td className="whitespace-nowrap px-4 py-3 text-gray-500">{loanPaymentApplication(row, loans)}</td>
             <td className="px-4 py-3 text-gray-500">{loanPaymentMode(row)}</td>
             <td className="px-4 py-3 text-gray-500">{row.created_by_name || ''}</td>
           </PaymentHistoryRow>)}
