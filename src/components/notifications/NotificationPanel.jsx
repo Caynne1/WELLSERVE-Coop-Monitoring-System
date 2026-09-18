@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bell, X, Check, CheckCheck, Trash2, RefreshCw,
   CreditCard, AlertTriangle, AlertCircle, ArrowDownCircle, ArrowUpCircle, Info
@@ -24,7 +25,9 @@ function getCategoryIcon(category, type) {
   const size = 15;
   if (category === 'payment')        return <CreditCard size={size} />;
   if (category === 'due_date')       return <AlertTriangle size={size} />;
+  if (category === 'due_today')      return <AlertCircle size={size} />;
   if (category === 'missed_payment') return <AlertCircle size={size} />;
+  if (String(category || '').startsWith('overdue_')) return <AlertCircle size={size} />;
   if (category === 'cash_flow') {
     return type === 'success'
       ? <ArrowDownCircle size={size} />
@@ -46,15 +49,31 @@ function getCategoryColors(type) {
 const CATEGORY_LABELS = {
   payment:         'Payment',
   due_date:        'Due Date',
+  due_today:       'Due Today',
   missed_payment:  'Missed',
   cash_flow:       'Cash Flow',
   general:         'General',
   loan:            'Loan',
 };
 
+function notificationRoute(notif) {
+  const id = notif.reference_id ? encodeURIComponent(notif.reference_id) : '';
+  if (notif.reference_type === 'loan' && id) return `/loans/${id}`;
+  if (notif.reference_type === 'member' && id) return `/members/${id}`;
+  if (notif.reference_type === 'invoice' && id) return `/invoices?invoice=${id}`;
+  if (notif.reference_type === 'transaction') return id ? `/transactions?transaction=${id}` : '/transactions';
+  if (notif.reference_type === 'fund_transaction' || notif.category === 'cash_flow') return '/coop-monitoring';
+  if (notif.reference_type === 'account' && id) return `/accounts/${id}`;
+  if (notif.reference_type === 'time_deposit') return '/time-deposit';
+  if (notif.reference_type === 'savings_booster') return '/savings-booster';
+  if (notif.category === 'payment') return '/transactions';
+  return '/dashboard';
+}
+
 // ── Main Panel Component ──────────────────────────────────────────────────────
 
 export default function NotificationPanel({ anchorRef }) {
+  const navigate = useNavigate();
   const {
     notifications,
     loading,
@@ -89,6 +108,17 @@ export default function NotificationPanel({ anchorRef }) {
 
   const unread = notifications.filter(n => !n.is_read);
   const read   = notifications.filter(n => n.is_read);
+
+  async function openNotification(notif) {
+    try {
+      if (!notif.is_read) await markAsRead(notif.id);
+    } catch (error) {
+      console.error('[NotificationPanel] mark as read failed:', error);
+    } finally {
+      setPanelOpen(false);
+      navigate(notificationRoute(notif));
+    }
+  }
 
   return (
     <div
@@ -199,6 +229,7 @@ export default function NotificationPanel({ anchorRef }) {
                     onMarkRead={() => markAsRead(n.id)}
                     onMarkUnread={() => markAsUnread(n.id)}
                     onDelete={() => deleteNotification(n.id)}
+                    onOpen={() => openNotification(n)}
                   />
                 ))}
               </Section>
@@ -212,6 +243,7 @@ export default function NotificationPanel({ anchorRef }) {
                     onMarkRead={() => markAsRead(n.id)}
                     onMarkUnread={() => markAsUnread(n.id)}
                     onDelete={() => deleteNotification(n.id)}
+                    onOpen={() => openNotification(n)}
                   />
                 ))}
               </Section>
@@ -251,7 +283,7 @@ function Section({ label, count, children }) {
   );
 }
 
-function NotifItem({ notif, onMarkRead, onMarkUnread, onDelete }) {
+function NotifItem({ notif, onMarkRead, onMarkUnread, onDelete, onOpen }) {
   const colors = getCategoryColors(notif.type);
   const isUnread = !notif.is_read;
 
@@ -262,8 +294,17 @@ function NotifItem({ notif, onMarkRead, onMarkUnread, onDelete }) {
         borderBottom: '1px solid #F8FAFC',
         background: isUnread ? '#FAFCFF' : '#ffffff',
         transition: 'background 0.12s',
-        cursor: 'default',
+        cursor: 'pointer',
         position: 'relative',
+      }}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
       }}
       onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
       onMouseLeave={e => e.currentTarget.style.background = isUnread ? '#FAFCFF' : '#ffffff'}
@@ -321,7 +362,8 @@ function NotifItem({ notif, onMarkRead, onMarkUnread, onDelete }) {
               padding: '1px 8px',
               border: `1px solid ${colors.border}`,
             }}>
-              {CATEGORY_LABELS[notif.category] || notif.category}
+              {CATEGORY_LABELS[notif.category]
+                || (String(notif.category || '').startsWith('overdue_') ? 'Overdue' : notif.category)}
             </span>
             {isUnread && (
               <span style={{
@@ -362,7 +404,10 @@ function NotifItem({ notif, onMarkRead, onMarkUnread, onDelete }) {
 function ActionBtn({ onClick, title, color, children }) {
   return (
     <button
-      onClick={onClick}
+      onClick={event => {
+        event.stopPropagation();
+        onClick();
+      }}
       title={title}
       style={{
         display: 'inline-flex',

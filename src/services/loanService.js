@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { isLoanWorkflowLocked } from '../utils/loanListState';
+import { getLoanOutstandingComponents, isLoanWorkflowLocked } from '../utils/loanListState';
 import {
   applyLoanAllocation,
   legacyLedgerOnlyReversalBalances,
@@ -368,36 +368,19 @@ export async function deleteLoan(id) {
 export async function getLoanStats() {
   const { data, error } = await supabase
     .from('loans')
-    .select('status, amount, balance, total_loan_payable, preview_summary_json');
+    .select('status, amount, balance, total_loan_payable, preview_summary_json, preview_schedule_json');
 
   if (error) throw error;
 
   const loans = data || [];
   const statusOf = (loan) => String(loan?.status || '').toLowerCase();
-  const summaryOf = (loan) => parseJSONSafe(loan?.preview_summary_json, {});
-  const payableBalance = (loan) => {
-    const principal = safeNum(loan?.amount);
-    const principalBalance = safeNum(loan?.balance);
-    if (principalBalance <= 0) return 0;
-
-    const summary = summaryOf(loan);
-    const payable = safeNum(summary?.total_loan_payable ?? loan?.total_loan_payable);
-    const totalInterest = safeNum(summary?.total_interest ?? summary?.total_interest_earned);
-
-    if (principal > 0 && totalInterest > 0) {
-      return round2(principalBalance + (totalInterest * (principalBalance / principal)));
-    }
-
-    if (payable > principal && principal > 0) {
-      return round2(principalBalance + ((payable - principal) * (principalBalance / principal)));
-    }
-
-    return round2(principalBalance);
-  };
+  const payableBalance = (loan) => getLoanOutstandingComponents(loan).total;
 
   const pendingStatuses = new Set(['draft', 'credit_committee_approval', 'pending']);
   const approvedStatuses = new Set(['approved']);
-  const releasedStatuses = new Set(['released', 'active', 'ongoing', 'overdue']);
+  const releasedStatuses = new Set([
+    'released', 'active', 'ongoing', 'partial', 'overdue', 'delinquent', 'defaulted', 'paid',
+  ]);
   const paidStatuses = new Set(['paid']);
 
   const pending = loans.filter(l => pendingStatuses.has(statusOf(l)));
@@ -424,11 +407,14 @@ export async function getLoanStats() {
     byStatus: {
       draft: loans.filter(l => statusOf(l) === 'draft').length,
       credit_committee_approval: loans.filter(l => statusOf(l) === 'credit_committee_approval').length,
-      pending: pending.length,
+      pending: loans.filter(l => statusOf(l) === 'pending').length,
       approved: approved.length,
       released: exactReleased.length,
       active: exactActive.length,
+      partial: loans.filter(l => statusOf(l) === 'partial').length,
       overdue: exactOverdue.length,
+      delinquent: loans.filter(l => statusOf(l) === 'delinquent').length,
+      defaulted: loans.filter(l => statusOf(l) === 'defaulted').length,
       paid: paid.length,
     },
   };

@@ -303,18 +303,32 @@ const INVOICE_ONLY_TYPES = new Set([
   'annual_dues',
 ]);
 
+async function fetchPagedRows(queryForRange, pageSize = 1000) {
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data = [], error } = await queryForRange(offset, offset + pageSize - 1);
+    if (error) return { data: [], error };
+    rows.push(...data);
+    if (data.length < pageSize) return { data: rows, error: null };
+  }
+}
+
 export async function computeCoopSummaryFromInvoices({ strict = false } = {}) {
   const [txRes, invRes, vchRes, loansRes] = await Promise.all([
     // All transactions
-    supabase
+    fetchPagedRows((from, to) => supabase
       .from('transactions')
       .select('id, type, category, amount, transaction_date, created_at, notes, reference, member_id, loan_id, created_by, source, record_type')
-      .order('transaction_date', { ascending: false }),
+      .order('transaction_date', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to)),
     // Only admin-level invoices not captured in transactions
-    supabase
+    fetchPagedRows((from, to) => supabase
       .from('invoices')
       .select('id, invoice_no, date, payee, purpose, amount, payment_type, created_at, created_by')
-      .eq('status', 'paid'),
+      .eq('status', 'paid')
+      .order('id', { ascending: true })
+      .range(from, to)),
     Promise.resolve({ data: [] }),
     Promise.resolve({ data: [] }),
   ]);
@@ -613,18 +627,22 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     }
   }
 
-  let txQuery = supabase
-    .from('transactions')
-    .select('id, amount, notes, category, type, transaction_date, created_at, reference, member_id, loan_id');
-
-  if (from) txQuery = txQuery.gte('transaction_date', from);
-  if (toEndOfDay) txQuery = txQuery.lte('transaction_date', toEndOfDay);
+  const fetchTransactions = () => fetchPagedRows((rangeFrom, rangeTo) => {
+    let query = supabase
+      .from('transactions')
+      .select('id, amount, notes, category, type, transaction_date, created_at, reference, member_id, loan_id')
+      .order('id', { ascending: true })
+      .range(rangeFrom, rangeTo);
+    if (from) query = query.gte('transaction_date', from);
+    if (toEndOfDay) query = query.lte('transaction_date', toEndOfDay);
+    return query;
+  });
 
   // Independent sources load together; interest pagination remains sequential.
   const [loanResult, interestPayments, txResult, membershipIncome] = await Promise.all([
     supabase.from('loans').select('id, preview_schedule_json'),
     fetchInterestPayments(),
-    txQuery,
+    fetchTransactions(),
     getMembershipMonitoringIncomeSummary({ from, to }),
   ]);
   const { data: loans = [], error: loanErr } = loanResult;

@@ -1,4 +1,37 @@
 import { supabase } from './supabase';
+import { buildLoanCollectionRows } from '../utils/loanCollections';
+import { getLoanBalanceWithInterest } from '../utils/loanListState';
+
+const money = value => Number(value || 0).toLocaleString('en-PH', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function localDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function displayDate(value) {
+  if (!value) return '';
+  return new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString('en-PH', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+}
+
+async function hasLoanAlert(referenceId, category, dueDate) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('reference_id', referenceId)
+    .eq('category', category)
+    .ilike('message', `%${displayDate(dueDate)}%`)
+    .limit(1);
+  if (error) throw error;
+  return (data || []).length > 0;
+}
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
@@ -101,78 +134,44 @@ export function subscribeToNotifications(onChange) {
 export async function generateDailyAlerts() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
-
-  // Check for loans due in the next 7 days
-  const in7Days = new Date(today);
-  in7Days.setDate(in7Days.getDate() + 7);
-  const in7Str = in7Days.toISOString().split('T')[0];
+  const todayStr = localDateKey(today);
 
   try {
-    // 1. Loans due within 7 days
-    const { data: dueSoonLoans } = await supabase
+    const { data: loans, error } = await supabase
       .from('loans')
-      .select('id, loan_no, due_date, balance, members(first_name, last_name)')
-      .eq('status', 'active')
-      .gte('due_date', todayStr)
-      .lte('due_date', in7Str);
+      .select('id, loan_no, member_id, amount, balance, status, due_date, preview_schedule_json, preview_summary_json, members(first_name, last_name, member_no)')
+      .in('status', ['released', 'active', 'ongoing', 'partial', 'overdue', 'delinquent', 'defaulted']);
+    if (error) throw error;
 
-    for (const loan of dueSoonLoans || []) {
+    for (const loan of loans || []) {
+      const nextDue = buildLoanCollectionRows([loan], today)[0];
+      if (!nextDue) continue;
       const memberName = loan.members
         ? `${loan.members.first_name} ${loan.members.last_name}`
         : 'Unknown Member';
-      const dueDate = new Date(loan.due_date).toLocaleDateString('en-PH', {
-        month: 'short', day: 'numeric', year: 'numeric'
-      });
+      const memberRef = loan.members?.member_no ? ` (${loan.members.member_no})` : '';
+      const loanRef = loan.loan_no ? `Loan #${loan.loan_no}` : 'Loan';
+      const dueDate = displayDate(nextDue.dueDate);
+      const outstanding = getLoanBalanceWithInterest(loan);
 
-      // Avoid duplicate daily alerts — check if one already exists today
-      const { data: existing } = await supabase
-        .from('notifications')
-        .select('id')
-        .eq('reference_id', loan.id)
-        .eq('category', 'due_date')
-        .gte('created_at', todayStr)
-        .limit(1);
-
-      if (!existing || existing.length === 0) {
+      const dueCategory = nextDue.daysUntilDue === 0 ? 'due_today' : 'due_date';
+      if (nextDue.daysUntilDue <= 7 && nextDue.dueDate >= todayStr
+        && !(await hasLoanAlert(loan.id, dueCategory, nextDue.dueDate))) {
         await createNotification({
-          title: 'Loan Due Soon',
-          message: `Loan #${loan.loan_no} for ${memberName} is due on ${dueDate}. Balance: ₱${Number(loan.balance || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
-          type: 'warning',
-          category: 'due_date',
+          title: nextDue.daysUntilDue === 0 ? 'Loan Due Today' : 'Loan Due Soon',
+          message: `${loanRef} for ${memberName}${memberRef}. Due date: ${dueDate}. Payment ${nextDue.period}: ₱${money(nextDue.remainingDue)}. Total outstanding: ₱${money(outstanding)}.`,
+          type: nextDue.daysUntilDue === 0 ? 'error' : 'warning',
+          category: dueCategory,
           reference_id: loan.id,
           reference_type: 'loan',
         });
       }
-    }
 
-    // 2. Overdue/missed loan payments
-    const { data: overdueLoans } = await supabase
-      .from('loans')
-      .select('id, loan_no, due_date, balance, members(first_name, last_name)')
-      .eq('status', 'active')
-      .lt('due_date', todayStr);
-
-    for (const loan of overdueLoans || []) {
-      const memberName = loan.members
-        ? `${loan.members.first_name} ${loan.members.last_name}`
-        : 'Unknown Member';
-      const dueDate = new Date(loan.due_date).toLocaleDateString('en-PH', {
-        month: 'short', day: 'numeric', year: 'numeric'
-      });
-
-      const { data: existing } = await supabase
-        .from('notifications')
-        .select('id')
-        .eq('reference_id', loan.id)
-        .eq('category', 'missed_payment')
-        .gte('created_at', todayStr)
-        .limit(1);
-
-      if (!existing || existing.length === 0) {
+      if (nextDue.dueDate < todayStr
+        && !(await hasLoanAlert(loan.id, 'missed_payment', nextDue.dueDate))) {
         await createNotification({
           title: 'Missed Loan Payment',
-          message: `Loan #${loan.loan_no} for ${memberName} was due on ${dueDate} and has not been paid. Balance: ₱${Number(loan.balance || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+          message: `${loanRef} for ${memberName}${memberRef}. Due date: ${dueDate}. Payment ${nextDue.period} remaining: ₱${money(nextDue.remainingDue)}. ${nextDue.daysOverdue} day${nextDue.daysOverdue === 1 ? '' : 's'} overdue. Total outstanding: ₱${money(outstanding)}.`,
           type: 'error',
           category: 'missed_payment',
           reference_id: loan.id,
@@ -190,7 +189,7 @@ export async function generateDailyAlerts() {
 
 export async function generateBirthdayAlerts() {
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = localDateKey(today);
   const todayMonth = today.getMonth() + 1;
   const todayDay   = today.getDate();
 
@@ -238,7 +237,6 @@ export async function generateBirthdayAlerts() {
 export async function generateOverdueEscalationAlerts() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
 
   const THRESHOLDS = [
     { days: 30,  label: '30-day',   type: 'warning' },
@@ -249,36 +247,30 @@ export async function generateOverdueEscalationAlerts() {
   try {
     const { data: overdueLoans } = await supabase
       .from('loans')
-      .select('id, loan_no, due_date, balance, members(first_name, last_name)')
-      .in('status', ['active', 'overdue', 'partial'])
-      .lt('due_date', todayStr)
-      .gt('balance', 0);
+      .select('id, loan_no, member_id, amount, due_date, balance, status, preview_schedule_json, preview_summary_json, members(first_name, last_name, member_no)')
+      .in('status', ['released', 'active', 'ongoing', 'partial', 'overdue', 'delinquent', 'defaulted']);
 
     for (const loan of overdueLoans || []) {
-      const dueDate = new Date(loan.due_date);
-      dueDate.setHours(0, 0, 0, 0);
-      const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+      const nextDue = buildLoanCollectionRows([loan], today)[0];
+      if (!nextDue || nextDue.daysOverdue <= 0) continue;
+      const daysOverdue = nextDue.daysOverdue;
 
       const memberName = loan.members
         ? `${loan.members.first_name} ${loan.members.last_name}`
         : 'Unknown Member';
+      const memberRef = loan.members?.member_no ? ` (${loan.members.member_no})` : '';
+      const loanRef = loan.loan_no ? `Loan #${loan.loan_no}` : 'Loan';
+      const dueDate = displayDate(nextDue.dueDate);
+      const outstanding = getLoanBalanceWithInterest(loan);
 
       for (const threshold of THRESHOLDS) {
         if (daysOverdue < threshold.days) continue;
 
         const category = `overdue_${threshold.days}`;
-        const { data: existing } = await supabase
-          .from('notifications')
-          .select('id')
-          .eq('reference_id', loan.id)
-          .eq('category', category)
-          .gte('created_at', todayStr)
-          .limit(1);
-
-        if (!existing || existing.length === 0) {
+        if (!(await hasLoanAlert(loan.id, category, nextDue.dueDate))) {
           await createNotification({
             title: `Loan ${threshold.label} Overdue`,
-            message: `Loan #${loan.loan_no} for ${memberName} is ${daysOverdue} days overdue. Outstanding: ₱${Number(loan.balance || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+            message: `${loanRef} for ${memberName}${memberRef}. Due date: ${dueDate}. Payment ${nextDue.period} remaining: ₱${money(nextDue.remainingDue)}. ${daysOverdue} days overdue. Total outstanding: ₱${money(outstanding)}.`,
             type: threshold.type,
             category,
             reference_id: loan.id,

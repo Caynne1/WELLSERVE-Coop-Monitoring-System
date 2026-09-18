@@ -57,6 +57,13 @@ function uniqueOptions(rows, key) {
     .sort((a, b) => String(a).localeCompare(String(b)));
 }
 
+function recordedAt(tx) {
+  if (tx.created_at) return formatDateTime(tx.created_at);
+  return /T\d{2}:\d{2}/.test(String(tx.transaction_date || ''))
+    ? formatDateTime(tx.transaction_date)
+    : '-';
+}
+
 function StatCard({ icon, label, value, sub, tone = 'gray' }) {
   const tones = {
     green: 'bg-green-50 text-green-700',
@@ -85,7 +92,6 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [directionFilter, setDirectionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [detailTarget, setDetailTarget] = useState(null);
@@ -142,14 +148,9 @@ export default function TransactionsPage() {
       const matchesSearch = !q || haystack.includes(q);
       const matchesType = !typeFilter || tx.type === typeFilter;
       const matchesCategory = !categoryFilter || tx.category === categoryFilter;
-      const matchesDirection =
-        !directionFilter ||
-        (directionFilter === 'in' && isCashIn(tx)) ||
-        (directionFilter === 'out' && isCashOut(tx));
-
-      return matchesSearch && matchesType && matchesCategory && matchesDirection;
+      return matchesSearch && matchesType && matchesCategory;
     });
-  }, [transactions, search, typeFilter, categoryFilter, directionFilter]);
+  }, [transactions, search, typeFilter, categoryFilter]);
 
   const totals = useMemo(() => {
     const cashIn = filtered.filter(isCashIn).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
@@ -163,18 +164,17 @@ export default function TransactionsPage() {
     };
   }, [filtered]);
 
-  const hasFilters = search || typeFilter || categoryFilter || directionFilter || dateFrom || dateTo;
+  const hasFilters = search || typeFilter || categoryFilter || dateFrom || dateTo;
   const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filtered, { pageSize: 25 });
 
   useEffect(() => {
     setPage(1);
-  }, [search, typeFilter, categoryFilter, directionFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, typeFilter, categoryFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function clearFilters() {
     setSearch('');
     setTypeFilter('');
     setCategoryFilter('');
-    setDirectionFilter('');
     setDateFrom('');
     setDateTo('');
   }
@@ -184,8 +184,8 @@ export default function TransactionsPage() {
     const rows = filtered.map(tx => {
       const direction = isCashIn(tx) ? 'IN' : 'OUT';
       return `<tr>
-        <td style="white-space:nowrap">${tx.transaction_date ? formatDateTime(tx.transaction_date) : '-'}</td>
-        <td>${direction}</td>
+        <td style="white-space:nowrap">${tx.transaction_date ? formatDate(tx.transaction_date) : '-'}</td>
+        <td style="white-space:nowrap">${recordedAt(tx)}</td>
         <td style="text-transform:capitalize">${txLabel(tx.type)}</td>
         <td>${tx.category || '-'}</td>
         <td>${memberName(tx)}</td>
@@ -199,7 +199,7 @@ export default function TransactionsPage() {
       <h1 class="report-title">Transactions</h1>
       <div class="report-meta">Financial transaction ledger | ${filtered.length} records | Cash In: ${fmt(totals.cashIn)} | Cash Out: ${fmt(totals.cashOut)} | Net: ${fmt(totals.net)}</div>
       <table>
-        <thead><tr><th>Date &amp; Time</th><th>Direction</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Recorded By</th><th>Notes</th></tr></thead>
+        <thead><tr><th>Transaction Date</th><th>Recorded At</th><th>Type</th><th>Category</th><th>Member</th><th style="text-align:right">Amount</th><th>Mode</th><th>Recorded By</th><th>Notes</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="confidential">WELLSERVE Cooperative Monitoring System - Authorized personnel only.</div>
@@ -214,8 +214,8 @@ export default function TransactionsPage() {
     try {
       if (filtered.length === 0) { toast.error('No transactions to export.'); return; }
       const rows = filtered.map(tx => ({
-        date_time: tx.transaction_date ? formatDateTime(tx.transaction_date) : '',
-        direction: isCashIn(tx) ? 'IN' : 'OUT',
+        transaction_date: tx.transaction_date ? formatDate(tx.transaction_date) : '',
+        recorded_at: tx.created_at ? formatDateTime(tx.created_at) : '',
         type: txLabel(tx.type),
         category: tx.category || '',
         member: memberName(tx),
@@ -278,16 +278,6 @@ export default function TransactionsPage() {
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-
-        <select
-          value={directionFilter}
-          onChange={e => setDirectionFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">All Directions</option>
-          <option value="in">Cash In</option>
-          <option value="out">Cash Out</option>
-        </select>
 
         <select
           value={typeFilter}
@@ -362,8 +352,8 @@ export default function TransactionsPage() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   {[
-                    'Date & Time',
-                    'Direction',
+                    'Transaction Date',
+                    'Recorded At',
                     'Type',
                     'Category',
                     'Member',
@@ -393,12 +383,10 @@ export default function TransactionsPage() {
                     return (
                       <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                          {tx.transaction_date ? formatDateTime(tx.transaction_date) : '-'}
+                          {tx.transaction_date ? formatDate(tx.transaction_date) : '-'}
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cashIn ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                            {cashIn ? 'IN' : 'OUT'}
-                          </span>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                          {recordedAt(tx)}
                         </td>
                         <td className="px-4 py-3 capitalize text-gray-700 whitespace-nowrap">
                           {txLabel(tx.type)}
@@ -475,8 +463,8 @@ export default function TransactionsPage() {
         {detailTarget && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <DetailItem label="Date & Time" value={detailTarget.transaction_date ? formatDateTime(detailTarget.transaction_date) : '-'} />
-              <DetailItem label="Direction" value={isCashIn(detailTarget) ? 'IN' : 'OUT'} />
+              <DetailItem label="Transaction Date" value={detailTarget.transaction_date ? formatDate(detailTarget.transaction_date) : '-'} />
+              <DetailItem label="Recorded At" value={recordedAt(detailTarget)} />
               <DetailItem label="Type" value={txLabel(detailTarget.type)} />
               <DetailItem label="Category" value={detailTarget.category || '-'} />
               <DetailItem label="Member" value={memberName(detailTarget)} />
