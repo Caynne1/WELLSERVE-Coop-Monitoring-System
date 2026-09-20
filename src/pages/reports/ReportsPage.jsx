@@ -20,6 +20,7 @@ import { getAccountStats } from '../../services/accountService';
 import { computeCoopSummaryFromInvoices, getIncomeBreakdown } from '../../services/coopFundService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { exportToCSV } from '../../utils/csvExport';
+import { recordedOtherCharge } from '../../utils/otherCharges';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 
 // â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -53,6 +54,7 @@ const EARNED_INCOME_CATEGORIES = new Set([
 ]);
 
 const BREAKDOWN_INCOME_KEYS = [
+  'other_charges',
   'loan_interest',
   'service_fee',
   'legal_fees',
@@ -145,6 +147,8 @@ function isLoanDeduction(tx) {
 
 function isReportIncome(tx) {
   if (tx.type !== 'cash_in') return false;
+  const explicit = recordedOtherCharge(tx.notes || tx.note || tx.description);
+  if (explicit) return BREAKDOWN_INCOME_KEYS.includes(explicit.value);
   const category = normalized(tx.category);
   const rawType = normalized(tx.raw_type);
   return EARNED_INCOME_CATEGORIES.has(category) || EARNED_INCOME_CATEGORIES.has(rawType);
@@ -448,11 +452,12 @@ function buildReportHtml({
   totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
   totalIncome, totalExpense, loanInterest, penaltyCollected, membershipCollections,
   loanDeductions, totalCBUBalance, totalSavingsBalance, netCashFlow,
-  openingCashBalance, closingCashBalance, collectionPerformance,
+  openingCashBalance, closingCashBalance, collectionPerformance, customCharges = [],
 }) {
   const fmt = (n) =>
     'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const num = (n) => Number(n ?? 0).toLocaleString();
+  const escapeLabel = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const now = new Date();
   const generated = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
     + ' at ' + now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
@@ -491,6 +496,7 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Total Savings Balance</div><div class="stat-value" style="font-size:10pt">${fmt(totalSavingsBalance)}</div><div class="stat-sub">${num(accountStats?.savingsCount)} accounts</div></div>
     </div>
 
+    ${customCharges.length ? '<div class="section-heading">Custom Charges Breakdown</div><div class="stats-grid">' + customCharges.map(charge => '<div class="stat-box"><div class="stat-label">' + escapeLabel(charge.label) + '</div><div class="stat-value">' + fmt(charge.amount) + '</div></div>').join('') + '</div>' : ''}
     <div class="section-heading">Selected Period Activity</div>
     <div class="stats-grid">
       <div class="stat-box"><div class="stat-label">Cash In (Period)</div><div class="stat-value" style="font-size:10pt">${fmt(totalDeposited)}</div></div>
@@ -745,6 +751,7 @@ export default function ReportsPage() {
     ['VIP Card', incomeBreakdown?.vip_card],
     ['Admin and Regulatory Fees', incomeBreakdown?.admin_regulatory_fees],
     ['Other Earned Income', incomeBreakdown?.petty_cash],
+    ...(incomeBreakdown?.custom_charges || []).map(charge => [charge.label, charge.amount]),
   ].map(([label, value]) => ({ label, value: Number(value || 0) }));
 
   // Time series
@@ -784,6 +791,7 @@ export default function ReportsPage() {
       { Metric: 'Period: Loan Deductions (PHP)', Value: loanDeductions },
       { Metric: 'Period: Loan Interest (PHP)',    Value: loanInterest },
       { Metric: 'Period: Penalty Collected (PHP)', Value: penaltyCollected },
+      ...(incomeBreakdown?.custom_charges || []).map(charge => ({ Metric: 'Custom Charge: ' + charge.label + ' (PHP)', Value: charge.amount })),
       { Metric: 'Period: Cash In (PHP)',          Value: totalDeposited },
       { Metric: 'Period: Cash Out (PHP)',         Value: totalWithdrawn },
       { Metric: 'Period: Net Cash Flow (PHP)',     Value: netCashFlow },
@@ -804,6 +812,7 @@ export default function ReportsPage() {
 
   function handlePrint() {
     const contentHtml = buildReportHtml({
+      customCharges: incomeBreakdown?.custom_charges || [],
       periodLabel,
       memberStats,
       loanStats,

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { mergeDeductionItems, otherChargeCategory } from '../utils/otherCharges';
 import { createTransaction } from './transactionService';
 import { updateLoan } from './loanService';
 import { cleanLoanReference as cleanReference, extractLoanReferences, findReleaseMemberIds } from '../utils/loanReleaseLink';
@@ -49,6 +50,8 @@ export function getLoanDeductionItems(loan) {
       amount: round2(item.amount || 0),
       category: item.category || deductionCategory(item.label || item.name),
       kind: item.kind || deductionKind(item.label || item.name),
+      report_category: item.report_category,
+      other_charge_id: item.other_charge_id,
       post_to_membership: Boolean(item.post_to_membership),
     }))
     .filter(item => item.amount > 0 && !item.post_to_membership);
@@ -70,13 +73,7 @@ export function getLoanDeductionItems(loan) {
     .map(([label, amount, category, kind]) => ({ label, amount: round2(amount || 0), category, kind }))
     .filter(item => item.amount > 0);
 
-  const byKey = new Map();
-  [...normalized, ...extraItems].forEach(item => {
-    const key = item.kind || `${item.category}|${item.label.toLowerCase()}`;
-    if (!byKey.has(key)) byKey.set(key, item);
-  });
-
-  return [...byKey.values()];
+  return mergeDeductionItems(normalized, extraItems);
 }
 
 function getLoanMembershipDeduction(loan) {
@@ -498,7 +495,9 @@ export async function releaseLoanFromCheck(check, userId, selectedLoanId = null)
       type: 'loan_deduction',
       amount: item.amount,
       reference: loan.loan_no,
-      notes: item.label,
+      notes: otherChargeCategory(item.report_category) && item.other_charge_id
+        ? `${item.label} [Other charge: ${item.report_category}; id: ${item.other_charge_id}]`
+        : item.label,
       created_by: userId ?? null,
       transaction_date: releaseDate,
     });

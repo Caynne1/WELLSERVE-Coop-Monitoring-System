@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import PesoSign from '../../components/shared/PesoSign';
+import { groupExpenseCards } from '../../utils/expenseCards';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
@@ -91,21 +92,6 @@ function isWithdrawalCategory(category = '') {
   const text = normalizeCategoryText(category);
   return ['cbu_withdrawal', 'savings_withdrawal'].includes(text) ||
     text.includes('withdrawal');
-}
-
-function isOtherExpenseCategory(category = '') {
-  const text = normalizeCategoryText(category);
-  return !text || text === 'others' || text === 'other expenses' ||
-    text === 'other withdrawal/expenses' || text === 'needs manual review';
-}
-
-function originalExpenseCategory(tx) {
-  const notes = String(tx?.description || tx?.notes || '');
-  const categoryMatch = notes.match(/Original expense category:\s*([^\n\r|]+)/i);
-  const detailMatch = notes.match(/Category detail:\s*([^\n\r|]+)/i);
-  const original = categoryMatch?.[1]?.trim();
-  if (original && !isOtherExpenseCategory(original)) return original;
-  return detailMatch?.[1]?.trim() || original || tx?.category || '';
 }
 
 function displayCategoryLabel(category = '') {
@@ -1219,16 +1205,9 @@ export default function CoopMonitoringPage() {
       .filter(predicate)
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
 
-    const groupedExpenseCards = Object.entries(
-      expenseRows
-        .filter(tx => !isOtherExpenseCategory(originalExpenseCategory(tx)))
-        .reduce((groups, tx) => {
-          const key = originalExpenseCategory(tx) || 'others';
-          groups[key] = (groups[key] || 0) + Number(tx.amount || 0);
-          return groups;
-        }, {})
-    )
-      .map(([category, value], index) => ({
+    const groupedExpenseCards = groupExpenseCards(expenseRows)
+      .map(({ key, category, value }, index) => ({
+        key,
         label: displayCategoryLabel(category),
         value: Math.round(value * 100) / 100,
         color: [
@@ -1255,7 +1234,6 @@ export default function CoopMonitoringPage() {
       total: expenseSumBy(() => true),
       loanReleases: sumBy(tx => isLoanReleaseCategory(tx.category)),
       withdrawals: sumBy(tx => ['cbu_withdrawal', 'savings_withdrawal'].includes(tx.category)),
-      otherExpenses: expenseSumBy(tx => isOtherExpenseCategory(originalExpenseCategory(tx))),
       cards: groupedExpenseCards,
       count: cashOutRows.length,
       expenseCount: expenseRows.length,
@@ -1290,6 +1268,7 @@ export default function CoopMonitoringPage() {
     ['Annual Due', incomeData.annual_dues || 0],
     ['CBU Completion', incomeData.cbu_completion || 0],
     ['Petty Cash', incomeData.petty_cash || 0],
+    ...(incomeData.custom_charges || []).map(charge => [charge.label, charge.amount]),
     ['Membership/Admin & Regulatory Fees', Number(incomeData.membership_fee || 0) + Number(incomeData.admin_regulatory_fees || 0)],
     ['WELLife VIP Card', incomeData.vip_card || 0],
     ['Total Coop Income', incomeData.total_income || 0],
@@ -1297,7 +1276,6 @@ export default function CoopMonitoringPage() {
   const expenseMonitoringRows = useMemo(() => [
     ['Loan Releases', expenseMonitoring.loanReleases || 0],
     ...expenseMonitoring.cards.map(card => [card.label, card.value || 0]),
-    ['Other Expenses', expenseMonitoring.otherExpenses || 0],
     ['Total Expense', expenseMonitoring.total || 0],
   ], [expenseMonitoring]);
   const fmt = (n) => 'PHP ' + Number(n ?? 0).toLocaleString('en-PH', {
@@ -1699,11 +1677,12 @@ export default function CoopMonitoringPage() {
                       { label: 'Annual Due', value: incomeData.annual_dues, color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
                       { label: 'CBU Completion', value: incomeData.cbu_completion, color: 'bg-teal-50 border-teal-100', text: 'text-teal-700', sub: 'CBU completion deductions' },
                       { label: 'Petty Cash', value: incomeData.petty_cash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Petty cash deductions' },
+                      ...(incomeData.custom_charges || []).map(charge => ({ key: 'custom:' + charge.key, label: charge.label, value: charge.amount, color: 'bg-gray-50 border-gray-200', text: 'text-gray-700', sub: '' })),
                       { label: 'Membership/Admin & Regulatory Fees', value: Number(incomeData.membership_fee || 0) + Number(incomeData.admin_regulatory_fees || 0), color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Old membership fees and new admin fees' },
                       { label: 'WELLife VIP Card', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'VIP card collections' },
                     ].map(card => (
-                      <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
-                        <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
+                      <div key={card.key || card.label} className={`min-w-0 rounded-xl border p-4 ${card.color}`}>
+                        <p className={`text-[10px] break-words [overflow-wrap:anywhere] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
                         <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
                         <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
                       </div>
@@ -1744,10 +1723,9 @@ export default function CoopMonitoringPage() {
                 {[
                   { label: 'Loan Releases', value: expenseMonitoring.loanReleases, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Released loan net proceeds' },
                   ...expenseMonitoring.cards,
-                  { label: 'Other Expenses', value: expenseMonitoring.otherExpenses, color: 'bg-gray-50 border-gray-100', text: 'text-gray-700', sub: 'Uncategorized or manual-review expenses' },
                 ].map(card => (
-                  <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
-                    <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
+                  <div key={card.key || card.label} className={`min-w-0 rounded-xl border p-4 ${card.color}`}>
+                    <p className={`text-[10px] break-words [overflow-wrap:anywhere] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
                     <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
                     <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
                   </div>

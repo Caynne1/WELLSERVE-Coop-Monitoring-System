@@ -4,6 +4,7 @@ import { createInvoice } from './invoiceService';
 import { getMembershipMonitoringIncomeSummary } from './membershipMonitoringService';
 import { sumCashInLedger } from '../utils/fundCashIn';
 import { loanInterestForPeriod } from '../utils/loanInterestPeriod';
+import { recordedOtherCharge, customChargeBreakdown } from '../utils/otherCharges';
 
 // ── Primary: reads from coop_fund + fund_transactions ────────────────────────
 
@@ -154,6 +155,8 @@ function transactionReportCategory(tx) {
 }
 
 function loanDeductionKindFromText(value = '') {
+  const explicit = recordedOtherCharge(value);
+  if (explicit) return explicit.value + ':' + explicit.id;
   const text = String(value || '').toLowerCase();
   if (text.includes('service')) return 'service_fee';
   if (text.includes('cbu completion')) return 'cbu_completion';
@@ -681,6 +684,7 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     regular_savings: 0,
     membership_savings: 0,
     penalty_due: 0,
+    other_charges: 0,
     annual_dues: 0,
     cbu_completion: 0,
     petty_cash: 0,
@@ -694,6 +698,12 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     const txCategory = String(tx.category || '').toLowerCase();
     const bucketText = `${note} ${txCategory}`;
     const amount = Number(tx.amount || 0);
+
+    const explicitCharge = recordedOtherCharge(tx.notes);
+    if (tx.type === 'loan_deduction' && explicitCharge) {
+      buckets[explicitCharge.value] += amount;
+      continue;
+    }
 
     if (String(tx.type || '').toLowerCase() === 'penalty_payment') {
       buckets.penalty_due += amount;
@@ -755,6 +765,7 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     buckets.regular_savings +
     buckets.membership_savings +
     buckets.penalty_due +
+    buckets.other_charges +
     buckets.annual_dues +
     buckets.cbu_completion +
     buckets.petty_cash +
@@ -772,6 +783,8 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     regular_savings: Math.round(buckets.regular_savings * 100) / 100,
     membership_savings: Math.round(buckets.membership_savings * 100) / 100,
     penalty_due: Math.round(buckets.penalty_due * 100) / 100,
+    other_charges: Math.round(buckets.other_charges * 100) / 100,
+    custom_charges: customChargeBreakdown(incomeTxList),
     annual_dues: Math.round(buckets.annual_dues * 100) / 100,
     cbu_completion: Math.round(buckets.cbu_completion * 100) / 100,
     petty_cash: Math.round(buckets.petty_cash * 100) / 100,

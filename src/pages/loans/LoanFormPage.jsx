@@ -38,6 +38,7 @@ import {
 } from '../../utils/loanCalculator';
 import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
+import { OTHER_CHARGE_CATEGORIES, otherChargeCategory } from '../../utils/otherCharges';
 
 const STATUS_OPTS = [
   { value: 'active', label: 'Active' },
@@ -473,7 +474,7 @@ export default function LoanFormPage() {
   function addOtherCharge() {
     setOtherCharges(prev => [
       ...prev,
-      { id: `oc_${Date.now()}`, label: '', amount: '', included: true },
+      { id: crypto.randomUUID(), label: '', amount: '', included: true, report_category: 'other_charges' },
     ]);
   }
 
@@ -681,7 +682,11 @@ export default function LoanFormPage() {
     otherCharges.forEach(c => {
       const amt = parseFloat(c.amount || 0) || 0;
       if (c.included && c.label.trim() && amt > 0) {
-        extraDeductionItems.push({ label: c.label.trim(), type: 'fixed', amount: amt });
+        const category = otherChargeCategory(c.report_category);
+        extraDeductionItems.push({ label: c.label.trim(), type: 'fixed', amount: amt,
+          ...(category ? { category: category.transactionCategory, kind: category.value,
+            report_category: category.value, other_charge_id: c.id } : {}),
+        });
       }
     });
     // Annual dues has its own named param below, so it isn't duplicated here.
@@ -1180,6 +1185,12 @@ export default function LoanFormPage() {
           petty_cash: parseFloat(data.petty_cash_percent || 0) > 0 ? 'percent' : 'fixed',
         });
 
+        const savedCharges = parseJSONSafe(data.preview_deductions_json, {}).other_charges;
+        setOtherCharges(Array.isArray(savedCharges) ? savedCharges.map(charge => ({
+          ...charge, id: charge.id || crypto.randomUUID(), included: true,
+          report_category: charge.report_category || '',
+        })) : []);
+
         if (savedMembershipDeduction?.enabled) {
           setMembershipDeduction({
             enabled: true,
@@ -1489,7 +1500,9 @@ export default function LoanFormPage() {
 
       const otherChargesIncluded = otherCharges
         .filter(c => c.included && c.label.trim() && parseFloat(c.amount || 0) > 0)
-        .map(c => ({ label: c.label.trim(), amount: round2(parseFloat(c.amount) || 0) }));
+        .map(c => ({ id: c.id, label: c.label.trim(), amount: round2(parseFloat(c.amount) || 0),
+          report_category: c.report_category || '',
+        }));
       const otherChargesTotal = round2(otherChargesIncluded.reduce((s, c) => s + c.amount, 0));
       const membershipDeductionPayload = normalizeMembershipDeduction(membershipDeduction);
       const persistedValues = { ...values };
@@ -2281,7 +2294,15 @@ export default function LoanFormPage() {
                         onChange={e => updateOtherCharge(charge.id, { label: e.target.value })}
                         className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 disabled:bg-gray-50"
                       />
-                      <div className="text-[11px] text-gray-400 mt-1">Custom charge</div>
+                      <select aria-label="Charge category" value={charge.report_category || ''}
+                        disabled={!charge.included}
+                        onChange={e => updateOtherCharge(charge.id, { report_category: e.target.value })}
+                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm">
+                        {!charge.report_category && <option value="">Legacy category (from name)</option>}
+                        {OTHER_CHARGE_CATEGORIES.map(category => (
+                          <option key={category.value} value={category.value}>{category.label}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="py-3 pr-4 align-top">
                       <span className="inline-flex items-center text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
