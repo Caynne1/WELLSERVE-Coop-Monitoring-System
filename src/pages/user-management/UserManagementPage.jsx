@@ -39,7 +39,6 @@ const ROLE_OPTIONS = [
   { value: 'manager',          label: 'General Manager' },
   { value: 'auditor',          label: 'Auditor' },
   { value: 'accountant',       label: 'Accountant / Treasurer' },
-  { value: 'committee',        label: 'Committee' },
   { value: 'credit_committee', label: 'Credit Committee' },
   { value: 'admin',            label: 'Administrator' },
 ];
@@ -110,7 +109,6 @@ const ROLE_PERMISSION_PRESETS = {
   manager: MANAGER_DEFAULT_PERMISSIONS,
   auditor: READ_ONLY_PERMISSIONS,
   accountant: ACCOUNTANT_DEFAULT_PERMISSIONS,
-  committee: READ_ONLY_PERMISSIONS,
   credit_committee: CREDIT_COMMITTEE_DEFAULT_PERMISSIONS,
   admin: ADMIN_DEFAULT_PERMISSIONS,
 };
@@ -125,7 +123,6 @@ const ROLE_PILL_CLASS = {
   manager: 'border-purple-200 bg-purple-50 text-purple-700',
   auditor: 'border-amber-200 bg-amber-50 text-amber-700',
   accountant: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-  committee: 'border-teal-200 bg-teal-50 text-teal-700',
   credit_committee: 'border-blue-200 bg-blue-50 text-blue-700',
   staff: 'border-gray-200 bg-gray-50 text-gray-600',
 };
@@ -167,120 +164,63 @@ function UserAccessTabs({ tab, onChange }) {
 
 // ─── Permission Matrix Component ──────────────────────────────────────────────
 function PermissionMatrix({ permissions, onChange, readOnly = false }) {
-  const groups = [...new Set(PERMISSION_MODULES.map(m => m.group))];
-
-  function actionsForModule(moduleKey) {
-    return PERMISSION_ACTIONS.filter(action => action !== 'approve' || APPROVAL_MODULES.includes(moduleKey));
-  }
-
+  const groups = [...new Set(PERMISSION_MODULES.map(module => module.group))];
   function toggle(moduleKey, action) {
-    if (readOnly) return;
+    if (readOnly || (action !== 'view' && !permissions[moduleKey]?.view)) return;
     const next = {
       ...permissions,
-      [moduleKey]: {
-        ...permissions[moduleKey],
-        [action]: !permissions[moduleKey]?.[action],
-      },
+      [moduleKey]: { ...permissions[moduleKey], [action]: !permissions[moduleKey]?.[action] },
     };
-    // If un-viewing, clear all other actions
     if (action === 'view' && permissions[moduleKey]?.view) {
       next[moduleKey] = { view: false, create: false, edit: false, delete: false, approve: false };
     }
     onChange(next);
   }
-
-  function toggleAll(moduleKey, checked) {
-    if (readOnly) return;
-    const nextActions = Object.fromEntries(
-      PERMISSION_ACTIONS.map(action => [
-        action,
-        action === 'approve' && !APPROVAL_MODULES.includes(moduleKey) ? false : checked,
-      ])
-    );
-    onChange({
-      ...permissions,
-      [moduleKey]: nextActions,
-    });
-  }
-
-  function isAllChecked(moduleKey) {
-    return actionsForModule(moduleKey).every(a => permissions[moduleKey]?.[a]);
-  }
-
-  function isIndeterminate(moduleKey) {
-    const actions = actionsForModule(moduleKey);
-    const checked = actions.filter(a => permissions[moduleKey]?.[a]);
-    return checked.length > 0 && checked.length < actions.length;
-  }
-
   return (
-    <div className="space-y-5">
-      {groups.map(group => (
-        <div key={group}>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            {group}
-          </p>
-          <div className="rounded-xl border border-gray-100 overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-[1fr_repeat(5,_60px)] bg-gray-50 border-b border-gray-100">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500">Module</div>
-              {PERMISSION_ACTIONS.map(a => (
-                <div key={a} className="py-2 text-center text-xs font-semibold text-gray-500 capitalize">
-                  {a}
-                </div>
-              ))}
-            </div>
-
-            {PERMISSION_MODULES.filter(m => m.group === group).map((mod, idx, arr) => {
-              const perms = permissions[mod.key] || {};
-              const isLast = idx === arr.length - 1;
-              const allCheck = isAllChecked(mod.key);
-              const indeterminate = isIndeterminate(mod.key);
-
-              return (
-                <div
-                  key={mod.key}
-                  className={[
-                    'grid grid-cols-[1fr_repeat(5,_60px)] items-center',
-                    !isLast && 'border-b border-gray-50',
-                    !readOnly && 'hover:bg-emerald-50/30 transition-colors',
-                  ].filter(Boolean).join(' ')}
-                >
-                  {/* Module name + select-all checkbox */}
-                  <div className="px-4 py-2.5 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={allCheck}
-                      ref={el => { if (el) el.indeterminate = indeterminate; }}
-                      onChange={e => toggleAll(mod.key, e.target.checked)}
-                      disabled={readOnly}
-                      className="w-3.5 h-3.5 rounded accent-emerald-600 cursor-pointer disabled:cursor-default"
-                    />
-                    <span className="text-sm text-gray-700">{mod.label}</span>
-                  </div>
-
-                  {PERMISSION_ACTIONS.map(action => {
-                    const isViewDisabled = action !== 'view' && !perms.view;
-                    const isNotApplicable = action === 'approve' && !APPROVAL_MODULES.includes(mod.key);
-                    return (
-                      <div key={action} className="flex justify-center">
-                        <input
-                          type="checkbox"
-                          checked={!!perms[action]}
-                          onChange={() => toggle(mod.key, action)}
-                          disabled={readOnly || isViewDisabled || isNotApplicable}
-                          title={isNotApplicable ? 'Approval is not applicable to this module' : isViewDisabled ? 'Enable "view" first' : ''}
-                          className="w-3.5 h-3.5 rounded accent-emerald-600 cursor-pointer disabled:cursor-default disabled:opacity-40"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
+    <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <table className="w-full min-w-[800px] table-fixed text-sm">
+        <colgroup>
+          <col className="w-[240px]" />
+          {PERMISSION_ACTIONS.map(action => <col key={action} />)}
+        </colgroup>
+        <thead className="bg-gray-50 text-xs text-gray-500">
+          <tr>
+            <th scope="col" className="px-4 py-3 text-left font-medium">Module</th>
+            {PERMISSION_ACTIONS.map(action => <th key={action} scope="col" className="px-2 py-3 text-left font-medium capitalize">{action}</th>)}
+          </tr>
+        </thead>
+        {groups.map(group => (
+          <tbody key={group} className="border-t border-gray-100">
+            <tr><th scope="rowgroup" colSpan={6} className="bg-gray-50/50 px-4 py-2 text-left text-xs font-semibold text-gray-500">{group}</th></tr>
+            {PERMISSION_MODULES.filter(module => module.group === group).map(module => {
+              const perms = permissions[module.key] || {};
+              return <tr key={module.key} className="border-t border-gray-50 hover:bg-gray-50/60">
+                <th scope="row" className="px-4 py-3 text-left font-medium text-gray-700">
+                  {module.label}
+                </th>
+                {PERMISSION_ACTIONS.map(action => {
+                  const applicable = action !== 'approve' || APPROVAL_MODULES.includes(module.key);
+                  const active = Boolean(perms[action]);
+                  const disabled = readOnly || (action !== 'view' && !perms.view);
+                  const label = module.label + ': ' + action;
+                  return <td key={action} className="px-2 py-3">
+                    {!applicable ? <span className="text-gray-300" aria-label="Not applicable">-</span> :
+                      <button type="button" role="switch" aria-checked={active} aria-label={label}
+                        disabled={disabled} onClick={() => toggle(module.key, action)}
+                        title={readOnly ? label + ' (read only)' : disabled ? 'Enable View first' : label}
+                        className="inline-flex min-h-8 items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-default">
+                        <span aria-hidden="true" className={'relative inline-flex h-[18px] w-8 shrink-0 rounded-full transition-colors ' + (active ? 'bg-[#07A04E]' : 'bg-gray-200') + (disabled && !readOnly ? ' opacity-50' : '')}>
+                          <span className={'absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ' + (active ? 'translate-x-3.5' : 'translate-x-0')} />
+                        </span>
+                        <span className={'text-xs ' + (active ? 'text-gray-700' : 'text-gray-400')}>{active ? 'Active' : 'Disabled'}</span>
+                      </button>}
+                  </td>;
+                })}
+              </tr>;
             })}
-          </div>
-        </div>
-      ))}
+          </tbody>
+        ))}
+      </table>
     </div>
   );
 }
@@ -351,7 +291,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
   }
 
   return (
-    <Modal open={open} onClose={resetAndClose} title="Create User Account" size="lg">
+    <Modal open={open} onClose={resetAndClose} title="Create User Account" size="2xl">
       <UserAccessTabs tab={tab} onChange={setTab} />
 
       {tab === 'info' && (
@@ -401,22 +341,6 @@ function CreateUserModal({ open, onClose, onCreated }) {
           <p className="-mt-2 text-xs text-gray-400">
             Optional. This identifies the cooperative position; access is controlled by the system role and permissions.
           </p>
-          {form.role === 'credit_committee' && (
-            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 flex gap-2.5">
-              <Shield size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-700">
-                This role starts with Loans and Members view access only. Enable the Loans
-                Approve permission when this account is authorized to decide applications.
-              </p>
-            </div>
-          )}
-          <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 flex gap-2.5">
-            <Lock size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700">
-              The new user will receive an email to verify their account. 
-              They can log in once verified.
-            </p>
-          </div>
         </div>
       )}
 
@@ -512,7 +436,7 @@ function EditUserModal({ open, onClose, user, onUpdated }) {
   const readOnlyPerms = form.role === 'admin';
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit User" size="lg">
+    <Modal open={open} onClose={onClose} title="Edit User" size="2xl">
       <UserAccessTabs tab={tab} onChange={setTab} />
 
       {tab === 'info' && (
@@ -612,7 +536,7 @@ function PermissionsViewerModal({ open, onClose, user }) {
   const isAdmin = user.role === 'admin';
 
   return (
-    <Modal open={open} onClose={onClose} title={`Permissions — ${user.full_name || user.email}`} size="lg">
+    <Modal open={open} onClose={onClose} title={`Permissions — ${user.full_name || user.email}`} size="2xl">
       {isAdmin ? (
         <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-4 flex gap-3 mb-4">
           <Shield size={18} className="text-emerald-600 flex-shrink-0 mt-0.5" />

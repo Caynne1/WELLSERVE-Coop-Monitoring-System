@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
       // Timeout wrapper so profile fetch can never freeze the app
       const profilePromise = supabase
         .from('profiles')
-        .select('id, full_name, email, role, status, permissions')
+        .select('id, full_name, email, role, status, permissions, position_title')
         .eq('id', authUser.id)
         .maybeSingle();
 

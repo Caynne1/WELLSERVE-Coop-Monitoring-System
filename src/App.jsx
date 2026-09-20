@@ -171,7 +171,7 @@ export default function App() {
               <Route path="logs" element={<PermissionRoute module="logs"><ActivityLogsPage /></PermissionRoute>} />
 
               {/* Administration */}
-              <Route path="settings" element={<PermissionRoute module="settings"><SettingsPage /></PermissionRoute>} />
+              <Route path="settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
               <Route path="staff" element={<AdminRoute><StaffPage /></AdminRoute>} />
 
               {/* Admin only */}

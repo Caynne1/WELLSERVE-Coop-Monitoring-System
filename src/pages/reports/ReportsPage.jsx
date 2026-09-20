@@ -446,7 +446,7 @@ function ReportPeriodFilter({ selectedYear, selectedMonth, years, onYearChange, 
 function buildReportHtml({
   periodLabel, memberStats, loanStats, accountStats,
   totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
-  totalIncome, totalExpense, loanInterest, membershipCollections,
+  totalIncome, totalExpense, loanInterest, penaltyCollected, membershipCollections,
   loanDeductions, totalCBUBalance, totalSavingsBalance, netCashFlow,
   openingCashBalance, closingCashBalance, collectionPerformance,
 }) {
@@ -457,7 +457,7 @@ function buildReportHtml({
   const generated = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
     + ' at ' + now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
 
-  return `
+  const reportHtml = `
     <h1 class="report-title">Financial Report</h1>
     <div class="report-meta">
       <strong>Period:</strong> ${periodLabel} &nbsp;|&nbsp;
@@ -500,6 +500,7 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Operating Expenses</div><div class="stat-value" style="font-size:10pt">${fmt(totalExpense)}</div></div>
       <div class="stat-box"><div class="stat-label">Principal Collected</div><div class="stat-value" style="font-size:10pt">${fmt(totalRepaid)}</div></div>
       <div class="stat-box"><div class="stat-label">Loan Interest Collected</div><div class="stat-value" style="font-size:10pt">${fmt(loanInterest)}</div></div>
+      <div class="stat-box"><div class="stat-label">Penalty Collected</div><div class="stat-value" style="font-size:10pt">${fmt(penaltyCollected)}</div></div>
       <div class="stat-box"><div class="stat-label">Loan Releases</div><div class="stat-value" style="font-size:10pt">${fmt(totalReleased)}</div></div>
       <div class="stat-box"><div class="stat-label">Membership/Admin Fees</div><div class="stat-value" style="font-size:10pt">${fmt(membershipCollections)}</div></div>
       <div class="stat-box"><div class="stat-label">Loan Deductions</div><div class="stat-value" style="font-size:10pt">${fmt(loanDeductions)}</div></div>
@@ -525,6 +526,42 @@ function buildReportHtml({
       WELLSERVE Cooperative Monitoring System - This report is for authorized personnel only.
     </div>
   `;
+  // Convert the shared summary values into a document table rather than UI cards.
+  const doc = new DOMParser().parseFromString(reportHtml, 'text/html');
+  doc.querySelectorAll('.stats-grid').forEach(grid => {
+    const heading = grid.previousElementSibling;
+    const table = doc.createElement('table');
+    table.className = 'report-statement';
+    const thead = table.createTHead();
+    const header = thead.insertRow();
+    for (const label of [heading?.textContent || 'Summary', 'Amount / Count']) {
+      const cell = doc.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = label;
+      header.appendChild(cell);
+    }
+    const body = table.createTBody();
+    grid.querySelectorAll('.stat-box').forEach(box => {
+      const row = body.insertRow();
+      const label = row.insertCell();
+      label.textContent = box.querySelector('.stat-label')?.textContent || '';
+      const note = box.querySelector('.stat-sub')?.textContent;
+      if (note) {
+        const detail = doc.createElement('span');
+        detail.className = 'report-note';
+        detail.textContent = ' (' + note + ')';
+        label.appendChild(detail);
+      }
+      row.insertCell().textContent = box.querySelector('.stat-value')?.textContent || '';
+      if (['Net Cash Flow', 'Closing Cash', 'Outstanding Payable'].includes(label.textContent)) {
+        row.className = 'report-total';
+      }
+    });
+    if (heading?.textContent === 'Selected Period Activity') table.classList.add('period-start');
+    heading?.remove();
+    grid.replaceWith(table);
+  });
+  return '<div class="financial-print">' + doc.body.innerHTML + '</div>';
 }
 
 // â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -632,6 +669,7 @@ export default function ReportsPage() {
   const totalExpense    = sum(countedTransactions, isFundExpense);
   const totalIncome     = earnedIncomeFromBreakdown(incomeBreakdown);
   const loanInterest    = Number(incomeBreakdown?.loan_interest || 0);
+  const penaltyCollected = Number(incomeBreakdown?.penalty_due || 0);
   const membershipCollections = Number(incomeBreakdown?.membership_fee || 0) +
     Number(incomeBreakdown?.admin_regulatory_fees || 0);
   const loanDeductions = sum(countedTransactions, isLoanDeduction);
@@ -701,7 +739,7 @@ export default function ReportsPage() {
     ['Loan Interest', incomeBreakdown?.loan_interest],
     ['Service Fees', incomeBreakdown?.service_fee],
     ['Legal Fees', incomeBreakdown?.legal_fees],
-    ['Penalties', incomeBreakdown?.penalty_due],
+    ['Penalty Collected', penaltyCollected],
     ['Annual Dues', incomeBreakdown?.annual_dues],
     ['Membership Fees', incomeBreakdown?.membership_fee],
     ['VIP Card', incomeBreakdown?.vip_card],
@@ -745,6 +783,7 @@ export default function ReportsPage() {
       { Metric: 'Period: Membership/Admin & Regulatory Fees (PHP)', Value: membershipCollections },
       { Metric: 'Period: Loan Deductions (PHP)', Value: loanDeductions },
       { Metric: 'Period: Loan Interest (PHP)',    Value: loanInterest },
+      { Metric: 'Period: Penalty Collected (PHP)', Value: penaltyCollected },
       { Metric: 'Period: Cash In (PHP)',          Value: totalDeposited },
       { Metric: 'Period: Cash Out (PHP)',         Value: totalWithdrawn },
       { Metric: 'Period: Net Cash Flow (PHP)',     Value: netCashFlow },
@@ -776,6 +815,7 @@ export default function ReportsPage() {
       totalIncome,
       totalExpense,
       loanInterest,
+      penaltyCollected,
       membershipCollections,
       loanDeductions,
       totalCBUBalance,
@@ -788,6 +828,31 @@ export default function ReportsPage() {
 
     const fullHtml = wrapWithLetterhead(contentHtml, {
       title: `WELLSERVE Report - ${periodLabel}`,
+      extraCss: `
+        .lh-header { padding: 4mm 12mm; border-bottom: 0.6pt solid #9ca3af; }
+        .lh-header img { height: 11mm; }
+        .lh-content { padding: 6mm 12mm 8mm; }
+        .lh-wrap > tbody > tr { break-inside: auto; page-break-inside: auto; }
+        .financial-print { width: 100%; max-width: 155mm; margin: 0 auto; font-family: Arial, sans-serif; color: #20252b; }
+        .financial-print .report-title { color: #20252b; font-size: 18pt; }
+        .financial-print .report-meta { border-bottom: 0.6pt solid #9ca3af; font-size: 8pt; line-height: 1.6; }
+        .financial-print .report-meta span { color: #666 !important; font-weight: normal !important; }
+        .financial-print .report-statement { table-layout: fixed; margin-bottom: 3mm; font-size: 9pt; }
+        .financial-print .report-statement th { background: #f1f3f4; color: #20252b; padding: 6pt 7pt; border-bottom: 0.7pt solid #9ca3af; }
+        .financial-print .report-statement th:first-child { width: 60%; }
+        .financial-print .report-statement td { background: white; padding: 4pt 7pt; border-bottom: 0.4pt solid #e5e7eb; }
+        .financial-print .report-statement th:last-child,
+        .financial-print .report-statement td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .financial-print .report-note { color: #6b7280; font-size: 8pt; }
+        .financial-print .report-total td { font-weight: 700; border-top: 0.7pt solid #6b7280; border-bottom: 1pt double #6b7280; }
+        .financial-print .confidential { border-top: 0.5pt solid #9ca3af; padding-top: 3mm; font-style: normal; font-size: 7.5pt; }
+        @media print {
+          @page { margin: 10mm 0; }
+          .financial-print .report-statement { break-inside: avoid; }
+          .financial-print .period-start { break-before: page; page-break-before: always; }
+          .financial-print thead { display: table-header-group; }
+        }
+      `,
     });
 
     const win = printHtmlDocument(fullHtml, {

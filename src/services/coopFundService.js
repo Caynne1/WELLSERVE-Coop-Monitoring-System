@@ -695,6 +695,11 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     const bucketText = `${note} ${txCategory}`;
     const amount = Number(tx.amount || 0);
 
+    if (String(tx.type || '').toLowerCase() === 'penalty_payment') {
+      buckets.penalty_due += amount;
+      continue;
+    }
+
     if (isMembershipDeposit(tx, 'cbu')) {
       buckets.membership_cbu += amount;
       continue;

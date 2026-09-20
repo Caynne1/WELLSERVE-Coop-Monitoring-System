@@ -35,7 +35,7 @@ const ALL_NAV_ITEMS = [
   { to: '/coop-monitoring',    icon: LayoutDashboard, label: 'Account Monitoring', group: 'Operations', permKey: 'account_monitoring' },
   { to: '/reports',            icon: BarChart2,       label: 'Reports',            group: 'Analytics',  permKey: 'reports' },
   { to: '/logs',               icon: ActivitySquare,  label: 'Activity Logs',      group: 'Analytics',  permKey: 'logs' },
-  { to: '/settings',           icon: Settings,        label: 'Settings',           group: 'Admin',      permKey: 'settings' },
+  { to: '/settings',           icon: Settings,        label: 'Account Settings',   group: 'Account' },
   { to: '/user-management',    icon: UserCog,         label: 'User & Access',       group: 'Admin',      adminOnly: true },
 ];
 

@@ -66,7 +66,7 @@ const navGroups = [
     label: 'SYSTEM ADMINISTRATION',
     items: [
       { to: '/user-management',    icon: UserCog,         label: 'User & Access',       adminOnly: true },
-      { to: '/settings',           icon: Settings,        label: 'Settings',           permKey: 'settings' },
+      { to: '/settings',           icon: Settings,        label: 'Account Settings' },
     ],
   },
 ];

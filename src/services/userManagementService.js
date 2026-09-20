@@ -46,7 +46,6 @@ export const PERMISSION_MODULES = [
   { key: 'expenses',           label: 'Expenses',           group: 'Operations' },
   { key: 'reports',            label: 'Reports',            group: 'Analytics' },
   { key: 'logs',               label: 'Activity Logs',      group: 'Analytics' },
-  { key: 'settings',           label: 'Settings',           group: 'Admin' },
 ];
 
 export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
