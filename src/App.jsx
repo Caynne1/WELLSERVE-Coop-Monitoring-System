@@ -6,6 +6,8 @@ import { NotificationProvider } from './context/NotificationContext';
 import AppLayout from './components/layout/AppLayout';
 import LogoutOverlay from './components/shared/LogoutOverlay';
 import LoginPage from './pages/auth/LoginPage';
+import PasswordRecoveryPage from './pages/auth/PasswordRecoveryPage';
+import { isRecoveryPage } from './utils/recoveryLink';
 import DashboardPage from './pages/dashboard/DashboardPage';
 
 // Members
@@ -107,6 +109,8 @@ function LogoutGate() {
 }
 
 export default function App() {
+  // Keep recovery sessions outside normal profile loading and business-data providers.
+  if (isRecoveryPage(window.location)) return <PasswordRecoveryPage />;
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

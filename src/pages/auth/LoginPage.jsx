@@ -164,6 +164,7 @@ export default function LoginPage() {
                   ) : 'Sign In'}
                 </button>
               </form>
+              <a href="/forgot-password" className="mt-4 inline-block text-sm font-semibold text-emerald-700">Forgot password?</a>
 
               <div className="ws-secure-notice">
                 <ShieldCheck size={16} /> For authorized WELLSERVE personnel only.
