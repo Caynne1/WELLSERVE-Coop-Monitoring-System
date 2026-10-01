@@ -5,6 +5,7 @@ import { getMembershipMonitoringIncomeSummary } from './membershipMonitoringServ
 import { sumCashInLedger } from '../utils/fundCashIn';
 import { loanInterestForPeriod } from '../utils/loanInterestPeriod';
 import { recordedOtherCharge, customChargeBreakdown } from '../utils/otherCharges';
+import { getBoosterCollections } from './boosterCollectionService';
 
 // ── Primary: reads from coop_fund + fund_transactions ────────────────────────
 
@@ -642,11 +643,12 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
   });
 
   // Independent sources load together; interest pagination remains sequential.
-  const [loanResult, interestPayments, txResult, membershipIncome] = await Promise.all([
+  const [loanResult, interestPayments, txResult, membershipIncome, boosterCollections] = await Promise.all([
     supabase.from('loans').select('id, preview_schedule_json'),
     fetchInterestPayments(),
     fetchTransactions(),
     getMembershipMonitoringIncomeSummary({ from, to }),
+    getBoosterCollections({ from, to }),
   ]);
   const { data: loans = [], error: loanErr } = loanResult;
   const { data: txList = [], error: txErr } = txResult;
@@ -792,12 +794,14 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     vip_card: Math.round(buckets.vip_card * 100) / 100,
     admin_regulatory_fees: Math.round(buckets.admin_regulatory_fees * 100) / 100,
     total_income: Math.round(totalIncome * 100) / 100,
+    booster_collections: boosterCollections,
     loan_count: loans.length,
     tx_count: incomeTxList.length,
   };
 }
 
 export const CATEGORY_LABEL = {
+  savings_booster: 'Savings Booster Deposit',
   loan_payment: 'Loan Payment',
   loan_interest: 'Loan Interest',
   penalty_payment: 'Penalty Payment',
@@ -820,6 +824,7 @@ export const CATEGORY_LABEL = {
 };
 
 export const CATEGORY_COLOR = {
+  savings_booster: 'text-teal-700 bg-teal-50',
   loan_payment: 'text-orange-700 bg-orange-50',
   loan_interest: 'text-green-700 bg-green-50',
   penalty_payment: 'text-red-700 bg-red-50',

@@ -1396,6 +1396,12 @@ export default function CoopMonitoringPage() {
         <tbody>${printableSummaryRows(incomeMonitoringRows)}</tbody>
       </table>
 
+      <h3>Savings Booster Collections (Depositor Capital)</h3>
+      <table><tbody>${printableSummaryRows([
+        ['Initial Savings', incomeData?.booster_collections?.initial || 0],
+        ['Weekly Savings', incomeData?.booster_collections?.weekly || 0],
+        ['Total Collected', incomeData?.booster_collections?.total || 0],
+      ])}</tbody></table>
       <h2>Expense Monitoring</h2>
       <table>
         <thead><tr><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
@@ -1466,6 +1472,11 @@ export default function CoopMonitoringPage() {
         ['Net Cash Flow', scopedFund.cash_in - scopedFund.cash_out],
       ], 'Summary');
       appendSheet(workbook, [['Category', 'Amount'], ...incomeMonitoringRows], 'Income Monitoring');
+      appendSheet(workbook, [['Depositor Capital', 'Amount'],
+        ['Booster Initial Savings', incomeData?.booster_collections?.initial || 0],
+        ['Booster Weekly Savings', incomeData?.booster_collections?.weekly || 0],
+        ['Booster Total Collected', incomeData?.booster_collections?.total || 0],
+      ], 'Booster Collections');
       appendSheet(workbook, [['Category', 'Amount'], ...expenseMonitoringRows], 'Expense Monitoring');
       appendSheet(workbook, reportTransactionRows(cashInRows), 'Cash In');
       appendSheet(workbook, reportTransactionRows(cashOutRows), 'Cash Out');
@@ -1692,6 +1703,21 @@ export default function CoopMonitoringPage() {
               ) : (
                 <p className="text-sm text-gray-400 text-center py-8">No income data available.</p>
               )}
+            </div>
+          </section>
+
+          <section className="mt-6 border-t border-gray-200 pt-5">
+            <h2 className="text-sm font-bold text-gray-800">Savings Booster Collections</h2>
+            <p className="mt-1 text-xs text-gray-500">Depositor capital · {incomePeriod === 'all' ? 'All time' : incomePeriod.replace('_', ' ')}</p>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { key: 'initial', label: 'Initial Savings', style: 'bg-blue-50 border-blue-100 text-blue-700' },
+                { key: 'weekly', label: 'Weekly Savings', style: 'bg-teal-50 border-teal-100 text-teal-700' },
+                { key: 'total', label: 'Total Collected', style: 'bg-emerald-50 border-emerald-100 text-emerald-700' },
+              ].map(card => <div key={card.key} className={`min-w-0 rounded-lg border p-4 ${card.style}`}>
+                <p className="text-xs font-semibold">{card.label}</p>
+                <p className="mt-1 text-lg font-bold break-words">{incomeLoading ? 'Loading...' : incomeError || !incomeData ? 'Unavailable' : formatCurrency(incomeData.booster_collections?.[card.key] || 0)}</p>
+              </div>)}
             </div>
           </section>
 

@@ -452,7 +452,7 @@ function buildReportHtml({
   totalDeposited, totalWithdrawn, totalRepaid, totalReleased,
   totalIncome, totalExpense, loanInterest, penaltyCollected, membershipCollections,
   loanDeductions, totalCBUBalance, totalSavingsBalance, netCashFlow,
-  openingCashBalance, closingCashBalance, collectionPerformance, customCharges = [],
+  openingCashBalance, closingCashBalance, collectionPerformance, customCharges = [], boosterCollections = {},
 }) {
   const fmt = (n) =>
     'PHP ' + Number(n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -511,6 +511,10 @@ function buildReportHtml({
       <div class="stat-box"><div class="stat-label">Membership/Admin Fees</div><div class="stat-value" style="font-size:10pt">${fmt(membershipCollections)}</div></div>
       <div class="stat-box"><div class="stat-label">Loan Deductions</div><div class="stat-value" style="font-size:10pt">${fmt(loanDeductions)}</div></div>
     </div>
+
+    <div class="section-heading">Savings Booster Collections (Depositor Capital)</div>
+    <table><thead><tr><th>Initial Savings</th><th>Weekly Savings</th><th>Total Collected</th></tr></thead>
+      <tbody><tr><td>${fmt(boosterCollections.initial)}</td><td>${fmt(boosterCollections.weekly)}</td><td>${fmt(boosterCollections.total)}</td></tr></tbody></table>
 
     <div class="section-heading">Cash Reconciliation</div>
     <div class="stats-grid">
@@ -674,6 +678,7 @@ export default function ReportsPage() {
   const totalReleased   = sum(countedTransactions, isLoanRelease);
   const totalExpense    = sum(countedTransactions, isFundExpense);
   const totalIncome     = earnedIncomeFromBreakdown(incomeBreakdown);
+  const boosterCollections = incomeBreakdown?.booster_collections || { initial: 0, weekly: 0, total: 0 };
   const loanInterest    = Number(incomeBreakdown?.loan_interest || 0);
   const penaltyCollected = Number(incomeBreakdown?.penalty_due || 0);
   const membershipCollections = Number(incomeBreakdown?.membership_fee || 0) +
@@ -787,6 +792,9 @@ export default function ReportsPage() {
       { Metric: 'Snapshot: Outstanding Payable Balance (PHP)', Value: loanStats?.totalOutstanding ?? 0 },
       { Metric: 'Period: Loan Repayments (PHP)',  Value: totalRepaid },
       { Metric: 'Period: Cooperative Income (PHP)', Value: totalIncome },
+      { Metric: 'Period: Savings Booster Initial Savings (PHP)', Value: boosterCollections.initial },
+      { Metric: 'Period: Savings Booster Weekly Savings (PHP)', Value: boosterCollections.weekly },
+      { Metric: 'Period: Savings Booster Total Collected (PHP)', Value: boosterCollections.total },
       { Metric: 'Period: Membership/Admin & Regulatory Fees (PHP)', Value: membershipCollections },
       { Metric: 'Period: Loan Deductions (PHP)', Value: loanDeductions },
       { Metric: 'Period: Loan Interest (PHP)',    Value: loanInterest },
@@ -813,6 +821,7 @@ export default function ReportsPage() {
   function handlePrint() {
     const contentHtml = buildReportHtml({
       customCharges: incomeBreakdown?.custom_charges || [],
+      boosterCollections,
       periodLabel,
       memberStats,
       loanStats,
@@ -966,6 +975,13 @@ export default function ReportsPage() {
             <StatCard icon={<Wallet size={20} />} label="Total Collected" value={formatCurrency(collectionPerformance.totalCollected)} sub="Principal plus interest" iconBg="bg-emerald-50" iconColor="#059669" />
             <StatCard icon={<TrendingUp size={20} />} label="Collection Rate" value={`${collectionPerformance.collectionRate.toFixed(1)}%`} sub="Collected against scheduled guide" iconBg="bg-teal-50" iconColor="#0D9488" />
             <StatCard icon={<TrendingDown size={20} />} label="Missed / Partial" value={`${collectionPerformance.missed} / ${collectionPerformance.partial}`} sub="Schedule-performance indicators" iconBg="bg-rose-50" iconColor="#E11D48" />
+          </div>
+
+          <SectionTitle>Savings Booster Collections</SectionTitle>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <StatCard icon={<Wallet size={20} />} label="Initial Savings" value={formatCurrency(boosterCollections.initial)} sub="Selected period - depositor capital" iconBg="bg-blue-50" iconColor="#2563EB" />
+            <StatCard icon={<Wallet size={20} />} label="Weekly Savings" value={formatCurrency(boosterCollections.weekly)} sub="Selected period - depositor capital" iconBg="bg-teal-50" iconColor="#0D9488" />
+            <StatCard icon={<Wallet size={20} />} label="Total Booster Collected" value={formatCurrency(boosterCollections.total)} sub="Included in cash-in, not earned income" iconBg="bg-emerald-50" iconColor="#059669" />
           </div>
 
           <SectionTitle>Earned Income Breakdown</SectionTitle>

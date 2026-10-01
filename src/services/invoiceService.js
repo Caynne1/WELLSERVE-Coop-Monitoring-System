@@ -643,7 +643,7 @@ export async function createMultiCategoryInvoice({
 
   const effectivePaymentDate = payment_date || date;
   // Re-read only the requested obligations before posting; the open form may be stale.
-  if (entries.some(entry => ['membership', 'loan'].includes(entry.category))) {
+  if (entries.some(entry => ['membership', 'loan', 'savings_booster'].includes(entry.category))) {
     const current = await getMemberPaymentSummary(member.id);
     entries = entries.map(entry => {
       if (entry.category === 'membership') {
@@ -674,6 +674,14 @@ export async function createMultiCategoryInvoice({
           }
         }
         return { ...entry, loan };
+      }
+      if (entry.category === 'savings_booster') {
+        const booster = current.savings_booster.records.find(record => record.id === entry.booster?.id);
+        if (!booster || booster.status !== 'active') throw new Error('Active Savings Booster enrollment not found.');
+        if (!calculateSavingsBoosterLedger(booster).initialDepositPaid) {
+          throw new Error('Record the full 350.00 initial deposit on the Savings Booster page first.');
+        }
+        return { ...entry, booster };
       }
       return entry;
     });
@@ -1209,8 +1217,8 @@ export async function createMultiCategoryInvoice({
         if (Math.round(amount * 100) % 1000 !== 0) {
           throw new Error('Savings Booster deposits must be entered in ₱10.00 increments.');
         }
-        const priorTotalDeposited = entry.booster.total_deposited || 0;
-        const priorWeeksDeposited = entry.booster.weeks_deposited || 0;
+        const priorTotalDeposited = Number(entry.booster.total_deposited || 0);
+        const priorWeeksDeposited = Number(entry.booster.weeks_deposited || 0);
         const priorLastDepositDate = entry.booster.last_deposit_date || null;
         const weekCount = getBoosterDepositWeeks(amount, entry.booster);
         const nextTotalDeposited = priorTotalDeposited + amount;

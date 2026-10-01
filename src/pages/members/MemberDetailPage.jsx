@@ -263,21 +263,21 @@ export default function MemberDetailPage() {
     }
   }, [id]);
 
-  const fetchBoosterSlots = useCallback(async () => {
+  const fetchBoosterSlots = useCallback(async ({ silent = false, isCurrent = () => true } = {}) => {
     try {
-      setBoosterLoading(true);
+      if (!silent) setBoosterLoading(true);
       const { data, error } = await supabase
         .from('savings_booster')
         .select('*')
         .eq('member_id', id)
         .order('slot_number', { ascending: true });
       if (error) throw error;
-      setMemberBoosterSlots(data || []);
+      if (isCurrent()) setMemberBoosterSlots(data || []);
     } catch (err) {
       console.warn('[MemberDetailPage] fetchBoosterSlots error:', err.message);
-      setMemberBoosterSlots([]);
+      if (!silent && isCurrent()) setMemberBoosterSlots([]);
     } finally {
-      setBoosterLoading(false);
+      if (isCurrent()) setBoosterLoading(false);
     }
   }, [id]);
 
@@ -291,6 +291,7 @@ export default function MemberDetailPage() {
       refreshing = true;
       try {
         await fetchAll({ silent: true, isCurrent });
+        await fetchBoosterSlots({ silent: true, isCurrent });
       } finally {
         refreshing = false;
       }
@@ -1053,6 +1054,8 @@ function SavingsBoosterSlotCard({ slot }) {
         <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '-'} />
         <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '-'} />
         <AccountInfoCell label="Capital Deposited" value={formatCurrency(ledger.totalDeposited)} />
+        <AccountInfoCell label="Initial Savings Deposit" value={ledger.initialDepositPaid ? formatCurrency(350) + ' - Paid' : 'Pending'} />
+        <AccountInfoCell label="Weekly Savings Deposited" value={formatCurrency(ledger.weeklyDeposited)} />
         <AccountInfoCell
           label={slot.status === 'forfeited' ? 'Interest' : ledger.interestEarned > 0 ? 'Interest Earned' : 'Projected Interest'}
           value={slot.status === 'forfeited' ? 'Forfeited' : formatCurrency(ledger.interestEarned || ledger.projectedInterest)}
@@ -1078,7 +1081,7 @@ function MemberSavingsBoosterTab({ slots, transactions, loading }) {
     return <EmptyState icon={Sprout} message="No Savings Booster enrollment for this member." />;
   }
 
-  const totalDeposited = slots.reduce((s, e) => s + (e.total_deposited || 0), 0);
+  const totalDeposited = slots.reduce((s, e) => s + Number(e.total_deposited || 0), 0);
 
   return (
     <div>
