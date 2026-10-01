@@ -2,7 +2,8 @@ export const SAVINGS_BOOSTER_DEFAULTS = {
   weeklyDeposit: 70,
   initialDeposit: 350,
   months: 12,
-  weeksRequired: 48,
+  // Weekly installments after the separate Week 1 initial deposit.
+  weeksRequired: 47,
   maturityDays: 365,
   maturityMonths: 13,
   annualInterestRate: 0.52,
@@ -29,7 +30,7 @@ export function getBoosterConfig(slot = {}) {
     weeklyDeposit: Number(slot.weekly_deposit || SAVINGS_BOOSTER_DEFAULTS.weeklyDeposit),
     initialDeposit: Number(slot.initial_deposit || SAVINGS_BOOSTER_DEFAULTS.initialDeposit),
     months: SAVINGS_BOOSTER_DEFAULTS.months,
-    weeksRequired: Number(slot.weeks_required || SAVINGS_BOOSTER_DEFAULTS.weeksRequired),
+    weeksRequired: SAVINGS_BOOSTER_DEFAULTS.weeksRequired,
     maturityDays: Number(slot.maturity_days || SAVINGS_BOOSTER_DEFAULTS.maturityDays),
     maturityMonths: Number(slot.maturity_months || SAVINGS_BOOSTER_DEFAULTS.maturityMonths),
     annualInterestRate: Number(slot.annual_interest_rate ?? SAVINGS_BOOSTER_DEFAULTS.annualInterestRate),
@@ -39,6 +40,19 @@ export function getBoosterConfig(slot = {}) {
 export function getExpectedBoosterDeposit(slot = {}) {
   const config = getBoosterConfig(slot);
   return roundMoney(config.initialDeposit + (config.weeksRequired * config.weeklyDeposit));
+}
+
+export function getBoosterWeekOptions(slot = {}) {
+  const config = getBoosterConfig(slot);
+  const total = roundMoney(Number(slot.total_deposited || 0));
+  if (total < config.initialDeposit || slot.status !== 'active') return [];
+  const weeklyCents = Math.round((total - config.initialDeposit) * 100);
+  const installmentCents = Math.round(config.weeklyDeposit * 100);
+  if (installmentCents !== 7000 || weeklyCents % installmentCents !== 0) return [];
+  const paid = weeklyCents / installmentCents;
+  const firstWeek = paid + 2;
+  if (paid >= config.weeksRequired) return [];
+  return [{ week: firstWeek, firstWeek, amount: 70, label: `Week ${firstWeek}` }];
 }
 
 export function getBoosterDepositWeeks(amount, slot = {}) {
@@ -71,7 +85,7 @@ export function buildSavingsBoosterSchedule(slot = {}) {
   let cumulativeCapital = config.initialDeposit;
 
   return Array.from({ length: config.months }, (_, index) => {
-    const weeklyPayments = Math.min(4, Math.max(0, config.weeksRequired - (index * 4)));
+    const weeklyPayments = index === 0 ? 3 : Math.min(4, Math.max(0, config.weeksRequired - (index * 4 - 1)));
     const weeklyContribution = roundMoney(weeklyPayments * config.weeklyDeposit);
     cumulativeCapital = roundMoney(cumulativeCapital + weeklyContribution);
 
@@ -119,6 +133,7 @@ export function calculateSavingsBoosterLedger(slot = {}) {
     expectedTotal,
     totalDeposited,
     initialDepositPaid,
+    programWeeksPaid: weeksDeposited + (initialDepositPaid ? 1 : 0),
     weeklyDeposited: roundMoney(Math.max(0, totalDeposited - Math.min(totalDeposited, config.initialDeposit))),
     interestEarned,
     projectedInterest,

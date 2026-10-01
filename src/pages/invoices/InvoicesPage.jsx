@@ -32,6 +32,7 @@ import { getMembershipBreakdown } from '../../utils/invoicePaymentState';
 import { installmentPresentation } from '../../utils/loanPaymentDisplay';
 import { reconcileSchedulePrincipal } from '../../utils/loanPaymentAllocation';
 import { paymentModeDisplayValue } from '../../utils/paymentMode';
+import { getBoosterWeekOptions } from '../../services/savingsBoosterService';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1401,6 +1402,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
   const [selectedLoanScheduleTarget, setSelectedLoanScheduleTarget] = useState('');
   const [selectedTdId, setSelectedTdId] = useState('');
   const [selectedBoosterId, setSelectedBoosterId] = useState('');
+  const [selectedBoosterWeek, setSelectedBoosterWeek] = useState('');
   const [kiddySavingsType, setKiddySavingsType] = useState('regular_savings');
 
   const isKiddyMember = member?.membership_type === 'kiddy';
@@ -1475,6 +1477,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
       }
       setSelectedTdId(data.time_deposit.records?.[0]?.id || '');
       setSelectedBoosterId(data.savings_booster.records?.[0]?.id || '');
+      setSelectedBoosterWeek('');
       setKiddySavingsType(m.kiddy_savings_type || 'regular_savings');
       setStep(2);
     } catch (err) {
@@ -1661,7 +1664,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
       entries.push({ category: 'time_deposit', amount: parseFloat(amounts.time_deposit), timeDeposit: selectedTd });
     }
     if (parseFloat(amounts.savings_booster) > 0) {
-      entries.push({ category: 'savings_booster', amount: parseFloat(amounts.savings_booster), booster: selectedBooster });
+      entries.push({ category: 'savings_booster', amount: parseFloat(amounts.savings_booster), booster: selectedBooster, week_number: Number(selectedBoosterWeek) });
     }
 
     const paymentModeNote = [paymentReference.trim(), notes.trim()].filter(Boolean).join(' | ') || null;
@@ -1901,11 +1904,37 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
                             <option value="educational_savings">Educational Savings Account</option>
                           </select>
                         )}
+                        {cat === 'savings_booster' && (
+                          <div className="mt-2 max-w-xs">
+                            <label htmlFor="booster-week-number" className="block text-[11px] font-medium text-gray-500 mb-1">Week Number</label>
+                            <select
+                              id="booster-week-number"
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700"
+                              value={selectedBoosterWeek}
+                              onChange={event => {
+                                const week = event.target.value;
+                                const slot = summary.savings_booster.records?.find(b => b.id === selectedBoosterId);
+                                const option = getBoosterWeekOptions(slot || {}).find(item => item.week === Number(week));
+                                setSelectedBoosterWeek(week);
+                                setAmounts(current => ({ ...current, savings_booster: option ? String(option.amount) : '' }));
+                              }}
+                            >
+                              <option value="">Select week</option>
+                              {getBoosterWeekOptions(summary.savings_booster.records?.find(b => b.id === selectedBoosterId) || {}).map(option => (
+                                <option key={option.week} value={option.week}>{option.label} - {formatCurrency(option.amount)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                         {cat === 'savings_booster' && summary.savings_booster.records?.length > 1 && (
                           <select
                             className="ml-2 text-xs border border-gray-200 rounded px-1 py-0.5"
                             value={selectedBoosterId}
-                            onChange={e => setSelectedBoosterId(e.target.value)}
+                            onChange={e => {
+                              setSelectedBoosterId(e.target.value);
+                              setSelectedBoosterWeek('');
+                              setAmounts(current => ({ ...current, savings_booster: '' }));
+                            }}
                           >
                             {summary.savings_booster.records.map(b => (
                               <option key={b.id} value={b.id}>
@@ -1968,6 +1997,7 @@ function AddInvoiceModal({ open, onClose, userId, onSuccess, initialSelection = 
                             inputMode="decimal"
                             placeholder="0.00"
                             value={formatAmountInput(amounts[cat] || '')}
+                            readOnly={cat === 'savings_booster'}
                             onChange={e => setAmount(cat, cleanAmountInput(e.target.value))}
                             className="w-32 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7EB751]"
                           />

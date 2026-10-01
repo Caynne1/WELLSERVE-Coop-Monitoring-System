@@ -332,7 +332,7 @@ export default function MemberDetailPage() {
   );
   const totalTimeDepositAmount = memberTimeDeposits.reduce((sum, td) => sum + Number(td.amount || 0), 0);
   const totalSavingsBoosterAmount = memberBoosterSlots.reduce(
-    (sum, slot) => sum + calculateSavingsBoosterLedger(slot).withdrawableAmount,
+    (sum, slot) => sum + calculateSavingsBoosterLedger(slot).totalDeposited,
     0
   );
   const displayMembershipType = membership?.membership_type || member?.membership_type || null;
@@ -1030,7 +1030,16 @@ function SavingsTab({ account, transactions, displayBalance, paymentCount, membe
 
 // â”€â”€â”€ SAVINGS BOOSTER TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function SavingsBoosterSlotCard({ slot }) {
+function BoosterDetailRow({ label, value }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 border-b border-gray-100 py-3 text-sm min-w-0">
+      <dt className="text-gray-500 break-words">{label}</dt>
+      <dd className="m-0 font-medium text-gray-800 text-right break-words tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function SavingsBoosterSlotDetails({ slot }) {
   const statusStyle = {
     active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     matured: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -1042,29 +1051,29 @@ function SavingsBoosterSlotCard({ slot }) {
   const ledger = calculateSavingsBoosterLedger(slot);
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4">
+    <section className="py-4 border-t border-gray-200">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-semibold text-gray-800">Slot #{slot.slot_number || '-'}</p>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${statusStyle}`}>
           {slot.status || 'active'}
         </span>
       </div>
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-        <AccountInfoCell label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : '-'} />
-        <AccountInfoCell label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '-'} />
-        <AccountInfoCell label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '-'} />
-        <AccountInfoCell label="Capital Deposited" value={formatCurrency(ledger.totalDeposited)} />
-        <AccountInfoCell label="Initial Savings Deposit" value={ledger.initialDepositPaid ? formatCurrency(350) + ' - Paid' : 'Pending'} />
-        <AccountInfoCell label="Weekly Savings Deposited" value={formatCurrency(ledger.weeklyDeposited)} />
-        <AccountInfoCell
+      <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+        <BoosterDetailRow label="Start Date" value={slot.start_date ? formatDate(slot.start_date) : '-'} />
+        <BoosterDetailRow label="Last Deposit" value={slot.last_deposit_date ? formatDate(slot.last_deposit_date) : '-'} />
+        <BoosterDetailRow label="Maturity Date" value={ledger.maturityDate ? formatDate(ledger.maturityDate) : '-'} />
+        <BoosterDetailRow label="Capital Deposited" value={formatCurrency(ledger.totalDeposited)} />
+        <BoosterDetailRow label="Initial Savings Deposit" value={ledger.initialDepositPaid ? formatCurrency(350) + ' - Paid' : 'Pending'} />
+        <BoosterDetailRow label="Weekly Savings Deposited" value={formatCurrency(ledger.weeklyDeposited)} />
+        <BoosterDetailRow
           label={slot.status === 'forfeited' ? 'Interest' : ledger.interestEarned > 0 ? 'Interest Earned' : 'Projected Interest'}
           value={slot.status === 'forfeited' ? 'Forfeited' : formatCurrency(ledger.interestEarned || ledger.projectedInterest)}
         />
-        <AccountInfoCell label="Weekly Progress" value={`${ledger.weeksDeposited} of 48 weeks`} />
-        <AccountInfoCell label="Remaining Capital" value={formatCurrency(ledger.remainingDeposit)} />
-        <AccountInfoCell label="Receivable at Maturity" value={formatCurrency(ledger.receivableAtMaturity)} />
-      </div>
-    </div>
+        <BoosterDetailRow label="Program Progress" value={`${ledger.programWeeksPaid} of 48 weeks`} />
+        <BoosterDetailRow label="Remaining Capital" value={formatCurrency(ledger.remainingDeposit)} />
+        <BoosterDetailRow label="Receivable at Maturity" value={formatCurrency(ledger.receivableAtMaturity)} />
+      </dl>
+    </section>
   );
 }
 
@@ -1095,9 +1104,9 @@ function MemberSavingsBoosterTab({ slots, transactions, loading }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
         {slots.map(slot => (
-          <SavingsBoosterSlotCard key={slot.id} slot={slot} />
+          <SavingsBoosterSlotDetails key={slot.id} slot={slot} />
         ))}
       </div>
 

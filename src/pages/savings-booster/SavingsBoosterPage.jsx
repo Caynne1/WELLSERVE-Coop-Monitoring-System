@@ -299,7 +299,7 @@ function EnrollModal({ open, onClose, onEnrolled, usedSlots, enrollments, existi
                 <span>Slot: <strong>#{eligibility.nextSlot}</strong></span>
                 <span>Initial Deposit: <strong>{formatCurrency(INITIAL_DEPOSIT)}</strong></span>
                 <span>Weekly Deposit: <strong>{formatCurrency(WEEKLY_DEPOSIT)}/week</strong></span>
-                <span>Required Weeks: <strong>{SAVINGS_BOOSTER_DEFAULTS.weeksRequired}</strong></span>
+                <span>Program Weeks: <strong>48 (1 initial + 47 weekly)</strong></span>
                 <span>Total Capital: <strong>{formatCurrency(calculateSavingsBoosterLedger().expectedTotal)}</strong></span>
                 <span>Maturity Receivable: <strong className="text-emerald-700">{formatCurrency(calculateSavingsBoosterLedger().receivableAtMaturity)}</strong></span>
               </div>
@@ -398,7 +398,7 @@ export default function SavingsBoosterPage() {
         'Initial Deposit': ledger.initialDepositPaid ? 'Paid' : 'Pending',
         'Initial Capital': Math.min(ledger.totalDeposited, INITIAL_DEPOSIT),
         'Weekly Capital': ledger.weeklyDeposited, 'Total Capital': ledger.totalDeposited,
-        'Weeks Paid': ledger.weeksDeposited, 'Weeks Required': SAVINGS_BOOSTER_DEFAULTS.weeksRequired,
+        'Weeks Paid': ledger.programWeeksPaid, 'Weeks Required': 48,
         'Remaining Capital': ledger.remainingDeposit,
       };
     });
@@ -573,10 +573,10 @@ export default function SavingsBoosterPage() {
                         <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
                           <div
                             className={`h-full rounded-full ${e.status === 'forfeited' ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                            style={{ width: `${Math.min(100, (ledger.weeksDeposited / SAVINGS_BOOSTER_DEFAULTS.weeksRequired) * 100)}%` }}
+                            style={{ width: `${Math.min(100, (ledger.programWeeksPaid / 48) * 100)}%` }}
                           />
                         </div>
-                        <p className="mt-1.5 text-xs text-gray-500">{ledger.weeksDeposited} of {SAVINGS_BOOSTER_DEFAULTS.weeksRequired} weeks</p>
+                        <p className="mt-1.5 text-xs text-gray-500">{ledger.programWeeksPaid} of 48 weeks</p>
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-gray-800">{formatCurrency(ledger.totalDeposited)}</td>
                       <td className="px-3 py-3 text-right">
@@ -622,12 +622,12 @@ export default function SavingsBoosterPage() {
                     <div>
                       <div className="flex items-center justify-between gap-3 text-xs">
                         <span className="text-gray-500">Weekly progress</span>
-                        <span className="font-medium text-gray-700">{ledger.weeksDeposited} of {SAVINGS_BOOSTER_DEFAULTS.weeksRequired}</span>
+                        <span className="font-medium text-gray-700">{ledger.programWeeksPaid} of 48</span>
                       </div>
                       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
                         <div
                           className={`h-full rounded-full ${e.status === 'forfeited' ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                          style={{ width: `${Math.min(100, (ledger.weeksDeposited / SAVINGS_BOOSTER_DEFAULTS.weeksRequired) * 100)}%` }}
+                          style={{ width: `${Math.min(100, (ledger.programWeeksPaid / 48) * 100)}%` }}
                         />
                       </div>
                     </div>

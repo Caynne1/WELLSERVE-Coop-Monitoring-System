@@ -17,6 +17,7 @@ import {
   buildSavingsBoosterUpdate,
   calculateSavingsBoosterLedger,
   getBoosterDepositWeeks,
+  getBoosterWeekOptions,
 } from './savingsBoosterService';
 import { paymentModeStorageValue } from '../utils/paymentMode';
 import { getLoanBalanceWithInterest, parseLoanJSON } from '../utils/loanListState';
@@ -596,7 +597,7 @@ export async function getMemberPaymentSummary(memberId) {
       valueType: 'deposited',
       value: boosterTotalDeposited,
       statusText: activeBoosterLedger
-        ? `Capital: ₱${activeBoosterLedger.totalDeposited.toFixed(2)} of ₱${activeBoosterLedger.expectedTotal.toFixed(2)} · ${activeBoosterLedger.weeksDeposited}/48 weeks`
+        ? `Capital: ₱${activeBoosterLedger.totalDeposited.toFixed(2)} of ₱${activeBoosterLedger.expectedTotal.toFixed(2)} · ${activeBoosterLedger.programWeeksPaid}/48 weeks`
         : null,
       payable: !!activeBoosterLedger && activeBoosterLedger.remainingDeposit > 0,
     },
@@ -681,7 +682,12 @@ export async function createMultiCategoryInvoice({
         if (!calculateSavingsBoosterLedger(booster).initialDepositPaid) {
           throw new Error('Record the full 350.00 initial deposit on the Savings Booster page first.');
         }
-        return { ...entry, booster };
+        const week = getBoosterWeekOptions(booster).find(option => option.week === Number(entry.week_number));
+        if (!week) throw new Error('Select an unpaid Savings Booster week (Weeks 2-48). Refresh if a payment was just recorded.');
+        if (Math.round(Number(entry.amount) * 100) !== Math.round(week.amount * 100)) {
+          throw new Error(`The selected ${week.label} requires exactly ${week.amount.toFixed(2)}. Refresh and select the week again.`);
+        }
+        return { ...entry, booster, purpose: `Savings Booster ${week.label} - Slot #${booster.slot_number}` };
       }
       return entry;
     });
@@ -1260,7 +1266,7 @@ export async function createMultiCategoryInvoice({
           type: 'deposit',
           amount,
           reference: invoiceReference,
-          notes,
+          notes: [purpose, notes].filter(Boolean).join(' | '),
           created_by,
           transaction_date: effectivePaymentDate,
           payment_mode,
@@ -1281,7 +1287,7 @@ export async function createMultiCategoryInvoice({
             payment_date: effectivePaymentDate,
             payment_mode,
             reference: invoiceReference,
-            notes,
+            notes: [purpose, notes].filter(Boolean).join(' | '),
             created_by,
           })
           .select('id')
