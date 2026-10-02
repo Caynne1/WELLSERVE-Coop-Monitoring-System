@@ -360,7 +360,7 @@ export default function LoanDetailPage() {
     const isApprovalDecision = newStatus === 'approved' || newStatus === 'rejected';
     if (isApprovalDecision) {
       if (!canApproveLoan) {
-        toast.error('Only the Credit Committee can approve or reject loans.');
+        toast.error('You need the Loans Approve permission to approve or reject loans.');
         return;
       }
     } else if (!canEdit) {
@@ -1120,7 +1120,7 @@ export default function LoanDetailPage() {
           <div className="flex flex-wrap items-center gap-3">
             {[
               { value: 'draft',     label: 'Draft',     icon: Clock,         color: 'text-gray-600',  bg: 'bg-gray-100' },
-              { value: 'credit_committee_approval', label: 'Credit Committee Approval', icon: Clock, color: 'text-amber-700', bg: 'bg-amber-50' },
+              { value: 'credit_committee_approval', label: 'For Approval', icon: Clock, color: 'text-amber-700', bg: 'bg-amber-50' },
               { value: 'approved',  label: 'Approved',  icon: CheckCircle2,  color: 'text-green-700', bg: 'bg-green-50' },
               { value: 'rejected',  label: 'Rejected',  icon: XCircle,       color: 'text-red-700',   bg: 'bg-red-50' },
               { value: 'released',  label: 'Released',  icon: CheckCircle2,  color: 'text-blue-700',  bg: 'bg-blue-50' },

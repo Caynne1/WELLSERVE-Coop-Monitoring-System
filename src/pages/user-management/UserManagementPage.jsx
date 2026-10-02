@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Search, UserCog, Shield, ShieldOff, Pencil,
   Users, CheckCircle2, XCircle, ChevronDown, ChevronUp,
@@ -38,7 +38,11 @@ const ROLE_OPTIONS = [
   { value: 'staff',            label: 'Staff' },
   { value: 'manager',          label: 'General Manager' },
   { value: 'auditor',          label: 'Auditor' },
-  { value: 'accountant',       label: 'Accountant / Treasurer' },
+  { value: 'accountant',       label: 'Treasurer' },
+  { value: 'board_director',   label: 'Board of Director' },
+  { value: 'chairman',         label: 'Chairman' },
+  { value: 'vice_chairman',    label: 'Vice Chairman' },
+  { value: 'bookkeeper',       label: 'Bookkeeper' },
   { value: 'credit_committee', label: 'Credit Committee' },
   { value: 'admin',            label: 'Administrator' },
 ];
@@ -109,6 +113,10 @@ const ROLE_PERMISSION_PRESETS = {
   manager: MANAGER_DEFAULT_PERMISSIONS,
   auditor: READ_ONLY_PERMISSIONS,
   accountant: ACCOUNTANT_DEFAULT_PERMISSIONS,
+  board_director: DEFAULT_PERMISSIONS,
+  chairman: DEFAULT_PERMISSIONS,
+  vice_chairman: DEFAULT_PERMISSIONS,
+  bookkeeper: DEFAULT_PERMISSIONS,
   credit_committee: CREDIT_COMMITTEE_DEFAULT_PERMISSIONS,
   admin: ADMIN_DEFAULT_PERMISSIONS,
 };
@@ -234,6 +242,8 @@ function CreateUserModal({ open, onClose, onCreated }) {
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
   const [permissionsTouched, setPermissionsTouched] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const submittingRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [tab, setTab] = useState('info'); // 'info' | 'permissions'
@@ -244,16 +254,19 @@ function CreateUserModal({ open, onClose, onCreated }) {
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid email';
     if (!form.password) e.password = 'Password is required';
-    else if (form.password.length < 8) e.password = 'Minimum 8 characters';
+    else if (form.password.length < 15 || form.password.length > 128) e.password = 'Use 15 to 128 characters';
+    if (!emailVerified) e.email = 'Confirm the assigned person owns this email address';
     return e;
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return;
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
+    submittingRef.current = true;
     setLoading(true);
     try {
-      const user = await createUser({ ...form, permissions });
+      const user = await createUser({ ...form, permissions, email_verified_by_admin: emailVerified });
       toast.success(`User account created for ${form.full_name}`);
       trackActivity({
         userId: currentUser?.id,
@@ -263,18 +276,22 @@ function CreateUserModal({ open, onClose, onCreated }) {
         recordId: user?.id,
       });
       onCreated(user);
-      onClose();
+      resetAndClose(true);
     } catch (err) {
       toast.error(err.message || 'Failed to create user');
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
 
-  function resetAndClose() {
+  function resetAndClose(force = false) {
+    if (submittingRef.current && force !== true) return;
     setForm({ full_name: '', email: '', password: '', role: 'staff', position_title: '' });
     setPermissions(DEFAULT_PERMISSIONS);
     setPermissionsTouched(false);
+    setEmailVerified(false);
+    setShowPassword(false);
     setErrors({});
     setTab('info');
     onClose();
@@ -306,7 +323,10 @@ function CreateUserModal({ open, onClose, onCreated }) {
           <Input
             label="Email Address" type="email" required
             value={form.email}
-            onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+            onChange={e => {
+              setForm(p => ({ ...p, email: e.target.value }));
+              setEmailVerified(false);
+            }}
             error={errors.email}
             placeholder="user@wellserve.coop"
           />
@@ -316,7 +336,7 @@ function CreateUserModal({ open, onClose, onCreated }) {
               value={form.password}
               onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
               error={errors.password}
-              placeholder="Min. 8 characters"
+              placeholder="15 to 128 characters"
             />
             <button
               type="button"
@@ -326,6 +346,10 @@ function CreateUserModal({ open, onClose, onCreated }) {
               {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={emailVerified} onChange={e => setEmailVerified(e.target.checked)} className="mt-1" />
+            I verified that this email belongs to the assigned person.
+          </label>
           <Select
             label="System Role" required
             value={form.role}

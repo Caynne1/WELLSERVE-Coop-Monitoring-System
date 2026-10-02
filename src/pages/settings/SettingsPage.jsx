@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 import { trackActivity } from '../../services/logService';
 
-const ROLES = { admin: 'Administrator', manager: 'General Manager', staff: 'Staff', accountant: 'Accountant / Treasurer', auditor: 'Auditor', credit_committee: 'Credit Committee', committee: 'Committee' };
+const ROLES = { admin: 'Administrator', manager: 'General Manager', staff: 'Staff', accountant: 'Treasurer', auditor: 'Auditor', credit_committee: 'Credit Committee', committee: 'Committee', board_director: 'Board of Director', chairman: 'Chairman', vice_chairman: 'Vice Chairman', bookkeeper: 'Bookkeeper' };
 const EMPTY = { current: '', next: '', confirm: '' };
 const RULES = [
   ['At least 8 characters', value => value.length >= 8],
