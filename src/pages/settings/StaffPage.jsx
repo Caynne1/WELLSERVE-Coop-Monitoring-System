@@ -23,7 +23,7 @@ export default function StaffPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader title="Staff Management" subtitle="Manage system users and access"
         action={<Button icon={<Plus size={15} />}>Add Staff</Button>} />
       {loading ? <div className="flex justify-center py-20"><Spinner /></div> : (

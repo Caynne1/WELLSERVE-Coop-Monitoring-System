@@ -539,7 +539,7 @@ export default function SavingsPage() {
                         <button
                           onClick={() => navigate(`/members/${account.member_id}?tab=savings`)}
                           title="View Member Savings"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-[#000066]/5 transition-colors"
                         >
                           <Eye size={15} />
                         </button>

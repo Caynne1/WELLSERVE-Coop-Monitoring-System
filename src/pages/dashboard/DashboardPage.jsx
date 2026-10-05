@@ -70,7 +70,7 @@ function Skeleton({ className = '' }) {
 
 function DashboardSkeleton() {
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1.5">
           <Skeleton className="h-6 w-32" />
@@ -921,7 +921,7 @@ function DrillDownDrawer({ item, onClose, navigate }) {
           {(item.cashIn !== undefined || item.cashOut !== undefined) && (
             <button
               onClick={() => { navigate('/transactions'); onClose(); }}
-              className="flex-1 text-xs font-medium py-2 px-3 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+              className="flex-1 text-xs font-medium py-2 px-3 rounded-lg bg-blue-50 text-blue-700 hover:bg-[#000066]/10 transition-colors"
             >
               View transactions →
             </button>
@@ -929,7 +929,7 @@ function DrillDownDrawer({ item, onClose, navigate }) {
           {item.count !== undefined && (
             <button
               onClick={() => { navigate('/members'); onClose(); }}
-              className="flex-1 text-xs font-medium py-2 px-3 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+              className="flex-1 text-xs font-medium py-2 px-3 rounded-lg bg-blue-50 text-blue-700 hover:bg-[#000066]/10 transition-colors"
             >
               View members →
             </button>
@@ -999,7 +999,7 @@ function TimePeriodFilter({ value, onChange }) {
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 flex items-center gap-1 ${
               active
                 ? isOverall
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-[#07A04E] text-white shadow-sm'
                   : 'bg-white text-emerald-700 shadow-sm'
                 : 'text-gray-500 hover:text-gray-800'
             }`}
@@ -1068,10 +1068,10 @@ function YearPicker({ year, onSelect, onClose }) {
               onClick={() => onSelect(y)}
               className={`rounded-lg py-1.5 text-xs font-medium transition-colors ${
                 isSelected
-                  ? 'bg-blue-600 text-white font-semibold'
+                  ? 'bg-[#07A04E] text-white font-semibold'
                   : isCurrent
-                  ? 'border border-blue-300 text-blue-700 font-semibold'
-                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                  ? 'border border-[#07A04E]/40 text-[#07A04E] font-semibold'
+                  : 'text-gray-600 hover:bg-[#000066]/5 hover:text-[#000066]'
               }`}
             >
               {y}
@@ -1175,7 +1175,7 @@ function DatePickerButton({ selectedDate, onSelect, onClear }) {
             type="button"
             onClick={() => setShowYearPicker(true)}
             title="Pick a year"
-            className="rounded-lg px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+            className="rounded-lg px-2 py-0.5 text-xs font-semibold text-gray-700 hover:bg-[#000066]/5 hover:text-[#000066] transition-colors"
           >
             {format(viewDate, 'MMMM yyyy')}
           </button>
@@ -1212,10 +1212,10 @@ function DatePickerButton({ selectedDate, onSelect, onClear }) {
                 onClick={() => handlePick(day)}
                 className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-xs transition-colors ${
                   isSelected
-                    ? 'bg-blue-600 text-white font-semibold'
+                    ? 'bg-[#07A04E] text-white font-semibold'
                     : isToday
-                    ? 'border border-blue-300 text-blue-700 font-semibold'
-                    : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                    ? 'border border-[#07A04E]/40 text-[#07A04E] font-semibold'
+                    : 'text-gray-600 hover:bg-[#000066]/5 hover:text-[#000066]'
                 }`}
               >
                 {day}
@@ -1315,7 +1315,7 @@ export default function DashboardPage() {
   const netCashFlow = (displayIncome ?? 0) - (displayExpense ?? 0);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
 
       {/* ── Header ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1545,7 +1545,7 @@ export default function DashboardPage() {
               sub={isOverall ? 'Total balance' : `Total balance: ${formatCurrency(stats?.totalSavings ?? 0)}`}
               icon={<Wallet size={13} />}
               iconColorClass="text-blue-400"
-              valueHoverClass="group-hover:text-blue-700"
+              valueHoverClass="group-hover:text-[#07A04E]"
               onClick={() => navigate('/savings')}
               delay={0.44}
             />
@@ -1561,7 +1561,7 @@ export default function DashboardPage() {
               }
               icon={<Clock size={13} />}
               iconColorClass="text-blue-400"
-              valueHoverClass="group-hover:text-blue-700"
+              valueHoverClass="group-hover:text-[#07A04E]"
               onClick={() => navigate('/time-deposit')}
               delay={0.48}
             />

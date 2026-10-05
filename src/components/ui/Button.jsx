@@ -21,6 +21,7 @@ const variants = {
   danger:  'bg-red-600   hover:bg-red-700   active:bg-red-800   text-white focus:ring-red-500 shadow-sm',
   success: 'bg-[#7EB751] hover:bg-[#6a9e42] active:bg-[#5a8836] text-white focus:ring-[#7EB751] shadow-sm',
   outline: 'border border-gray-300 text-gray-700 bg-white hover:border-[#7EB751] hover:bg-[#D6FADC]/35 hover:text-[#273C2C] active:bg-[#D6FADC]/60 focus:ring-[#07A04E]/25',
+  'danger-outline': 'border border-red-200 text-red-600 bg-white hover:bg-red-50 hover:border-red-300 focus:ring-red-500/25',
   ghost:   'text-gray-600 hover:bg-[#D6FADC]/35 hover:text-[#273C2C] active:bg-[#D6FADC]/60 focus:ring-[#07A04E]/25',
 };
 
@@ -46,11 +47,11 @@ export default function Button({
       {...props}
       disabled={disabled || loading}
       className={`
-        inline-flex items-center justify-center font-medium rounded-lg
+        inline-flex items-center justify-center font-medium rounded-lg whitespace-nowrap select-none
         transition-all duration-150
         focus:outline-none focus:ring-2 focus:ring-offset-1
         disabled:opacity-50 disabled:cursor-not-allowed
-        active:scale-[0.96] hover:scale-[1.02] hover:-translate-y-px
+        active:scale-[0.98]
         ${variants[variant] ?? variants.primary}
         ${sizes[size] ?? sizes.md}
         ${className}

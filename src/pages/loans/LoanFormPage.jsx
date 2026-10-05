@@ -2000,7 +2000,7 @@ export default function LoanFormPage() {
             <textarea
               rows={3}
               placeholder="Optional notes..."
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E] resize-none"
               {...register('notes')}
             />
             <p className="text-[10px] text-gray-400 mt-0.5 pl-0.5">Optional — internal use only</p>

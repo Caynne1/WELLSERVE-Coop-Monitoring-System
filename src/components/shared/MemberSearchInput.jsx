@@ -33,7 +33,7 @@ export default function MemberSearchInput({ value, onChange, placeholder = 'Sear
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder={placeholder}
-          className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]"
         />
       </div>
       {open && results.length > 0 && (

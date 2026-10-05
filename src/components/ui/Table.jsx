@@ -1,7 +1,7 @@
 export default function Table({ children, className = '' }) {
   return (
     <div className={`overflow-x-auto ${className}`}>
-      <table className="w-full text-sm">{children}</table>
+      <table className="data-table">{children}</table>
     </div>
   );
 }
@@ -9,35 +9,27 @@ export default function Table({ children, className = '' }) {
 export function Thead({ children }) {
   return (
     <thead>
-      <tr className="bg-gray-50 border-b border-gray-100">{children}</tr>
+      <tr>{children}</tr>
     </thead>
   );
 }
 
-export function Th({ children, className = '' }) {
-  return (
-    <th className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide ${className}`}>
-      {children}
-    </th>
-  );
+export function Th({ children, className = '', align = 'left' }) {
+  const a = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left';
+  return <th className={`${a} ${className}`}>{children}</th>;
 }
 
 export function Tbody({ children }) {
-  return <tbody className="divide-y divide-gray-50">{children}</tbody>;
+  return <tbody>{children}</tbody>;
 }
 
 export function Tr({ children, onClick, className = '' }) {
   return (
     <tr
       onClick={onClick}
-      className={[
-        'transition-all duration-150',
-        onClick
-          ? 'cursor-pointer hover:bg-emerald-50/30 hover:shadow-sm hover:scale-[1.001] active:bg-emerald-50/50'
-          : 'hover:bg-gray-50/60',
-        className,
-      ].join(' ')}
-      style={onClick ? { transformOrigin: 'center' } : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter') onClick(e); } : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      className={[onClick ? 'cursor-pointer' : '', className].join(' ').trim()}
     >
       {children}
     </tr>
@@ -45,5 +37,14 @@ export function Tr({ children, onClick, className = '' }) {
 }
 
 export function Td({ children, className = '' }) {
-  return <td className={`px-4 py-3 text-gray-700 ${className}`}>{children}</td>;
+  return <td className={className}>{children}</td>;
+}
+
+/** Full-width message row for empty / loading tables */
+export function TableEmpty({ colSpan = 1, children = 'No records found.' }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="!py-12 text-center text-sm text-gray-500">{children}</td>
+    </tr>
+  );
 }

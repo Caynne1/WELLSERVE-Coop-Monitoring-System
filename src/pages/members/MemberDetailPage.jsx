@@ -473,7 +473,7 @@ export default function MemberDetailPage() {
 
   return (
     <MemberPaymentNavigation memberId={id}>
-    <div className="p-4 md:p-6 max-w-7xl mx-auto bg-gray-50/30 min-h-screen">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       {/* Back button */}
       <button
         onClick={() => navigate('/members')}
@@ -2118,7 +2118,7 @@ function DepositModal({ open, onClose, accountType, label, account, memberId, me
   }
 
   const fieldClass =
-    'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
+    'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]';
 
   return (
     <Modal open={open} onClose={onClose} title={`${label} Deposit`} size="sm">

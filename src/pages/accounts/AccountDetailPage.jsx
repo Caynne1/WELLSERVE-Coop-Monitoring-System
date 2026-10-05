@@ -24,7 +24,7 @@ export default function AccountDetailPage() {
   if (loading) return <div className="flex justify-center py-24"><Spinner /></div>;
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto">
       <button onClick={() => navigate(-1)}
         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 mb-4 transition-colors">
         <ArrowLeft size={16} /> Back

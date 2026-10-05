@@ -525,7 +525,7 @@ export default function CBUPage() {
                         <button
                           onClick={() => navigate(`/members/${account.member_id}?tab=cbu`)}
                           title="View Member CBU"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-[#000066]/5 transition-colors"
                         >
                           <Eye size={15} />
                         </button>

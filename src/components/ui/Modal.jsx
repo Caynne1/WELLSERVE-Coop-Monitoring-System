@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
  *
  * size: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
  */
-export default function Modal({ open, onClose, title, children, size = 'md' }) {
+export default function Modal({ open, onClose, title, children, size = 'md', footer }) {
   const sizes = {
     sm:    'max-w-sm',
     md:    'max-w-lg',
@@ -76,11 +76,12 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4"
       aria-modal="true"
+      aria-label={typeof title === 'string' ? title : undefined}
       role="dialog"
     >
       {/* Backdrop — click outside to close */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-gray-900/45 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -88,7 +89,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
       {/* Panel — sits above the backdrop via relative stacking */}
       <div
         className={[
-          'relative bg-white rounded-xl sm:rounded-2xl shadow-xl w-full flex flex-col',
+          'relative bg-white rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 w-full flex flex-col',
           'max-h-[calc(100dvh-1rem)] sm:max-h-[90vh]',
           sizes[size] ?? sizes.md,
           'animate-scale-in',
@@ -97,12 +98,13 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex-shrink-0">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <h2 className="text-base font-semibold text-gray-900 truncate">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500
-                       transition-all duration-150 hover:scale-110 active:scale-95"
+            aria-label="Close dialog"
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700
+                       transition-colors duration-150 active:scale-95"
           >
             <X size={18} />
           </button>
@@ -112,6 +114,12 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
         <div className="overflow-y-auto flex-1 p-4 sm:p-6 min-h-0 overscroll-contain">
           {children}
         </div>
+
+        {footer && (
+          <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3 sm:px-6 border-t border-gray-100 bg-gray-50/60 rounded-b-xl sm:rounded-b-2xl flex-shrink-0">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body          // ← portal target: bypasses the <main> scroll container

@@ -121,7 +121,7 @@ function MoreLoanActions({ onDelete, disabled }) {
   );
 }
 
-function ActionButton({ label, icon: Icon, onClick, disabled, tone = 'text-gray-500 hover:text-blue-700 hover:bg-blue-50' }) {
+function ActionButton({ label, icon: Icon, onClick, disabled, tone = 'text-gray-500 hover:text-[#000066] hover:bg-[#000066]/5' }) {
   return (
     <button type="button" title={label} aria-label={label} onClick={onClick} disabled={disabled}
       className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:opacity-40 disabled:cursor-not-allowed xl:h-8 xl:w-7 ${tone}`}>

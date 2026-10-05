@@ -30,7 +30,7 @@ export default function ConfirmDialog({
 
   return (
     <Modal open={open} onClose={handleCancel} title={title || 'Confirm'} size="sm">
-      <p className="text-sm text-gray-600 mb-6">{message || 'Are you sure?'}</p>
+      <p className="text-sm leading-relaxed text-gray-600 mb-6">{message || 'Are you sure?'}</p>
       <div className="flex justify-end gap-3">
         <Button
           variant="outline"

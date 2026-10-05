@@ -1,10 +1,11 @@
-export default function Card({ children, className = '', hoverable = false }) {
+export default function Card({ children, className = '', hoverable = false, padded = false }) {
   return (
     <div
       className={`
-        bg-white rounded-xl border border-gray-200
+        bg-white rounded-xl border border-gray-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)]
         transition-all duration-200
-        ${hoverable ? 'hover:-translate-y-1 hover:shadow-md hover:border-emerald-200/60 cursor-pointer' : ''}
+        ${padded ? 'p-5' : ''}
+        ${hoverable ? 'hover:-translate-y-0.5 hover:shadow-md hover:border-[#07A04E]/30 cursor-pointer' : ''}
         ${className}
       `.replace(/\s+/g, ' ').trim()}
     >
@@ -15,10 +16,10 @@ export default function Card({ children, className = '', hoverable = false }) {
 
 export function CardHeader({ title, subtitle, action }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-      <div>
+    <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-gray-100">
+      <div className="min-w-0">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
       </div>
       {action}
     </div>

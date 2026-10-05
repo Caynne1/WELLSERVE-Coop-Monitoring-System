@@ -616,7 +616,7 @@ export default function MembersPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 bg-gray-50/30 min-h-screen">
+    <div className="p-4 sm:p-6">
       {/* ── Header ── */}
       <div>
         <PageHeader
@@ -1019,7 +1019,7 @@ export default function MembersPage() {
                               <button
                                 onClick={() => navigate(`/members/${member.id}`)}
                                 title="View profile"
-                                className="p-1.5 rounded-xl text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                className="p-1.5 rounded-xl text-gray-400 hover:text-[#000066] hover:bg-[#000066]/5 transition-all"
                               >
                                 <Eye size={15} />
                               </button>

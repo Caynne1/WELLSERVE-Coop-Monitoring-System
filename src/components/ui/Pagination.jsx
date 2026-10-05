@@ -70,7 +70,7 @@ export default function Pagination({
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="border border-gray-200 rounded-lg text-xs py-1 pl-2 pr-6 text-gray-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400 bg-white"
+              className="border border-gray-200 rounded-lg text-xs py-1 pl-2 pr-6 text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E] bg-white"
             >
               {pageSizeOptions.map(opt => (
                 <option key={opt} value={opt}>{opt}</option>

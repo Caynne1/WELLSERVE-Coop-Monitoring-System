@@ -98,6 +98,16 @@
     --ws-blue: #002C5F;
     --ws-cyan: #AEECEF;
     --ws-yellow: #F8F32B;
+
+    /* Design tokens (shared by every page) */
+    --ws-radius-card: 0.875rem;
+    --ws-radius-control: 0.5rem;
+    --ws-border: #e5e7eb;
+    --ws-border-soft: #f1f5f9;
+    --ws-text: #111827;
+    --ws-text-muted: #6b7280;
+    --ws-focus-ring: 0 0 0 3px rgba(7, 160, 78, 0.18);
+    --ws-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.04);
   }
 
   * {
@@ -128,7 +138,24 @@
     background: var(--ws-mint);
     color: var(--ws-navy);
   }
+
+  /* Keyboard focus is always visible and uses the brand colour */
+  :focus-visible {
+    outline: 2px solid var(--ws-green);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
+
+  button:not(:disabled),
+  [role='button'] {
+    cursor: pointer;
+  }
 }
+
 
 /* ─── Component Layer ──────────────────────────────────────────────────────── */
 
@@ -240,6 +267,128 @@
   }
   .topbar-icon-button:active {
     transform: translateY(0) scale(0.95);
+  }
+
+
+  /* ── Page layout ─────────────────────────────────────────────────────────── */
+  .page-shell {
+    padding: 1rem;
+  }
+  @media (min-width: 640px) {
+    .page-shell { padding: 1.5rem; }
+  }
+  .page-shell-narrow { max-width: 56rem;  margin-inline: auto; }
+  .page-shell-medium { max-width: 72rem;  margin-inline: auto; }
+  .page-shell-wide   { max-width: 80rem;  margin-inline: auto; }
+
+  /* Toolbar row that holds search / filters / actions above a table */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  /* Surface that wraps a table or a block of content */
+  .surface {
+    background: #fff;
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius-card);
+    box-shadow: var(--ws-shadow-card);
+  }
+
+  /* ── Form controls ───────────────────────────────────────────────────────── */
+  .field-label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #374151;
+  }
+  .field-hint  { margin-top: 0.25rem; font-size: 0.75rem; color: #6b7280; }
+  .field-error { margin-top: 0.25rem; font-size: 0.75rem; color: #dc2626; }
+
+  .field-control {
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: var(--ws-radius-control);
+    background: #fff;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: var(--ws-text);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  }
+  .field-control::placeholder { color: #9ca3af; }
+  .field-control:hover:not(:disabled) { border-color: #9ca3af; }
+  .field-control:focus {
+    outline: none;
+    border-color: var(--ws-green);
+    box-shadow: var(--ws-focus-ring);
+  }
+  .field-control:disabled { background: #f3f4f6; color: #6b7280; cursor: not-allowed; }
+  .field-control[aria-invalid='true'] { border-color: #f87171; background: #fef2f2; }
+
+  /* ── Stat card (KPI) ─────────────────────────────────────────────────────── */
+  .stat-card {
+    background: #fff;
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-radius-card);
+    box-shadow: var(--ws-shadow-card);
+    padding: 1rem 1.125rem;
+  }
+
+  /* ── Tabs / segmented control ────────────────────────────────────────────── */
+  .tab-list {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--ws-border);
+    scrollbar-width: none;
+  }
+  .tab-list::-webkit-scrollbar { display: none; }
+  .tab {
+    position: relative;
+    white-space: nowrap;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .tab:hover { color: #111827; }
+  .tab-active { color: #047857; border-bottom-color: var(--ws-green); font-weight: 600; }
+
+  /* ── Data tables: one look for every list in the app ─────────────────────── */
+  .data-table { width: 100%; font-size: 0.875rem; border-collapse: separate; border-spacing: 0; }
+  .data-table thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: #f9fafb;
+    border-bottom: 1px solid var(--ws-border);
+    padding: 0.625rem 1rem;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7280;
+    white-space: nowrap;
+  }
+  .data-table tbody td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--ws-border-soft);
+    color: #374151;
+    vertical-align: middle;
+  }
+  .data-table tbody tr:last-child td { border-bottom: 0; }
+  .data-table tbody tr:hover { background: rgba(214, 250, 220, 0.25); }
+
+  /* ── Empty state ─────────────────────────────────────────────────────────── */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 3rem 1.5rem; color: #6b7280;
   }
 
   /* Shimmer skeleton */
@@ -465,3 +614,52 @@ body,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* ─── Global consistency pass (applies to legacy markup inside <main>) ───────
+   Many pages still render raw <table>/<input>/<select> elements. These rules
+   give them the same header treatment, row hover, focus ring and radius as the
+   shared components without touching each page's markup.                    */
+
+main table thead th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b7280;
+  white-space: nowrap;
+}
+main table thead tr,
+main table thead {
+  background-color: #f9fafb;
+}
+main table tbody tr {
+  transition: background-color 0.12s ease;
+}
+main table tbody tr:hover {
+  background-color: rgba(214, 250, 220, 0.22);
+}
+main table tbody td {
+  vertical-align: middle;
+}
+
+main input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):focus,
+main select:focus,
+main textarea:focus {
+  outline: none;
+  border-color: var(--ws-green) !important;
+  box-shadow: var(--ws-focus-ring);
+}
+
+main input[type='checkbox'],
+main input[type='radio'] {
+  accent-color: var(--ws-green);
+}
+
+/* Subtle, consistent scrollbars for scrollable tables/panels */
+.overflow-x-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar { height: 8px; width: 8px; }
+.overflow-x-auto::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 999px; }
+.overflow-x-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track { background: transparent; }

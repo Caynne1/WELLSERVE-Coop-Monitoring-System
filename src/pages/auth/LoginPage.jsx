@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { supabase } from '../../services/supabase';
 import toast from 'react-hot-toast';
-import { Mail, Lock, Loader2, ShieldCheck, Eye, EyeOff, Music2, Pause } from 'lucide-react';
+import { Mail, Lock, Loader2, ShieldCheck, Eye, EyeOff, Music2, Pause, ArrowRight } from 'lucide-react';
 import WellserveLogo from '../../components/shared/WellserveLogo';
 import SplashScreen from '../../components/shared/SplashScreen';
 
@@ -161,13 +161,14 @@ export default function LoginPage() {
                       <Loader2 size={20} className="animate-spin" />
                       Signing in...
                     </>
-                  ) : 'Sign In'}
+                  ) : <>Sign In <ArrowRight size={19} aria-hidden="true" /></>}
                 </button>
               </form>
-              <a href="/forgot-password" className="mt-4 inline-block text-sm font-semibold text-emerald-700">Forgot password?</a>
+              <a href="/forgot-password" className="ws-forgot-link">Forgot password?</a>
 
               <div className="ws-secure-notice">
-                <ShieldCheck size={16} /> For authorized WELLSERVE personnel only.
+                <div className="ws-notice-divider"><ShieldCheck size={17} /></div>
+                <span>For authorized WELLSERVE personnel only.</span>
               </div>
             </div>
           </div>
@@ -445,6 +446,78 @@ export default function LoginPage() {
             gap: 7px;
           }
 
+          /* Refined desktop visual treatment */
+          .ws-shell { grid-template-columns: 1fr 1fr; }
+          .ws-left {
+            background: radial-gradient(ellipse at 10% -12%, #1551a3 0%, transparent 49%),
+                        radial-gradient(ellipse at 8% 105%, #08776e 0%, transparent 35%),
+                        linear-gradient(145deg, #071957 0%, #05145b 55%, #061c67 100%);
+            padding: 56px clamp(48px, 7vw, 112px);
+          }
+          .ws-left::before, .ws-left::after {
+            content: ''; position: absolute; pointer-events: none; border-radius: 50%;
+          }
+          .ws-left::before {
+            width: 115%; aspect-ratio: 1; left: -48%; top: -43%;
+            border: 1.5px solid rgba(28, 179, 205, .34);
+            box-shadow: 0 0 0 95px rgba(9, 81, 162, .055), 0 0 0 195px rgba(6, 117, 135, .035);
+          }
+          .ws-left::after {
+            width: 68%; aspect-ratio: 1; left: -43%; bottom: -40%;
+            border: 1.5px solid rgba(26, 203, 126, .7);
+            box-shadow: 0 0 0 65px rgba(15, 177, 125, .12), 0 0 0 125px rgba(18, 96, 181, .13);
+          }
+          .ws-left-content { max-width: 510px; gap: 42px; }
+          .ws-portal-title { font-size: clamp(34px, 3vw, 46px); letter-spacing: -.025em; }
+          .ws-portal-desc { line-height: 1.6; }
+          .ws-accent-line { background: #21c66e; width: 84px; height: 4px; }
+          .ws-right {
+            position: relative; overflow: hidden;
+            background: radial-gradient(ellipse at 65% 45%, #fff 0%, #f8fbff 58%, #edf3fb 100%);
+            padding: 36px clamp(32px, 5.5vw, 92px);
+          }
+          .ws-right::before, .ws-right::after {
+            content: ''; position: absolute; border-radius: 50%; pointer-events: none;
+            border: 85px solid rgba(213, 226, 245, .22);
+            width: 450px; height: 450px;
+          }
+          .ws-right::before { right: -310px; top: -310px; }
+          .ws-right::after { left: -360px; bottom: -340px; }
+          .ws-form-container {
+            z-index: 1; max-width: 555px; padding: clamp(32px, 3vw, 46px);
+            border: 1px solid #dce5f1; border-radius: 16px;
+            box-shadow: 0 24px 65px rgba(27, 49, 87, .12);
+          }
+          .ws-lock-mark {
+            width: 72px; height: 72px; margin-bottom: 16px;
+            color: #078650; background: #e7f5ed; border: none;
+          }
+          .ws-form-title { color: #071957; letter-spacing: -.025em; }
+          .ws-form { margin-top: 34px; gap: 20px; }
+          .ws-input { border-color: #d0dced; border-radius: 9px; }
+          .ws-input:hover:not(:focus) { border-color: #a5b9d3; }
+          .ws-btn-primary { margin-top: 4px; background: #07894b; border-radius: 9px; }
+          .ws-btn-primary:hover:not(:disabled) { background: #087944; }
+          .ws-forgot-link {
+            display: inline-block; margin-top: 16px; color: #087b48;
+            font-size: 14px; font-weight: 600; text-decoration: none;
+          }
+          .ws-forgot-link:hover { text-decoration: underline; }
+          .ws-forgot-link:focus-visible, .ws-toggle-password:focus-visible {
+            outline: 3px solid rgba(7, 160, 78, .35); outline-offset: 3px;
+          }
+          .ws-secure-notice { flex-direction: column; gap: 12px; margin-top: 24px; }
+          .ws-notice-divider {
+            display: flex; width: 100%; align-items: center; gap: 12px;
+          }
+          .ws-notice-divider::before, .ws-notice-divider::after {
+            content: ''; height: 1px; background: #dbe4ef; flex: 1;
+          }
+          @media (min-width: 901px) and (max-height: 750px) {
+            .ws-root { overflow-y: auto; }
+            .ws-shell { min-height: 750px; height: auto; }
+          }
+
           /* Mobile */
           @media (max-width: 900px) {
             .ws-root {
@@ -459,6 +532,7 @@ export default function LoginPage() {
               min-height: 100dvh;
             }
             .ws-left { display: none; }
+            .ws-right::before, .ws-right::after { display: none; }
             .ws-mobile-brand { display: flex; }
             .ws-right {
               min-height: 100vh;

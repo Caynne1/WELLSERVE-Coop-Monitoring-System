@@ -275,14 +275,14 @@ export default function TransactionsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search member, type, reference, notes..."
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]"
           />
         </div>
 
         <select
           value={typeFilter}
           onChange={e => setTypeFilter(e.target.value)}
-          className="w-32 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-32 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]"
         >
           <option value="">All Types</option>
           {typeOptions.map(type => <option key={type} value={type}>{txLabel(type)}</option>)}
@@ -291,7 +291,7 @@ export default function TransactionsPage() {
         <select
           value={categoryFilter}
           onChange={e => setCategoryFilter(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]"
         >
           <option value="">All Categories</option>
           {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
@@ -303,7 +303,7 @@ export default function TransactionsPage() {
             type="date"
             value={dateFrom}
             onChange={e => setDateFrom(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]"
           />
           <span className="text-xs text-gray-400">to</span>
           <input
@@ -311,7 +311,7 @@ export default function TransactionsPage() {
             value={dateTo}
             min={dateFrom || undefined}
             onChange={e => setDateTo(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#07A04E]/25 focus:border-[#07A04E]"
           />
         </div>
 
@@ -418,7 +418,7 @@ export default function TransactionsPage() {
                           <button
                             onClick={() => setDetailTarget(tx)}
                             title="View transaction details"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-[#000066] hover:bg-[#000066]/5 transition-colors"
                           >
                             <Eye size={15} />
                           </button>

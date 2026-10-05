@@ -204,7 +204,7 @@ export default function MembershipMonitoringPage() {
 
   if (loading) {
     return (
-      <div className="p-4 md:p-6 bg-gray-50/30 min-h-screen">
+      <div className="p-4 sm:p-6">
         <div className="bg-white border border-gray-200 rounded-2xl p-8 flex items-center justify-center gap-3 text-gray-500">
           <Spinner />
           <span className="text-sm font-medium">Loading membership monitoring...</span>
@@ -214,7 +214,7 @@ export default function MembershipMonitoringPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 bg-gray-50/30 min-h-screen space-y-5">
+    <div className="p-4 sm:p-6 space-y-5">
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Membership Monitoring</h1>
