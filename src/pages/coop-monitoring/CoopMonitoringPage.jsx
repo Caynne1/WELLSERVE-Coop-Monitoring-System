@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, TrendingDown,  RefreshCw, ArrowUpRight, ArrowDownRight,
   LayoutDashboard, Plus, AlertTriangle, Calendar,
@@ -25,7 +27,6 @@ import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatte
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { isLoanReleaseCategory, parseLedgerDate, txDisplayDate, filterFundLedgerByDate, sumPostedLoanReleases } from '../../utils/fundLoanReleases';
 import { sumCashInLedger } from '../../utils/fundCashIn';
-import IncomeBreakdown from './IncomeBreakdown';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -42,9 +43,6 @@ const PAYMENT_MODE_OPTIONS = [
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-const MAX_VISIBLE_FUND_ROWS = 250;
-
 
 function hasMeaningfulTime(value) {
   const text = String(value || '').trim();
@@ -101,6 +99,42 @@ function displayCategoryLabel(category = '') {
     .replace(/_/g, ' ')
     .toLowerCase()
     .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function transactionRecordKey(tx = {}) {
+  return encodeURIComponent(tx.id || tx.ref_no || tx.reference || tx.loan_id || '');
+}
+
+function getFundTransactionTarget(tx = {}) {
+  const category = String(tx.category || tx.raw_category || '').toLowerCase();
+  const rawType = String(tx.raw_type || tx.type || '').toLowerCase();
+  const key = transactionRecordKey(tx);
+
+  if (category === 'savings_booster' || rawType === 'savings_booster') {
+    return `/savings-booster${key ? `?record=${key}` : ''}`;
+  }
+
+  if (tx.loan_id || category === 'loan_payment' || category === 'loan_interest') {
+    if (tx.loan_id) return `/loans/${tx.loan_id}`;
+    return `/loans${key ? `?record=${key}` : ''}`;
+  }
+
+  if (category.includes('expense') || rawType.includes('expense')) {
+    return `/expenses${key ? `?record=${key}` : ''}`;
+  }
+
+  if (isLoanReleaseCategory(category)) {
+    return `/checkbook${key ? `?record=${key}` : ''}`;
+  }
+
+  if (tx.member_id) {
+    if (category.includes('savings')) return `/members/${tx.member_id}?tab=savings${key ? `&record=${key}` : ''}`;
+    if (category.includes('cbu')) return `/members/${tx.member_id}?tab=cbu${key ? `&record=${key}` : ''}`;
+    if (category.includes('membership')) return `/members/${tx.member_id}?tab=membership${key ? `&record=${key}` : ''}`;
+    return `/members/${tx.member_id}${key ? `?record=${key}` : ''}`;
+  }
+
+  return '';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,9 +202,14 @@ function useChartWidth() {
 // Stat Card — enhanced with hover accent
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StatCard({ icon, label, value, sub, bg, textColor, accentColor, border }) {
+function StatCard({ icon, label, value, sub, bg, textColor, accentColor, border, onClick }) {
+  const Wrapper = onClick ? 'button' : 'div';
   return (
-    <div className={`bg-white rounded-xl border ${border || 'border-gray-100'} p-5 flex items-center gap-4 group hover:shadow-md transition-all duration-200 relative overflow-hidden`}>
+    <Wrapper
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`w-full text-left bg-white rounded-xl border ${border || 'border-gray-100'} p-5 flex items-center gap-4 group hover:shadow-md transition-all duration-200 relative overflow-hidden ${onClick ? 'cursor-pointer hover:-translate-y-0.5' : ''}`}
+    >
       <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-110`}>
         {icon}
       </div>
@@ -180,7 +219,7 @@ function StatCard({ icon, label, value, sub, bg, textColor, accentColor, border 
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
       <div className={`absolute bottom-0 left-0 h-0.5 w-0 group-hover:w-full transition-all duration-300 rounded-full ${accentColor || 'bg-emerald-400'}`} />
-    </div>
+    </Wrapper>
   );
 }
 
@@ -645,6 +684,113 @@ function CashInBreakdown({ transactions, incomeData }) {
   );
 }
 
+function IncomeBreakdown({ rows = [], loading = false }) {
+  const [showAll, setShowAll] = useState(false);
+  const cleanRows = (rows || [])
+    .filter(([label]) => label !== 'Total Coop Income')
+    .map(([label, value]) => ({
+      label,
+      value: Number(value || 0),
+    }))
+    .filter(row => row.value > 0);
+
+  const total = cleanRows.reduce((sum, row) => sum + row.value, 0);
+  const topRows = cleanRows.slice(0, 8);
+  const visibleRows = showAll ? cleanRows : topRows;
+  const colors = [
+    '#16a34a', '#f97316', '#0f766e', '#65a30d', '#475569', '#dc2626',
+    '#2563eb', '#0284c7', '#d97706', '#9333ea', '#14b8a6', '#7c3aed',
+    '#db2777', '#64748b',
+  ];
+
+  let offset = 0;
+  const segments = cleanRows.map((row, index) => {
+    const pct = total > 0 ? (row.value / total) * 100 : 0;
+    const segment = {
+      ...row,
+      pct,
+      color: colors[index % colors.length],
+      dasharray: `${pct} ${100 - pct}`,
+      dashoffset: 25 - offset,
+    };
+    offset += pct;
+    return segment;
+  });
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 h-full min-h-[288px] flex flex-col">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800">Income Breakdown</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Major income sources</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center text-xs text-gray-400">Loading income breakdown...</div>
+      ) : cleanRows.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-xs text-gray-400">No income data available.</div>
+      ) : (
+        <>
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] lg:grid-cols-1 xl:grid-cols-[120px_minmax(0,1fr)] gap-4 items-start">
+            <div className="relative w-[112px] h-[112px] mx-auto">
+              <svg viewBox="0 0 42 42" className="w-full h-full -rotate-90">
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#eef2f7" strokeWidth="5" />
+                {segments.map((segment, index) => (
+                  <circle
+                    key={`${segment.label}-${index}`}
+                    cx="21"
+                    cy="21"
+                    r="15.915"
+                    fill="transparent"
+                    stroke={segment.color}
+                    strokeWidth="5"
+                    strokeDasharray={segment.dasharray}
+                    strokeDashoffset={segment.dashoffset}
+                  />
+                ))}
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs text-gray-500">Income</span>
+              </div>
+            </div>
+
+            <div className="min-w-0 space-y-2">
+              {visibleRows.map((row, index) => {
+                const pct = total > 0 ? (row.value / total) * 100 : 0;
+                return (
+                  <div key={`${row.label}-${index}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: colors[index % colors.length] }}
+                      />
+                      <span className="truncate text-gray-600">{row.label}</span>
+                    </div>
+                    <span className="text-gray-500 tabular-nums">{pct.toFixed(1)}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {cleanRows.length > topRows.length && (
+            <button
+              type="button"
+              onClick={() => setShowAll(value => !value)}
+              className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              <LayoutDashboard size={14} />
+              {showAll ? 'Show fewer categories' : 'Show all categories'}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard Charts Panel — enhanced 2-row layout
 // ─────────────────────────────────────────────────────────────────────────────
@@ -702,10 +848,10 @@ function DashboardCharts({ transactions, incomeRows, incomeLoading }) {
     <div className="space-y-4 mb-6">
 
       {/* ── Row 1: Cash Flow Line + Cash-In Donut ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 items-start gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] items-stretch gap-4">
 
         {/* Cash Flow Area-Line Chart */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 h-full min-h-[288px]">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-800">Cash Flow Trend</h3>
@@ -833,10 +979,15 @@ function DateRangePicker({ from, to, onChange, years = [] }) {
 // Transaction Row
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TxRow({ tx }) {
+function TxRow({ tx, onOpen }) {
   const isCashIn = tx.type === 'cash_in';
+  const target = getFundTransactionTarget(tx);
   return (
-    <tr className="hover:bg-gray-50/60 transition-colors">
+    <tr
+      onClick={target ? () => onOpen?.(tx) : undefined}
+      title={target ? 'Open related record' : undefined}
+      className={`hover:bg-gray-50/60 transition-colors ${target ? 'cursor-pointer' : ''}`}
+    >
       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
         {formatTransactionDisplayDate(tx)}
         {tx.source === 'imported' && tx.imported_at && (
@@ -960,7 +1111,42 @@ function PenaltyIncomeTable({ penalties, loading }) {
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+function splitMemberDisplay(value = '', fallbackMemberNo = '') {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^([A-Za-z0-9-]+)\s*[-–—]\s*(.+)$/);
+  if (match) {
+    return {
+      member_no: fallbackMemberNo || match[1].trim(),
+      member_name: match[2].trim(),
+    };
+  }
+  return {
+    member_no: fallbackMemberNo || '',
+    member_name: raw,
+  };
+}
+
+function isRawUuid(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function cleanDisplayReference(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (!text || isRawUuid(text)) continue;
+    return text;
+  }
+  return '';
+}
+
+function preferredTransactionDate(row = {}) {
+  return row.transaction_date || row.payment_date || row.date || row.imported_at || row.created_at || null;
+}
+
+
 export default function CoopMonitoringPage() {
+  const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('account_monitoring', 'create');
 
@@ -974,6 +1160,8 @@ export default function CoopMonitoringPage() {
   const [typeFilter, setTypeFilter]   = useState('');
   const [catFilter, setCatFilter]     = useState('');
   const [dateRange, setDateRange]     = useState({ from: '', to: '' });
+  const [transactionsPerPage, setTransactionsPerPage] = useState(10);
+  const [transactionsPage, setTransactionsPage] = useState(1);
 
   const [fundModalOpen, setFundModalOpen]       = useState(false);
   const [fundAmount, setFundAmount]             = useState('');
@@ -991,6 +1179,8 @@ export default function CoopMonitoringPage() {
   const [incomeData, setIncomeData]         = useState(null);
   const [incomeLoading, setIncomeLoading]   = useState(true);
   const [incomeError, setIncomeError]       = useState(false);
+  const [selectedIncomeCard, setSelectedIncomeCard] = useState(null);
+  const [selectedFundCard, setSelectedFundCard] = useState(null);
   const incomeRequestId = useRef(0);
 
   function getDateRangeForPeriod(period) {
@@ -1167,10 +1357,35 @@ export default function CoopMonitoringPage() {
     });
   }, [dateFilteredTransactions, typeFilter, catFilter]);
 
-  const visibleTransactions = useMemo(
-    () => filtered.slice(0, MAX_VISIBLE_FUND_ROWS),
-    [filtered]
-  );
+  const totalTransactionPages = Math.max(1, Math.ceil(filtered.length / transactionsPerPage));
+  const visibleTransactions = useMemo(() => {
+    const safePage = Math.min(transactionsPage, totalTransactionPages);
+    const start = (safePage - 1) * transactionsPerPage;
+    return filtered.slice(start, start + transactionsPerPage);
+  }, [filtered, transactionsPage, transactionsPerPage, totalTransactionPages]);
+
+  useEffect(() => {
+    setTransactionsPage(1);
+  }, [typeFilter, catFilter, dateRange.from, dateRange.to, transactionsPerPage]);
+
+  useEffect(() => {
+    if (transactionsPage > totalTransactionPages) {
+      setTransactionsPage(totalTransactionPages);
+    }
+  }, [transactionsPage, totalTransactionPages]);
+
+  const openFundTransaction = useCallback((tx) => {
+    const target = getFundTransactionTarget(tx);
+    if (!target) return;
+    navigate(target, {
+      state: {
+        recordId: tx.id || null,
+        reference: tx.ref_no || tx.reference || null,
+        category: tx.category || null,
+        source: 'fund-monitoring',
+      },
+    });
+  }, [navigate]);
 
   const loanPaymentTotal = useMemo(() => {
     return dateFilteredTransactions
@@ -1182,22 +1397,32 @@ export default function CoopMonitoringPage() {
     return sumPostedLoanReleases(dateFilteredTransactions);
   }, [dateFilteredTransactions]);
 
+  const expenseRows = useMemo(() => {
+    return dateFilteredTransactions.filter(tx => (
+      tx.type === 'cash_out' &&
+      !isLoanReleaseCategory(tx.category) &&
+      !isWithdrawalCategory(tx.category)
+    ));
+  }, [dateFilteredTransactions]);
+
   const totalExpenseAmount = useMemo(() => {
-    return dateFilteredTransactions
-      .filter(tx => (
-        tx.type === 'cash_out' &&
-        !isLoanReleaseCategory(tx.category) &&
-        !isWithdrawalCategory(tx.category)
-      ))
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    return expenseRows.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  }, [expenseRows]);
+
+  const loanPaymentRows = useMemo(() => {
+    return dateFilteredTransactions.filter(tx =>
+      tx.type === 'cash_in' && (tx.category === 'loan_payment' || tx.raw_type === 'loan_payment')
+    );
+  }, [dateFilteredTransactions]);
+
+  const loanReleaseRows = useMemo(() => {
+    return dateFilteredTransactions.filter(tx =>
+      tx.type === 'cash_out' && isLoanReleaseCategory(tx.category)
+    );
   }, [dateFilteredTransactions]);
 
   const expenseMonitoring = useMemo(() => {
     const cashOutRows = dateFilteredTransactions.filter(tx => tx.type === 'cash_out');
-    const expenseRows = cashOutRows.filter(tx => (
-      !isLoanReleaseCategory(tx.category) &&
-      !isWithdrawalCategory(tx.category)
-    ));
     const sumBy = predicate => cashOutRows
       .filter(predicate)
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
@@ -1208,6 +1433,8 @@ export default function CoopMonitoringPage() {
     const groupedExpenseCards = groupExpenseCards(expenseRows)
       .map(({ key, category, value }, index) => ({
         key,
+        category,
+        detailKey: `expense:${key || category}`,
         label: displayCategoryLabel(category),
         value: Math.round(value * 100) / 100,
         color: [
@@ -1238,7 +1465,7 @@ export default function CoopMonitoringPage() {
       count: cashOutRows.length,
       expenseCount: expenseRows.length,
     };
-  }, [dateFilteredTransactions]);
+  }, [dateFilteredTransactions, expenseRows]);
 
   const filteredPenalties = useMemo(() => {
     return penalties.filter(p => {
@@ -1273,6 +1500,167 @@ export default function CoopMonitoringPage() {
     ['WELLife VIP Card', incomeData.vip_card || 0],
     ['Total Coop Income', incomeData.total_income || 0],
   ] : []), [incomeData]);
+  const incomeCards = useMemo(() => {
+    if (!incomeData) return [];
+    return [
+      { key: 'service_fee', label: 'Service Fee', value: incomeData.service_fee, color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
+      { key: 'cbu_retention', label: 'CBU Retention', value: incomeData.cbu_retention, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Capital build-up deductions' },
+      { key: 'membership_cbu', label: 'Membership CBU', value: incomeData.membership_cbu, color: 'bg-green-50 border-green-100', text: 'text-green-700', sub: 'Initial CBU from membership payments' },
+      { key: 'standard_cbu', label: 'Standard CBU', value: incomeData.standard_cbu, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Regular CBU collected through invoice' },
+      { key: 'legal_fees', label: 'Legal Fees', value: incomeData.legal_fees, color: 'bg-slate-50 border-slate-100', text: 'text-slate-700', sub: 'Legal and notarial deductions' },
+      { key: 'clpi_insurance', label: 'CLPI/Insurance', value: incomeData.clpi_insurance, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Loan protection and insurance' },
+      { key: 'regular_savings', label: 'Regular Savings', value: incomeData.regular_savings, color: 'bg-blue-50 border-blue-100', text: 'text-blue-700', sub: 'Savings deductions' },
+      { key: 'membership_savings', label: 'Membership Savings', value: incomeData.membership_savings, color: 'bg-sky-50 border-sky-100', text: 'text-sky-700', sub: 'Initial savings from membership payments' },
+      { key: 'standard_savings', label: 'Standard Savings', value: incomeData.standard_savings, color: 'bg-cyan-50 border-cyan-100', text: 'text-cyan-700', sub: 'Regular savings collected through invoice' },
+      { key: 'penalty_due', label: 'Penalty Collected', value: incomeData.penalty_due, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Invoice payments and loan deductions' },
+      { key: 'annual_dues', label: 'Annual Due', value: incomeData.annual_dues, color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
+      { key: 'cbu_completion', label: 'CBU Completion', value: incomeData.cbu_completion, color: 'bg-teal-50 border-teal-100', text: 'text-teal-700', sub: 'CBU completion deductions' },
+      { key: 'petty_cash', label: 'Petty Cash', value: incomeData.petty_cash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Petty cash deductions' },
+      ...(incomeData.custom_charges || []).map(charge => ({ key: 'custom:' + charge.key, label: charge.label, value: charge.amount, color: 'bg-gray-50 border-gray-200', text: 'text-gray-700', sub: 'Other loan charge' })),
+      { key: 'membership_fee', label: 'Membership/Admin & Regulatory Fees', value: Number(incomeData.membership_fee || 0) + Number(incomeData.admin_regulatory_fees || 0), color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Old membership fees and new admin fees' },
+      { key: 'vip_card', label: 'WELLife VIP Card', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'VIP card collections' },
+    ];
+  }, [incomeData]);
+
+  const normalizeDetailRows = useCallback((rows = []) => {
+    return rows.map(row => {
+      const memberParts = splitMemberDisplay(row.member_name || row.member || '', row.member_no || '');
+      return {
+        id: row.id,
+        date: preferredTransactionDate(row),
+        member_name: memberParts.member_name,
+        member_no: memberParts.member_no,
+        amount: Number(row.amount || 0),
+        source: row.source || CATEGORY_LABEL[row.category] || row.category || row.type || '',
+        type: row.type || '',
+        reference: cleanDisplayReference(row.reference, row.ref_no, row.loan_no, row.si_no, row.invoice_no),
+        encoded_by: row.encoded_by || row.created_by || '',
+        notes: row.notes || row.description || row.note || '',
+      };
+    });
+  }, []);
+
+  const selectedIncome = selectedIncomeCard
+    ? incomeCards.find(card => card.key === selectedIncomeCard)
+    : null;
+  const selectedIncomeRows = selectedIncomeCard
+    ? normalizeDetailRows(incomeData?.details?.[selectedIncomeCard] || [])
+    : [];
+  const selectedIncomeTotal = selectedIncomeRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+  const fundDetailCards = useMemo(() => {
+    const boosterRows = dateFilteredTransactions.filter(tx => tx.category === 'savings_booster');
+    const details = [
+      {
+        key: 'current_fund_balance',
+        label: 'Current Fund Balance',
+        value: scopedFund.balance,
+        rows: dateFilteredTransactions,
+        description: hasDateFilter ? 'Selected period: Cash In minus Cash Out' : 'All fund movement: Cash In minus Cash Out',
+      },
+      {
+        key: 'loan_payment',
+        label: 'Loan Payment',
+        value: loanPaymentTotal,
+        rows: loanPaymentRows,
+        description: 'Loan principal collections',
+      },
+      {
+        key: 'loan_interest',
+        label: 'Loan Interest',
+        value: incomeData?.loan_interest || 0,
+        rows: incomeData?.details?.loan_interest || [],
+        description: 'Interest collected from loan payments',
+      },
+      {
+        key: 'loan_release',
+        label: 'Loan Release',
+        value: loanReleaseTotal,
+        rows: loanReleaseRows,
+        description: 'Released loan proceeds',
+      },
+      {
+        key: 'total_expense',
+        label: 'Total Expense',
+        value: totalExpenseAmount,
+        rows: expenseRows,
+        description: 'Recorded operating expense transactions',
+      },
+      {
+        key: 'booster_initial',
+        label: 'Savings Booster - Initial Savings',
+        value: incomeData?.booster_collections?.initial || 0,
+        rows: boosterRows.filter(tx => /initial/i.test(`${tx.description || ''} ${tx.notes || ''} ${tx.raw_category || ''}`)),
+        description: 'Savings Booster initial collections',
+      },
+      {
+        key: 'booster_weekly',
+        label: 'Savings Booster - Weekly Savings',
+        value: incomeData?.booster_collections?.weekly || 0,
+        rows: boosterRows.filter(tx => /weekly/i.test(`${tx.description || ''} ${tx.notes || ''} ${tx.raw_category || ''}`)),
+        description: 'Savings Booster weekly collections',
+      },
+      {
+        key: 'booster_total',
+        label: 'Savings Booster - Total Collected',
+        value: incomeData?.booster_collections?.total || 0,
+        rows: boosterRows,
+        description: 'All Savings Booster collections',
+      },
+      {
+        key: 'expense_loan_releases',
+        label: 'Loan Releases',
+        value: expenseMonitoring.loanReleases,
+        rows: loanReleaseRows,
+        description: 'Released loan net proceeds',
+      },
+      ...expenseMonitoring.cards.map(card => ({
+        ...card,
+        key: card.detailKey,
+        rows: expenseRows.filter(tx => tx.category === card.category),
+        description: card.sub || 'Recorded expense category',
+      })),
+    ];
+    return details.map(card => ({ ...card, rows: normalizeDetailRows(card.rows) }));
+  }, [
+    dateFilteredTransactions,
+    scopedFund.balance,
+    hasDateFilter,
+    loanPaymentTotal,
+    loanPaymentRows,
+    incomeData,
+    loanReleaseTotal,
+    loanReleaseRows,
+    totalExpenseAmount,
+    expenseRows,
+    expenseMonitoring,
+    normalizeDetailRows,
+  ]);
+
+  const selectedFundDetail = selectedFundCard
+    ? fundDetailCards.find(card => card.key === selectedFundCard)
+    : null;
+  const selectedFundRows = selectedFundDetail?.rows || [];
+  const selectedFundRowsTotal = selectedFundRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+  const isCurrentFundBalanceModal = selectedFundDetail?.key === 'current_fund_balance';
+  const selectedFundCashInTotal = selectedFundRows
+    .filter(row => String(row.type || '').toLowerCase() === 'cash_in')
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const selectedFundCashOutTotal = selectedFundRows
+    .filter(row => String(row.type || '').toLowerCase() === 'cash_out')
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const selectedFundNetTotal = selectedFundCashInTotal - selectedFundCashOutTotal;
+
+  useEffect(() => {
+    if (!selectedIncome && !selectedFundDetail) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedIncome, selectedFundDetail]);
+
   const expenseMonitoringRows = useMemo(() => [
     ['Loan Releases', expenseMonitoring.loanReleases || 0],
     ...expenseMonitoring.cards.map(card => [card.label, card.value || 0]),
@@ -1546,6 +1934,7 @@ export default function CoopMonitoringPage() {
               bg="bg-emerald-50"
               textColor={scopedFund.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}
               accentColor={scopedFund.balance >= 0 ? 'bg-emerald-400' : 'bg-red-400'}
+              onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard('current_fund_balance'); }}
             />
             <StatCard
               icon={<ArrowUpRight size={22} className="text-orange-600" />}
@@ -1555,6 +1944,7 @@ export default function CoopMonitoringPage() {
               bg="bg-orange-50"
               textColor="text-orange-700"
               accentColor="bg-orange-400"
+              onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard('loan_payment'); }}
             />
             <StatCard
               icon={<TrendingUp size={22} className="text-green-600" />}
@@ -1564,6 +1954,7 @@ export default function CoopMonitoringPage() {
               bg="bg-green-50"
               textColor="text-green-700"
               accentColor="bg-green-400"
+              onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard('loan_interest'); }}
             />
             <StatCard
               icon={<TrendingDown size={22} className="text-red-500" />}
@@ -1573,6 +1964,7 @@ export default function CoopMonitoringPage() {
               bg="bg-red-50"
               textColor="text-red-600"
               accentColor="bg-red-400"
+              onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard('loan_release'); }}
             />
             <StatCard
               icon={<ArrowDownRight size={22} className="text-slate-600" />}
@@ -1582,6 +1974,7 @@ export default function CoopMonitoringPage() {
               bg="bg-slate-50"
               textColor="text-slate-700"
               accentColor="bg-slate-400"
+              onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard('total_expense'); }}
             />
           </div>
 
@@ -1675,32 +2068,25 @@ export default function CoopMonitoringPage() {
                   </div>
 
                   {/* Income cards grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {[
-                      { label: 'Service Fee', value: incomeData.service_fee, color: 'bg-orange-50 border-orange-100', text: 'text-orange-700', sub: 'Processing fees collected' },
-                      { label: 'CBU Retention', value: incomeData.cbu_retention, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Capital build-up deductions' },
-                      { label: 'Membership CBU', value: incomeData.membership_cbu, color: 'bg-green-50 border-green-100', text: 'text-green-700', sub: 'Initial CBU from membership payments' },
-                      { label: 'Standard CBU', value: incomeData.standard_cbu, color: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-700', sub: 'Regular CBU collected through invoice' },
-                      { label: 'Legal Fees', value: incomeData.legal_fees, color: 'bg-slate-50 border-slate-100', text: 'text-slate-700', sub: 'Legal and notarial deductions' },
-                      { label: 'CLPI/Insurance', value: incomeData.clpi_insurance, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Loan protection and insurance' },
-                      { label: 'Regular Savings', value: incomeData.regular_savings, color: 'bg-blue-50 border-blue-100', text: 'text-blue-700', sub: 'Savings deductions' },
-                      { label: 'Membership Savings', value: incomeData.membership_savings, color: 'bg-sky-50 border-sky-100', text: 'text-sky-700', sub: 'Initial savings from membership payments' },
-                      { label: 'Standard Savings', value: incomeData.standard_savings, color: 'bg-cyan-50 border-cyan-100', text: 'text-cyan-700', sub: 'Regular savings collected through invoice' },
-                      { label: 'Penalty Collected', value: incomeData.penalty_due, color: 'bg-amber-50 border-amber-100', text: 'text-amber-700', sub: 'Invoice payments and loan deductions' },
-                      { label: 'Annual Due', value: incomeData.annual_dues, color: 'bg-purple-50 border-purple-100', text: 'text-purple-700', sub: 'Yearly membership dues' },
-                      { label: 'CBU Completion', value: incomeData.cbu_completion, color: 'bg-teal-50 border-teal-100', text: 'text-teal-700', sub: 'CBU completion deductions' },
-                      { label: 'Petty Cash', value: incomeData.petty_cash, color: 'bg-lime-50 border-lime-100', text: 'text-lime-700', sub: 'Petty cash deductions' },
-                      ...(incomeData.custom_charges || []).map(charge => ({ key: 'custom:' + charge.key, label: charge.label, value: charge.amount, color: 'bg-gray-50 border-gray-200', text: 'text-gray-700', sub: '' })),
-                      { label: 'Membership/Admin & Regulatory Fees', value: Number(incomeData.membership_fee || 0) + Number(incomeData.admin_regulatory_fees || 0), color: 'bg-violet-50 border-violet-100', text: 'text-violet-700', sub: 'Old membership fees and new admin fees' },
-                      { label: 'WELLife VIP Card', value: incomeData.vip_card, color: 'bg-pink-50 border-pink-100', text: 'text-pink-700', sub: 'VIP card collections' },
-                    ].map(card => (
-                      <div key={card.key || card.label} className={`min-w-0 rounded-xl border p-4 ${card.color}`}>
-                        <p className={`text-[10px] break-words [overflow-wrap:anywhere] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
-                        <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {incomeCards.map(card => {
+                      const active = selectedIncomeCard === card.key;
+                      return (
+                        <button
+                          key={card.key || card.label}
+                          type="button"
+                          onClick={() => { setSelectedFundCard(null); setSelectedIncomeCard(card.key); }}
+                          className={`min-w-0 rounded-xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${card.color} ${active ? 'ring-2 ring-[#07A04E] shadow-md' : ''}`}
+                        >
+                          <p className={`text-[10px] break-words [overflow-wrap:anywhere] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
+                          <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
+                          <p className="text-[10px] text-gray-400 mt-2">Click to view transactions</p>
+                        </button>
+                      );
+                    })}
                   </div>
+
                 </>
               ) : (
                 <p className="text-sm text-gray-400 text-center py-8">No income data available.</p>
@@ -1716,10 +2102,18 @@ export default function CoopMonitoringPage() {
                 { key: 'initial', label: 'Initial Savings', style: 'bg-blue-50 border-blue-100 text-blue-700' },
                 { key: 'weekly', label: 'Weekly Savings', style: 'bg-teal-50 border-teal-100 text-teal-700' },
                 { key: 'total', label: 'Total Collected', style: 'bg-emerald-50 border-emerald-100 text-emerald-700' },
-              ].map(card => <div key={card.key} className={`min-w-0 rounded-lg border p-4 ${card.style}`}>
-                <p className="text-xs font-semibold">{card.label}</p>
-                <p className="mt-1 text-lg font-bold break-words">{incomeLoading ? 'Loading...' : incomeError || !incomeData ? 'Unavailable' : formatCurrency(incomeData.booster_collections?.[card.key] || 0)}</p>
-              </div>)}
+              ].map(card => (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard(`booster_${card.key}`); }}
+                  className={`min-w-0 rounded-lg border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${card.style}`}
+                >
+                  <p className="text-xs font-semibold">{card.label}</p>
+                  <p className="mt-1 text-lg font-bold break-words">{incomeLoading ? 'Loading...' : incomeError || !incomeData ? 'Unavailable' : formatCurrency(incomeData.booster_collections?.[card.key] || 0)}</p>
+                  <p className="text-[10px] text-gray-400 mt-2">Click to view transactions</p>
+                </button>
+              ))}
             </div>
           </section>
 
@@ -1749,14 +2143,20 @@ export default function CoopMonitoringPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {[
-                  { label: 'Loan Releases', value: expenseMonitoring.loanReleases, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Released loan net proceeds' },
+                  { key: 'expense_loan_releases', detailKey: 'expense_loan_releases', label: 'Loan Releases', value: expenseMonitoring.loanReleases, color: 'bg-red-50 border-red-100', text: 'text-red-700', sub: 'Released loan net proceeds' },
                   ...expenseMonitoring.cards,
                 ].map(card => (
-                  <div key={card.key || card.label} className={`min-w-0 rounded-xl border p-4 ${card.color}`}>
+                  <button
+                    key={card.key || card.label}
+                    type="button"
+                    onClick={() => { setSelectedIncomeCard(null); setSelectedFundCard(card.detailKey || card.key); }}
+                    className={`min-w-0 rounded-xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${card.color}`}
+                  >
                     <p className={`text-[10px] break-words [overflow-wrap:anywhere] font-semibold uppercase tracking-wide ${card.text}`}>{card.label}</p>
                     <p className={`text-lg font-bold mt-1 ${card.text}`}>{formatCurrency(card.value)}</p>
                     <p className="text-[10px] text-gray-400 mt-0.5">{card.sub}</p>
-                  </div>
+                    <p className="text-[10px] text-gray-400 mt-2">Click to view transactions</p>
+                  </button>
                 ))}
               </div>
             </div>
@@ -1786,7 +2186,7 @@ export default function CoopMonitoringPage() {
 
             {hasFilters && (
               <button
-                onClick={() => { setTypeFilter(''); setCatFilter(''); setIncomePeriod('all'); setDateRange({ from: '', to: '' }); }}
+                onClick={() => { setTypeFilter(''); setCatFilter(''); setIncomePeriod('all'); setDateRange({ from: '', to: '' }); setSelectedFundCard(null); setSelectedIncomeCard(null); }}
                 className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
               >
                 Clear all filters
@@ -1842,20 +2242,37 @@ export default function CoopMonitoringPage() {
                       </td>
                     </tr>
                   ) : (
-                    visibleTransactions.map(tx => <TxRow key={tx.id} tx={tx} />)
+                    visibleTransactions.map(tx => <TxRow key={tx.id} tx={tx} onOpen={openFundTransaction} />)
                   )}
                 </tbody>
               </table>
             </div>
 
             {filtered.length > 0 && (
-              <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between">
-                <p className="text-xs text-gray-400">
-                  Showing <span className="font-medium text-gray-600">{visibleTransactions.length}</span> of{' '}
-                  <span className="font-medium text-gray-600">{filtered.length}</span> filtered /{' '}
-                  <span className="font-medium text-gray-600">{dateFilteredTransactions.length}</span> transactions
-                </p>
-                <div className="flex items-center gap-4 text-xs">
+              <div className="px-5 py-3 border-t border-gray-50 bg-gray-50/50 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+                  <span>
+                    Showing <span className="font-medium text-gray-600">{((transactionsPage - 1) * transactionsPerPage) + 1}</span>
+                    {' '}–{' '}
+                    <span className="font-medium text-gray-600">{Math.min(transactionsPage * transactionsPerPage, filtered.length)}</span>
+                    {' '}of <span className="font-medium text-gray-600">{filtered.length}</span> filtered /{' '}
+                    <span className="font-medium text-gray-600">{dateFilteredTransactions.length}</span> transactions
+                  </span>
+                  <label className="inline-flex items-center gap-2">
+                    Rows:
+                    <select
+                      value={transactionsPerPage}
+                      onChange={e => setTransactionsPerPage(Number(e.target.value))}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#07A04E]"
+                    >
+                      {[10, 20, 30].map(size => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 text-xs">
                   <span className="text-green-700 font-medium tabular-nums">
                     In: {formatCurrency(
                       filtered.filter(tx => tx.type === 'cash_in').reduce((s, tx) => s + tx.amount, 0)
@@ -1866,11 +2283,225 @@ export default function CoopMonitoringPage() {
                       filtered.filter(tx => tx.type === 'cash_out').reduce((s, tx) => s + tx.amount, 0)
                     )}
                   </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTransactionsPage(page => Math.max(1, page - 1))}
+                      disabled={transactionsPage <= 1}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-gray-400">
+                      Page <span className="font-medium text-gray-600">{transactionsPage}</span> of{' '}
+                      <span className="font-medium text-gray-600">{totalTransactionPages}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTransactionsPage(page => Math.min(totalTransactionPages, page + 1))}
+                      disabled={transactionsPage >= totalTransactionPages}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
           </div>
         </>
+      )}
+
+      {selectedIncome && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
+            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-100 bg-white">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Income Transactions</p>
+                <h3 className="text-lg font-bold text-gray-900">{selectedIncome.label}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedIncomeRows.length} transaction{selectedIncomeRows.length !== 1 ? 's' : ''} found in the selected period.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedIncomeCard(null)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-500 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(90vh-82px)]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-600 font-semibold">Card Total</p>
+                  <p className="text-xl font-bold text-emerald-800 mt-1">{formatCurrency(selectedIncome.value)}</p>
+                </div>
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-4">
+                  <p className="text-[11px] uppercase tracking-wide text-blue-600 font-semibold">Listed Total</p>
+                  <p className="text-xl font-bold text-blue-800 mt-1">{formatCurrency(selectedIncomeTotal)}</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">Transactions</p>
+                  <p className="text-xl font-bold text-gray-800 mt-1">{selectedIncomeRows.length}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto max-h-[58vh]">
+                  {selectedIncomeRows.length === 0 ? (
+                    <p className="px-4 py-8 text-sm text-gray-400 text-center">
+                      No transaction rows found for this card in the selected period.
+                    </p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                        <tr>
+                          {['Date', 'Member', 'Member No.', 'Amount', 'Source', 'Reference', 'Encoded By', 'Notes'].map(header => (
+                            <th key={header} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 bg-white">
+                        {selectedIncomeRows.map((row, index) => (
+                          <tr key={`${row.id || row.reference || row.source}-${index}`} className="hover:bg-gray-50/70">
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-600">{row.date ? formatDate(row.date) : '-'}</td>
+                            <td className="px-4 py-3 text-gray-700 font-medium">{row.member_name || '-'}</td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.member_no || '-'}</td>
+                            <td className="px-4 py-3 text-gray-900 font-semibold whitespace-nowrap">{formatCurrency(row.amount)}</td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.source || selectedIncome.label}</td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.reference || row.loan_no || '-'}</td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.encoded_by || '-'}</td>
+                            <td className="px-4 py-3 text-gray-500 min-w-[240px]">{row.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+
+      {selectedFundDetail && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-gray-200">
+            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-100 bg-white">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Fund Transactions</p>
+                <h3 className="text-lg font-bold text-gray-900">{selectedFundDetail.label}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedFundRows.length} transaction{selectedFundRows.length !== 1 ? 's' : ''} found. {selectedFundDetail.description || ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedFundCard(null)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-500 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto max-h-[calc(90vh-82px)]">
+              {isCurrentFundBalanceModal ? (
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-emerald-600 font-semibold">Cash In</p>
+                    <p className="text-xl font-bold text-emerald-800 mt-1">{formatCurrency(selectedFundCashInTotal)}</p>
+                  </div>
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-red-600 font-semibold">Cash Out</p>
+                    <p className="text-xl font-bold text-red-700 mt-1">{formatCurrency(selectedFundCashOutTotal)}</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">Net Balance</p>
+                    <p className={`text-xl font-bold mt-1 ${selectedFundNetTotal >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {formatCurrency(selectedFundNetTotal)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">Transactions</p>
+                    <p className="text-xl font-bold text-gray-800 mt-1">{selectedFundRows.length}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-emerald-600 font-semibold">Card Total</p>
+                    <p className="text-xl font-bold text-emerald-800 mt-1">{formatCurrency(selectedFundDetail.value)}</p>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-blue-600 font-semibold">Listed Total</p>
+                    <p className="text-xl font-bold text-blue-800 mt-1">{formatCurrency(selectedFundRowsTotal)}</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold">Transactions</p>
+                    <p className="text-xl font-bold text-gray-800 mt-1">{selectedFundRows.length}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto max-h-[58vh]">
+                  {selectedFundRows.length === 0 ? (
+                    <p className="px-4 py-8 text-sm text-gray-400 text-center">
+                      No transaction rows found for this card in the selected period.
+                    </p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                        <tr>
+                          {['Date', 'Member', 'Member No.', 'Amount', 'Source', 'Reference', 'Encoded By', 'Notes'].map(header => (
+                            <th key={header} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 bg-white">
+                        {selectedFundRows.map((row, index) => (
+                          <tr key={`${row.id || row.reference || row.source}-${index}`} className="hover:bg-gray-50/70">
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-600">{row.date ? formatDate(row.date) : '-'}</td>
+                            <td className="px-4 py-3 text-gray-700 font-medium">{row.member_name || '-'}</td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.member_no || '-'}</td>
+                            <td className={`px-4 py-3 font-semibold whitespace-nowrap ${
+                              isCurrentFundBalanceModal
+                                ? String(row.type || '').toLowerCase() === 'cash_out'
+                                  ? 'text-red-700'
+                                  : 'text-emerald-700'
+                                : 'text-gray-900'
+                            }`}>
+                              {isCurrentFundBalanceModal
+                                ? `${String(row.type || '').toLowerCase() === 'cash_out' ? '-' : '+'}${formatCurrency(row.amount)}`
+                                : formatCurrency(row.amount)}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                              {isCurrentFundBalanceModal
+                                ? String(row.type || '').toLowerCase() === 'cash_out' ? 'Cash Out' : 'Cash In'
+                                : row.source || selectedFundDetail.label}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.reference || '-'}</td>
+                            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{row.encoded_by || '-'}</td>
+                            <td className="px-4 py-3 text-gray-500 min-w-[240px]">{row.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Add Fund Modal ── */}

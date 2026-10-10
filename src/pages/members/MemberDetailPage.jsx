@@ -343,7 +343,7 @@ export default function MemberDetailPage() {
   const activeLoans = loans.filter(isCurrentLoan);
   const totalCurrentLoanAmount = activeLoans.reduce((sum, loan) => sum + Number(loan.amount || 0), 0);
   const totalCurrentLoanBalance = activeLoans.reduce(
-    (sum, loan) => sum + getLoanOutstandingComponents(loan).principal,
+    (sum, loan) => sum + getLoanOutstandingComponents(loan).total,
     0,
   );
   const totalTimeDepositAmount = memberTimeDeposits.reduce((sum, td) => sum + Number(td.amount || 0), 0);
@@ -445,6 +445,7 @@ export default function MemberDetailPage() {
     const totals = {
       membershipCbu: 0,
       cbuCompletion: 0,
+      cbuRetention: 0,
       standardCbu: 0,
       membershipSavings: 0,
       standardSavings: 0,
@@ -485,6 +486,10 @@ export default function MemberDetailPage() {
         totals.cbuCompletion = Math.max(totals.cbuCompletion, Number(tx.amount || 0));
         return;
       }
+      if (/cbu\s*retention|share\s*capital|capital\s*build|loan\s+deduction/i.test(text)) {
+        totals.cbuRetention += Number(tx.amount || 0);
+        return;
+      }
       if (!isMembershipRelated(text)) {
         totals.standardCbu += Number(tx.amount || 0);
       }
@@ -512,6 +517,7 @@ export default function MemberDetailPage() {
   const memberSourceCards = [
     { label: 'Membership CBU', value: memberSourceTotals.membershipCbu, hint: 'Membership setup/payment' },
     { label: 'CBU Completion', value: memberSourceTotals.cbuCompletion, hint: 'Regular membership completion' },
+    { label: 'CBU Retention', value: memberSourceTotals.cbuRetention, hint: 'Loan deduction retention' },
     { label: 'Standard CBU', value: memberSourceTotals.standardCbu, hint: 'Collected through invoice' },
     { label: 'Membership Savings', value: memberSourceTotals.membershipSavings, hint: 'Membership setup/payment' },
     { label: 'Standard Savings', value: memberSourceTotals.standardSavings, hint: 'Collected through invoice' },
@@ -682,6 +688,7 @@ export default function MemberDetailPage() {
                     <p className="text-sm font-bold text-orange-700 tabular-nums">
                       {formatCurrency(totalCurrentLoanBalance)}
                     </p>
+                    <p className="text-[10px] text-gray-400">Loan amount + interest - payments</p>
                   </div>
                 </div>
               )}
@@ -701,7 +708,7 @@ export default function MemberDetailPage() {
                   <Wallet size={15} className="text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-medium text-blue-500 uppercase tracking-wider">Savings</p>
+                  <p className="text-[10px] font-medium text-blue-500 uppercase tracking-wider">Savings Total</p>
                   <p className="text-sm font-bold text-blue-700 tabular-nums">{formatCurrency(savingsDisplayBalance)}</p>
                 </div>
               </div>
@@ -2902,6 +2909,7 @@ function MembershipTab({
     const totals = {
       membershipCbu: 0,
       cbuCompletion: 0,
+      cbuRetention: 0,
       standardCbu: 0,
       membershipSavings: 0,
       standardSavings: 0,
