@@ -39,6 +39,7 @@ import {
 import { formatCurrency, formatDate, formatAmountInput, cleanAmountInput } from '../../utils/formatters';
 import { printHtmlDocument, wrapWithLetterhead } from '../../utils/print';
 import { OTHER_CHARGE_CATEGORIES, otherChargeCategory } from '../../utils/otherCharges';
+import { getMembershipByMemberId } from '../../services/membershipService';
 
 const STATUS_OPTS = [
   { value: 'active', label: 'Active' },
@@ -235,10 +236,10 @@ const MEMBERSHIP_DEDUCTION_PRESETS = {
     label: 'New Associate',
     record_type: 'new',
     membership_type: 'associate',
-    membership_fee: 400,
+    membership_fee: 100,
     cbu: 500,
     savings: 0,
-    wellife_vip: 0,
+    wellife_vip: 300,
     other_fee: 0,
     other_label: '',
   },
@@ -246,27 +247,102 @@ const MEMBERSHIP_DEDUCTION_PRESETS = {
     label: 'New Regular',
     record_type: 'new',
     membership_type: 'regular',
-    membership_fee: 1400,
+    membership_fee: 100,
     cbu: 4000,
     savings: 500,
-    wellife_vip: 0,
-    other_fee: 0,
-    other_label: '',
+    wellife_vip: 300,
+    other_fee: 1000,
+    other_label: 'Admin & Regulatory Fees',
   },
 };
+
+const MEMBERSHIP_DEDUCTION_KEYS = ['membership_fee', 'wellife_vip', 'cbu', 'savings', 'other_fee'];
 
 const emptyMembershipDeduction = {
   enabled: false,
   preset: 'new_regular',
   record_type: 'new',
   membership_type: 'regular',
-  membership_fee: '1400',
+  membership_fee: '100',
   cbu: '4000',
   savings: '500',
-  wellife_vip: '',
-  other_fee: '',
-  other_label: '',
+  wellife_vip: '300',
+  other_fee: '1000',
+  other_label: 'Admin & Regulatory Fees',
 };
+
+function membershipPresetTotal(preset) {
+  return MEMBERSHIP_DEDUCTION_KEYS.reduce((sum, key) => sum + round2(preset?.[key] || 0), 0);
+}
+
+function membershipPresetKey(recordType, membershipType) {
+  const safeRecordType = String(recordType || 'new').toLowerCase() === 'old' ? 'old' : 'new';
+  const safeMembershipType = String(membershipType || 'regular').toLowerCase() === 'associate' ? 'associate' : 'regular';
+  return `${safeRecordType}_${safeMembershipType}`;
+}
+
+function inferMembershipRecordType(member, membership) {
+  const direct = String(member?.record_type || membership?.record_type || '').toLowerCase();
+  if (direct === 'old' || direct === 'new') return direct;
+
+  const required = round2(membership?.fee_required || 0);
+  if ([1800, 6800].includes(required)) return 'old';
+  if ([900, 5900].includes(required)) return 'new';
+  return 'new';
+}
+
+function allocatePaidToMembershipBreakdown(paidAmount, preset) {
+  let remainingPaid = round2(paidAmount || 0);
+  const paid = Object.fromEntries(MEMBERSHIP_DEDUCTION_KEYS.map(key => [key, 0]));
+
+  MEMBERSHIP_DEDUCTION_KEYS.forEach(key => {
+    const required = round2(preset?.[key] || 0);
+    const applied = Math.min(required, remainingPaid);
+    paid[key] = round2(applied);
+    remainingPaid = round2(remainingPaid - applied);
+  });
+
+  return paid;
+}
+
+function calculateMembershipDeductionBalance({ member, membership, targetPresetKey = 'new_regular' }) {
+  const targetPreset = MEMBERSHIP_DEDUCTION_PRESETS[targetPresetKey] || MEMBERSHIP_DEDUCTION_PRESETS.new_regular;
+  const recordType = targetPreset.record_type || inferMembershipRecordType(member, membership);
+  const currentMembershipType = String(membership?.membership_type || member?.membership_type || 'associate').toLowerCase();
+  const currentPreset = MEMBERSHIP_DEDUCTION_PRESETS[membershipPresetKey(recordType, currentMembershipType)]
+    || MEMBERSHIP_DEDUCTION_PRESETS[membershipPresetKey(recordType, 'associate')]
+    || targetPreset;
+  const feePaid = round2(membership?.fee_paid || 0);
+  const paidBreakdown = allocatePaidToMembershipBreakdown(feePaid, currentPreset);
+  const balance = Object.fromEntries(MEMBERSHIP_DEDUCTION_KEYS.map(key => [
+    key,
+    round2(Math.max(0, round2(targetPreset[key] || 0) - round2(paidBreakdown[key] || 0))),
+  ]));
+
+  return {
+    ...targetPreset,
+    ...balance,
+    preset: targetPresetKey,
+    total_required: membershipPresetTotal(targetPreset),
+    already_paid: feePaid,
+    balance_due: MEMBERSHIP_DEDUCTION_KEYS.reduce((sum, key) => round2(sum + balance[key]), 0),
+  };
+}
+
+function buildMembershipDeductionState(balance, enabled = true) {
+  return {
+    enabled,
+    preset: balance.preset || 'custom',
+    record_type: balance.record_type || 'new',
+    membership_type: balance.membership_type || 'regular',
+    membership_fee: balance.membership_fee ? String(balance.membership_fee) : '',
+    cbu: balance.cbu ? String(balance.cbu) : '',
+    savings: balance.savings ? String(balance.savings) : '',
+    wellife_vip: balance.wellife_vip ? String(balance.wellife_vip) : '',
+    other_fee: balance.other_fee ? String(balance.other_fee) : '',
+    other_label: balance.other_label || '',
+  };
+}
 
 function normalizeMembershipDeduction(value) {
   if (!value?.enabled) return null;
@@ -431,6 +507,7 @@ export default function LoanFormPage() {
   });
   const [otherCharges, setOtherCharges] = useState([]); // [{ id, label, amount, included }]
   const [membershipDeduction, setMembershipDeduction] = useState(emptyMembershipDeduction);
+  const [memberMembership, setMemberMembership] = useState(null);
 
   // Associate → Regular membership upgrade bundle: on = all three membership
   // charges (Regulatory Fee, Initial Savings, VIP Card) are included together.
@@ -493,18 +570,29 @@ export default function LoanFormPage() {
       return;
     }
 
+    const balance = calculateMembershipDeductionBalance({
+      member: selectedMember,
+      membership: memberMembership,
+      targetPresetKey: presetKey,
+    });
+
     setMembershipDeduction(prev => ({
       ...prev,
-      enabled: true,
-      preset: presetKey,
-      record_type: preset.record_type,
-      membership_type: preset.membership_type,
-      membership_fee: String(preset.membership_fee),
-      cbu: String(preset.cbu),
-      savings: String(preset.savings),
-      wellife_vip: preset.wellife_vip ? String(preset.wellife_vip) : '',
-      other_fee: preset.other_fee ? String(preset.other_fee) : '',
-      other_label: preset.other_label || '',
+      ...buildMembershipDeductionState(balance, true),
+    }));
+  }
+
+  function applyRecommendedMembershipDeduction() {
+    const recordType = inferMembershipRecordType(selectedMember, memberMembership);
+    const balance = calculateMembershipDeductionBalance({
+      member: selectedMember,
+      membership: memberMembership,
+      targetPresetKey: membershipPresetKey(recordType, 'regular'),
+    });
+
+    setMembershipDeduction(prev => ({
+      ...prev,
+      ...buildMembershipDeductionState(balance, true),
     }));
   }
 
@@ -756,6 +844,18 @@ export default function LoanFormPage() {
   const insuranceMonths = chargeTypeMode.insurance === 'standard'
     ? 12
     : (parseInt(watchedTerm || 0, 10) || 0);
+
+  const recommendedMembershipDeduction = useMemo(() => {
+    const recordType = inferMembershipRecordType(selectedMember, memberMembership);
+    return calculateMembershipDeductionBalance({
+      member: selectedMember,
+      membership: memberMembership,
+      targetPresetKey: membershipPresetKey(recordType, 'regular'),
+    });
+  }, [selectedMember, memberMembership]);
+
+  const membershipDeductionAlreadyPaid = round2(recommendedMembershipDeduction.already_paid || 0);
+  const membershipDeductionBalanceDue = round2(recommendedMembershipDeduction.balance_due || 0);
 
   const chargeRows = useMemo(() => {
     const rows = [
@@ -1279,6 +1379,23 @@ export default function LoanFormPage() {
         cbuBalance: 0,
         savingsBalance: 0,
       });
+    }
+
+    try {
+      const membership = await getMembershipByMemberId(member.id);
+      setMemberMembership(membership);
+      setMembershipDeduction(prev => {
+        if (!prev.enabled) return prev;
+        const recordType = inferMembershipRecordType(member, membership);
+        const balance = calculateMembershipDeductionBalance({
+          member,
+          membership,
+          targetPresetKey: membershipPresetKey(recordType, prev.membership_type || 'regular'),
+        });
+        return { ...prev, ...buildMembershipDeductionState(balance, true) };
+      });
+    } catch {
+      setMemberMembership(null);
     }
   }
 
@@ -2068,7 +2185,13 @@ export default function LoanFormPage() {
                 type="button"
                 variant={membershipDeduction.enabled ? 'primary' : 'outline'}
                 size="sm"
-                onClick={() => setMembershipDeduction(prev => ({ ...prev, enabled: !prev.enabled }))}
+                onClick={() => {
+                  if (membershipDeduction.enabled) {
+                    setMembershipDeduction(prev => ({ ...prev, enabled: false }));
+                  } else {
+                    applyRecommendedMembershipDeduction();
+                  }
+                }}
                 icon={<Check size={13} />}
               >
                 {membershipDeduction.enabled ? 'Membership Deduction Added' : 'Add Membership Deduction'}
@@ -2108,7 +2231,10 @@ export default function LoanFormPage() {
                 <div>
                   <p className="text-xs text-emerald-800 font-semibold">Membership Deduction From Loan Proceeds</p>
                   <p className="text-[11px] text-emerald-700 mt-1">
-                    Choose a preset, then edit any amount needed for this member before saving the loan.
+                    This shows only the unpaid amount needed for Regular / full-fledged membership. You may still edit the amounts before saving.
+                  </p>
+                  <p className="text-[11px] text-emerald-700 mt-1">
+                    Paid membership recorded: <strong>{formatCurrency(membershipDeductionAlreadyPaid)}</strong> · Balance to complete: <strong>{formatCurrency(membershipDeductionBalanceDue)}</strong>
                   </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 lg:w-[560px]">
@@ -2127,7 +2253,7 @@ export default function LoanFormPage() {
                   <Select
                     label="Record Type"
                     value={membershipDeduction.record_type}
-                    onChange={e => updateMembershipDeduction({ record_type: e.target.value })}
+                    onChange={e => applyMembershipDeductionPreset(membershipPresetKey(e.target.value, membershipDeduction.membership_type))}
                     options={[
                       { value: 'old', label: 'Old Membership' },
                       { value: 'new', label: 'New Membership' },
@@ -2136,7 +2262,7 @@ export default function LoanFormPage() {
                   <Select
                     label="Membership Type"
                     value={membershipDeduction.membership_type}
-                    onChange={e => updateMembershipDeduction({ membership_type: e.target.value })}
+                    onChange={e => applyMembershipDeductionPreset(membershipPresetKey(membershipDeduction.record_type, e.target.value))}
                     options={[
                       { value: 'associate', label: 'Associate' },
                       { value: 'regular', label: 'Regular' },

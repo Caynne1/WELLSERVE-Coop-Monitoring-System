@@ -132,14 +132,14 @@ export default function LoanScheduleTable({
           <table className={`w-full ${textSize} tabular-nums`}>
             <thead>
               <tr className="bg-[#07A04E] text-white">
-                <th className={`${headerPad} text-left font-semibold whitespace-nowrap`}>No.</th>
-                <th className={`${headerPad} text-left font-semibold whitespace-nowrap`}>Due Date</th>
-                <th className={`${headerPad} text-right font-semibold`}>Remaining Principal</th>
-                <th className={`${headerPad} text-right font-semibold`}>Principal Payment</th>
-                <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Interest</th>
-                {showPaymentTracking && <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Actual Payment</th>}
-                {showPaymentTracking && <th className={`${headerPad} text-right font-semibold whitespace-nowrap`}>Remaining Due</th>}
-                <th className={`${headerPad} text-center font-semibold`}>Payment Status</th>
+                <th className={`${headerPad} !text-white text-left font-semibold whitespace-nowrap`}>No.</th>
+                <th className={`${headerPad} !text-white text-left font-semibold whitespace-nowrap`}>Due Date</th>
+                <th className={`${headerPad} !text-white text-right font-semibold`}>Remaining Principal</th>
+                <th className={`${headerPad} !text-white text-right font-semibold`}>Principal Payment</th>
+                <th className={`${headerPad} !text-white text-right font-semibold whitespace-nowrap`}>Interest</th>
+                {showPaymentTracking && <th className={`${headerPad} !text-white text-right font-semibold whitespace-nowrap`}>Actual Payment</th>}
+                {showPaymentTracking && <th className={`${headerPad} !text-white text-right font-semibold whitespace-nowrap`}>Remaining Due</th>}
+                <th className={`${headerPad} !text-white text-center font-semibold`}>Payment Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">

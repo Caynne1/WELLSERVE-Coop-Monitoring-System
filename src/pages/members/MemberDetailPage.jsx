@@ -98,10 +98,26 @@ function displaySiNumber(row) {
   return value;
 }
 
+function loanDeductionCategoryLabel(row) {
+  if (String(row?.type || '').toLowerCase() !== 'loan_deduction') return '';
+  const note = displayTracingText(row?.notes || '').split('|')[0].trim().replace(/^Loan deduction category:\s*/i, '');
+  if (note) return note;
+  const category = String(row?.category || '').replace(/_/g, ' ').trim();
+  return category ? category.replace(/\w/g, m => m.toUpperCase()) : '';
+}
+
+function transactionTypeLabel(row) {
+  if (String(row?.type || '').toLowerCase() === 'loan_deduction') {
+    const detail = loanDeductionCategoryLabel(row);
+    return detail ? `Loan Deduction - ${detail}` : 'Loan Deduction';
+  }
+  return String(row?.type || '').replace(/_/g, ' ') || '-';
+}
+
 function displayPaymentMode(row) {
   const mode = displayTracingText(row.payment_mode);
   if (mode.trim()) return mode;
-  return row.type === 'loan_deduction' ? 'Loan Deduction' : '';
+  return row.type === 'loan_deduction' ? transactionTypeLabel(row) : '';
 }
 
 function parseJSONSafe(val, fallback = {}) {
@@ -410,6 +426,98 @@ export default function MemberDetailPage() {
 
   const paymentHistoryRows = useMemo(() => loanPaymentHistoryRows(transactionsWithInvoiceDetails, loans), [transactionsWithInvoiceDetails, loans]);
 
+  const memberSourceTotals = useMemo(() => {
+    const toNumber = value => Number(String(value || '0').replace(/,/g, '')) || 0;
+    const isDeposit = tx => !String(tx.type || '').toLowerCase().includes('withdraw');
+    const isMembershipRelated = value => /membership|wellife|vip|loan deduction allocation|loan membership deduction|migration/i.test(String(value || ''));
+
+    const amountFromText = (text, labels) => {
+      const normalized = displayTracingText(text)
+        .replace(/â‚±/g, '₱')
+        .replace(/Â·/g, '•');
+      for (const label of labels) {
+        const match = normalized.match(new RegExp(`${label}\\s*:\\s*₱?\\s*([0-9,]+(?:\\.\\d+)?)`, 'i'));
+        if (match) return toNumber(match[1]);
+      }
+      return 0;
+    };
+
+    const totals = {
+      membershipCbu: 0,
+      cbuCompletion: 0,
+      standardCbu: 0,
+      membershipSavings: 0,
+      standardSavings: 0,
+      wellifeVip: 0,
+    };
+
+    (membershipPayments || []).forEach(payment => {
+      const notes = String(payment.notes || '');
+      const lowerNotes = notes.toLowerCase();
+      try {
+        const data = JSON.parse(notes || '{}');
+        if (typeof data === 'object' && data !== null) {
+          const isLoanMembershipDeduction = /loan\s+membership\s+deduction/i.test(String(data.text || ''));
+          if (isLoanMembershipDeduction) {
+            totals.cbuCompletion += toNumber(data.min_cbu) + toNumber(data.cbu_completion) + toNumber(data.cbu) + toNumber(data.cbu_assoc);
+            totals.membershipSavings += toNumber(data.savings) + toNumber(data.savings_deposit);
+          } else {
+            totals.membershipCbu += toNumber(data.cbu) + toNumber(data.cbu_assoc);
+            totals.cbuCompletion += toNumber(data.min_cbu) + toNumber(data.cbu_completion);
+            totals.membershipSavings += toNumber(data.savings) + toNumber(data.savings_deposit);
+          }
+          totals.wellifeVip += toNumber(data.vip_card) + toNumber(data.wellife_vip);
+          return;
+        }
+      } catch { /* plain text note */ }
+
+      if (/loan\s+membership\s+deduction/i.test(lowerNotes)) {
+        totals.cbuCompletion += amountFromText(notes, ['CBU Completion', 'Initial CBU', 'CBU']);
+        totals.membershipSavings += amountFromText(notes, ['Initial Savings', 'Savings']);
+        totals.wellifeVip += amountFromText(notes, ['WELLife VIP Card', 'VIP Card']);
+      }
+    });
+
+    cbuTransactions.forEach(tx => {
+      if (!isDeposit(tx)) return;
+      const text = `${tx.notes || ''} ${tx.reference || ''}`;
+      if (/loan\s+membership\s+deduction|cbu completion/i.test(text)) {
+        totals.cbuCompletion = Math.max(totals.cbuCompletion, Number(tx.amount || 0));
+        return;
+      }
+      if (!isMembershipRelated(text)) {
+        totals.standardCbu += Number(tx.amount || 0);
+      }
+    });
+
+    savingsTransactions.forEach(tx => {
+      if (!isDeposit(tx)) return;
+      const text = `${tx.notes || ''} ${tx.reference || ''}`;
+      if (/loan\s+membership\s+deduction|membership initial savings/i.test(text)) {
+        totals.membershipSavings = Math.max(totals.membershipSavings, Number(tx.amount || 0));
+        return;
+      }
+      if (!isMembershipRelated(text)) {
+        totals.standardSavings += Number(tx.amount || 0);
+      }
+    });
+
+    wellifeVipTransactions.forEach(tx => {
+      if (isDeposit(tx)) totals.wellifeVip = Math.max(totals.wellifeVip, Number(tx.amount || 0));
+    });
+
+    return totals;
+  }, [membershipPayments, cbuTransactions, savingsTransactions, wellifeVipTransactions]);
+
+  const memberSourceCards = [
+    { label: 'Membership CBU', value: memberSourceTotals.membershipCbu, hint: 'Membership setup/payment' },
+    { label: 'CBU Completion', value: memberSourceTotals.cbuCompletion, hint: 'Regular membership completion' },
+    { label: 'Standard CBU', value: memberSourceTotals.standardCbu, hint: 'Collected through invoice' },
+    { label: 'Membership Savings', value: memberSourceTotals.membershipSavings, hint: 'Membership setup/payment' },
+    { label: 'Standard Savings', value: memberSourceTotals.standardSavings, hint: 'Collected through invoice' },
+    { label: 'WELLife VIP Card', value: memberSourceTotals.wellifeVip, hint: 'VIP card collection' },
+  ];
+
   const loanPaymentCount = loanTransactions.filter(t => t.type === 'loan_payment').length;
   const cbuPaymentCount = cbuTransactions.filter(t => t.type === 'deposit').length;
   const savingsPaymentCount = savingsTransactions.filter(t => t.type === 'deposit').length;
@@ -597,6 +705,19 @@ export default function MemberDetailPage() {
                   <p className="text-sm font-bold text-blue-700 tabular-nums">{formatCurrency(savingsDisplayBalance)}</p>
                 </div>
               </div>
+              {member.membership_type !== 'kiddy' && memberSourceCards.map(card => (
+                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                    <Shield size={15} className="text-emerald-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider truncate">{card.label}</p>
+                    <p className="text-sm font-bold text-gray-800 tabular-nums">{formatCurrency(card.value)}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{card.hint}</p>
+                  </div>
+                </div>
+              ))}
+
               {memberTimeDeposits.length > 0 && (
                 <div className="flex min-w-0 items-center gap-3 rounded-lg border border-gray-200 bg-white p-4">
                   <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -1615,7 +1736,7 @@ function HistoryTable({ rows }) {
           {rows.map(row => (
             <PaymentHistoryRow key={row.id} record={row}>
               <td className="px-4 py-3 whitespace-nowrap">{paymentDate(row) ? formatDate(paymentDate(row)) : ''}</td>
-              <td className="px-4 py-3 capitalize">{(row.type || '').replace('_', ' ') || '-'}</td>
+              <td className="px-4 py-3 capitalize">{transactionTypeLabel(row)}</td>
               <td className={`px-4 py-3 font-medium ${row.type === 'withdrawal' ? 'text-red-600' : ''}`}>
                 {formatCurrency(row.amount || 0)}
               </td>
@@ -2556,6 +2677,11 @@ function MembershipTab({
   const displayPayments = useMemo(() => {
     const actualPayments = payments || [];
     const actualPaymentTotal = actualPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    // Only show synthetic/imported payment rows when the stored membership total is
+    // greater than actual membership payment rows. This prevents duplicate display
+    // rows such as "Imported Membership Paid record" when fee_paid already equals
+    // the real payment history total.
+    const remainingStoredPayment = Math.max(0, feePaid - actualPaymentTotal);
     const actualComponents = actualPayments.reduce((acc, p) => {
       try {
         const data = JSON.parse(p.notes || '{}');
@@ -2570,13 +2696,17 @@ function MembershipTab({
     const unallocatedActualTotal = Math.max(0, actualPaymentTotal - actualComponentTotal);
     const entryTarget = membershipFees?.entry || feePaid;
     const entryPaid = Math.min(feePaid, entryTarget);
-    const storedEntryRemainder = Math.max(0, entryPaid - (actualComponents.entry || 0) - unallocatedActualTotal);
+    const rawStoredEntryRemainder = Math.max(0, entryPaid - (actualComponents.entry || 0) - unallocatedActualTotal);
+    const storedEntryRemainder = Math.min(remainingStoredPayment, rawStoredEntryRemainder);
     const expectedImportedTotal =
       entryPaid +
       (adjustedImportedComponentTotals.cbu || 0) +
       (adjustedImportedComponentTotals.savings || 0) +
       (adjustedImportedComponentTotals.vip_card || 0);
-    let missingImportedTotal = Math.max(0, expectedImportedTotal - actualPaymentTotal - storedEntryRemainder);
+    let missingImportedTotal = Math.min(
+      Math.max(0, remainingStoredPayment - storedEntryRemainder),
+      Math.max(0, expectedImportedTotal - actualPaymentTotal - storedEntryRemainder)
+    );
     const missingComponents = {};
 
     ['cbu', 'savings', 'vip_card'].forEach(key => {
@@ -2753,6 +2883,98 @@ function MembershipTab({
     }, {});
   }, [displayPayments]);
 
+  const membershipSourceTotals = useMemo(() => {
+    const toNumber = value => Number(String(value || '0').replace(/,/g, '')) || 0;
+    const isDeposit = tx => !String(tx.type || '').toLowerCase().includes('withdraw');
+    const isMembershipRelated = value => /membership|wellife|vip|loan deduction allocation|loan membership deduction|migration/i.test(String(value || ''));
+
+    const amountFromText = (text, labels) => {
+      const normalized = displayTracingText(text)
+        .replace(/â‚±/g, '₱')
+        .replace(/Â·/g, '•');
+      for (const label of labels) {
+        const match = normalized.match(new RegExp(`${label}\\s*:\\s*₱?\\s*([0-9,]+(?:\\.\\d+)?)`, 'i'));
+        if (match) return toNumber(match[1]);
+      }
+      return 0;
+    };
+
+    const totals = {
+      membershipCbu: 0,
+      cbuCompletion: 0,
+      standardCbu: 0,
+      membershipSavings: 0,
+      standardSavings: 0,
+      wellifeVip: 0,
+    };
+
+    displayPayments.forEach(payment => {
+      const notes = String(payment.notes || '');
+      const lowerNotes = notes.toLowerCase();
+      try {
+        const data = JSON.parse(notes || '{}');
+        if (typeof data === 'object' && data !== null) {
+          const isLoanMembershipDeduction = /loan\s+membership\s+deduction/i.test(String(data.text || ''));
+          if (isLoanMembershipDeduction) {
+            totals.cbuCompletion += toNumber(data.min_cbu) + toNumber(data.cbu_completion) + toNumber(data.cbu) + toNumber(data.cbu_assoc);
+            totals.membershipSavings += toNumber(data.savings) + toNumber(data.savings_deposit);
+          } else {
+            totals.membershipCbu += toNumber(data.cbu) + toNumber(data.cbu_assoc);
+            totals.cbuCompletion += toNumber(data.min_cbu) + toNumber(data.cbu_completion);
+            totals.membershipSavings += toNumber(data.savings) + toNumber(data.savings_deposit);
+          }
+          totals.wellifeVip += toNumber(data.vip_card) + toNumber(data.wellife_vip);
+          return;
+        }
+      } catch { /* plain text note */ }
+
+      if (/loan\s+membership\s+deduction/i.test(lowerNotes)) {
+        totals.cbuCompletion += amountFromText(notes, ['CBU Completion', 'Initial CBU', 'CBU']);
+        totals.membershipSavings += amountFromText(notes, ['Initial Savings', 'Savings']);
+        totals.wellifeVip += amountFromText(notes, ['WELLife VIP Card', 'VIP Card']);
+      }
+    });
+
+    cbuTransactions.forEach(tx => {
+      if (!isDeposit(tx)) return;
+      const text = `${tx.notes || ''} ${tx.reference || ''}`;
+      if (/loan\s+membership\s+deduction|cbu completion/i.test(text)) {
+        totals.cbuCompletion = Math.max(totals.cbuCompletion, Number(tx.amount || 0));
+        return;
+      }
+      if (!isMembershipRelated(text)) {
+        totals.standardCbu += Number(tx.amount || 0);
+      }
+    });
+
+    savingsTransactions.forEach(tx => {
+      if (!isDeposit(tx)) return;
+      const text = `${tx.notes || ''} ${tx.reference || ''}`;
+      if (/loan\s+membership\s+deduction|membership initial savings/i.test(text)) {
+        totals.membershipSavings = Math.max(totals.membershipSavings, Number(tx.amount || 0));
+        return;
+      }
+      if (!isMembershipRelated(text)) {
+        totals.standardSavings += Number(tx.amount || 0);
+      }
+    });
+
+    wellifeVipTransactions.forEach(tx => {
+      if (isDeposit(tx)) totals.wellifeVip = Math.max(totals.wellifeVip, Number(tx.amount || 0));
+    });
+
+    return totals;
+  }, [displayPayments, cbuTransactions, savingsTransactions, wellifeVipTransactions]);
+
+  const membershipSourceCards = [
+    { label: 'Membership CBU', value: membershipSourceTotals.membershipCbu, hint: 'Membership setup/payment' },
+    { label: 'CBU Completion', value: membershipSourceTotals.cbuCompletion, hint: 'Regular membership completion' },
+    { label: 'Standard CBU', value: membershipSourceTotals.standardCbu, hint: 'Collected through invoice' },
+    { label: 'Membership Savings', value: membershipSourceTotals.membershipSavings, hint: 'Membership setup/payment' },
+    { label: 'Standard Savings', value: membershipSourceTotals.standardSavings, hint: 'Collected through invoice' },
+    { label: 'WELLife VIP Card', value: membershipSourceTotals.wellifeVip, hint: 'VIP card collection' },
+  ];
+
   const membershipBreakdownRows = useMemo(() => {
     if (!membershipFees) return [];
     const vipPaid = perComponentTotals.vip_card || 0;
@@ -2789,6 +3011,7 @@ function MembershipTab({
   }, [isNewMember, membershipFees, payTotalAmount, perComponentTotals]);
 
   const ITEM_LABELS = {
+    entry:           'Membership Entry',
     membership_fee:  'Membership Fee',
     vip_card:        'WELLife VIP Card',
     cbu:             'Initial CBU',
@@ -2800,26 +3023,41 @@ function MembershipTab({
 
   function parsePaymentNotes(notes) {
     const displayText = value => displayTracingText(value)
-      .replace(/\u00e2\u201a\u00b1/g, '\u20b1')
-      .replace(/\u00c2\u00b7/g, '\u2022');
+      .replace(/â‚±/g, '₱')
+      .replace(/Â·/g, '•');
+
+    const cleanPaymentNote = value => {
+      const isLoanMembershipDeduction = /loan\s+membership\s+deduction/i.test(displayText(value));
+      const normalizedValue = isLoanMembershipDeduction
+        ? displayText(value)
+            .replace(/\bInitial\s+CBU\b/gi, 'CBU Completion')
+            .replace(/\bCBU\s*:/gi, 'CBU Completion:')
+        : displayText(value);
+
+      const cleaned = normalizedValue
+        .replace(/\s*from\s+[0-9a-f]{8}-[0-9a-f-]{27}\b/gi, '')
+        .replace(/[•|]/g, ' | ')
+        .split('|')
+        .map(part => part.trim())
+        .filter(Boolean)
+        .filter(part => !/:\s*₱?\s*0(?:\.00)?\b/i.test(part))
+        .filter(part => !/:\s*0(?:\.00)?\b/i.test(part))
+        .join(' | ');
+      return cleaned.replace(/\s{2,}/g, ' ').trim();
+    };
+
     try {
       const data = JSON.parse(notes || '{}');
-      if (typeof data !== 'object' || data === null) return displayText(notes) || '\u2014';
-      if ('entry' in data) {
-        const parts = [];
-        if (data.entry   > 0) parts.push(`Entry \u20b1${Number(data.entry).toLocaleString()}`);
-        if (data.cbu     > 0) parts.push(`CBU \u20b1${Number(data.cbu).toLocaleString()}`);
-        if (data.savings > 0) parts.push(`Savings \u20b1${Number(data.savings).toLocaleString()}`);
-        return displayText([parts.join(' \u2022 '), data.text].filter(Boolean).join(' | ')) || '\u2014';
-      }
+      if (typeof data !== 'object' || data === null) return cleanPaymentNote(notes) || '—';
       const parts = Object.entries(data)
         .filter(([key, val]) => key !== 'text' && Number(val) > 0)
-        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ')}: \u20b1${Number(val).toLocaleString()}`);
-      return displayText([parts.join(' \u2022 '), data.text].filter(Boolean).join(' | ')) || '\u2014';
+        .map(([key, val]) => `${ITEM_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase())}: ₱${Number(val).toLocaleString()}`);
+      return cleanPaymentNote([parts.join(' • '), data.text].filter(Boolean).join(' | ')) || '—';
     } catch {
-      return displayText(notes) || '\u2014';
+      return cleanPaymentNote(notes) || '—';
     }
   }
+
 
   async function handleSetup() {
     if (!userId) return toast.error('User not authenticated');
@@ -3337,7 +3575,7 @@ function MembershipTab({
               <tbody className="divide-y divide-gray-50">
                 {upgradeLogs.map(log => (
                   <tr key={log.id} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDateTime(log.upgraded_at)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-700">{formatDate(log.upgraded_at)}</td>
                     <td className="px-4 py-3 capitalize text-gray-600">{log.from_type}</td>
                     <td className="px-4 py-3 capitalize text-blue-700 font-medium">{log.to_type}</td>
                     <td className="px-4 py-3 text-gray-500">{displayTracingText(log.notes) || '-'}</td>

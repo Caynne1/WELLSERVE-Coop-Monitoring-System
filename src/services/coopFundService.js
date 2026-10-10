@@ -141,10 +141,10 @@ function transactionReportCategory(tx) {
   const type = String(tx?.type || '').toLowerCase();
   const category = String(tx?.category || '').toLowerCase();
   const notes = String(tx?.notes || tx?.description || '').toLowerCase();
-  if (type === 'deposit' && category === 'cbu' && (
-    notes.includes('membership breakdown') ||
-    (notes.includes('membership deduction') && notes.includes('initial cbu'))
-  )) return 'membership_cbu';
+  if (type === 'deposit' && category === 'cbu' && notes.includes('membership deduction')) {
+    if (notes.includes('cbu completion') || notes.includes('initial cbu')) return 'cbu_completion';
+  }
+  if (type === 'deposit' && category === 'cbu' && notes.includes('membership breakdown')) return 'membership_cbu';
   if (type === 'deposit' && category === 'savings' && (
     notes.includes('membership breakdown') ||
     (notes.includes('membership deduction') && notes.includes('initial savings'))
@@ -662,8 +662,41 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     const cat = String(tx.category || '').toLowerCase();
     const note = String(tx.notes || '').toLowerCase();
     if (type !== 'deposit' || cat !== category) return false;
+    if (category === 'cbu' && note.includes('membership deduction')) return false;
     return note.includes('membership breakdown') ||
       (note.includes('membership deduction') && note.includes(category === 'cbu' ? 'initial cbu' : 'initial savings'));
+  };
+
+  const isCbuCompletionDeposit = tx => {
+    const type = String(tx.type || '').toLowerCase();
+    const cat = String(tx.category || '').toLowerCase();
+    const note = String(tx.notes || '').toLowerCase();
+    return type === 'deposit' &&
+      cat === 'cbu' &&
+      note.includes('membership deduction') &&
+      (note.includes('cbu completion') || note.includes('initial cbu'));
+  };
+
+  const isStandardCbuDeposit = tx => {
+    const type = String(tx.type || '').toLowerCase();
+    const cat = String(tx.category || '').toLowerCase();
+    const note = String(tx.notes || '').toLowerCase();
+    return type === 'deposit' &&
+      cat === 'cbu' &&
+      !note.includes('membership') &&
+      !note.includes('loan deduction allocation') &&
+      !note.includes('migration');
+  };
+
+  const isStandardSavingsDeposit = tx => {
+    const type = String(tx.type || '').toLowerCase();
+    const cat = String(tx.category || '').toLowerCase();
+    const note = String(tx.notes || '').toLowerCase();
+    return type === 'deposit' &&
+      cat === 'savings' &&
+      !note.includes('membership') &&
+      !note.includes('loan deduction allocation') &&
+      !note.includes('migration');
   };
   const membershipKey = (tx) => [
     tx.member_id || '',
@@ -681,10 +714,12 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     service_fee: 0,
     cbu_retention: 0,
     membership_cbu: 0,
+    standard_cbu: 0,
     legal_fees: 0,
     clpi_insurance: 0,
     regular_savings: 0,
     membership_savings: 0,
+    standard_savings: 0,
     penalty_due: 0,
     other_charges: 0,
     annual_dues: 0,
@@ -712,6 +747,11 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
       continue;
     }
 
+    if (isCbuCompletionDeposit(tx)) {
+      buckets.cbu_completion += amount;
+      continue;
+    }
+
     if (isMembershipDeposit(tx, 'cbu')) {
       buckets.membership_cbu += amount;
       continue;
@@ -719,6 +759,16 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
 
     if (isMembershipDeposit(tx, 'savings')) {
       buckets.membership_savings += amount;
+      continue;
+    }
+
+    if (isStandardCbuDeposit(tx)) {
+      buckets.standard_cbu += amount;
+      continue;
+    }
+
+    if (isStandardSavingsDeposit(tx)) {
+      buckets.standard_savings += amount;
       continue;
     }
 
@@ -762,10 +812,12 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     buckets.service_fee +
     buckets.cbu_retention +
     buckets.membership_cbu +
+    buckets.standard_cbu +
     buckets.legal_fees +
     buckets.clpi_insurance +
     buckets.regular_savings +
     buckets.membership_savings +
+    buckets.standard_savings +
     buckets.penalty_due +
     buckets.other_charges +
     buckets.annual_dues +
@@ -780,10 +832,12 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     service_fee: Math.round(buckets.service_fee * 100) / 100,
     cbu_retention: Math.round(buckets.cbu_retention * 100) / 100,
     membership_cbu: Math.round(buckets.membership_cbu * 100) / 100,
+    standard_cbu: Math.round(buckets.standard_cbu * 100) / 100,
     legal_fees: Math.round(buckets.legal_fees * 100) / 100,
     clpi_insurance: Math.round(buckets.clpi_insurance * 100) / 100,
     regular_savings: Math.round(buckets.regular_savings * 100) / 100,
     membership_savings: Math.round(buckets.membership_savings * 100) / 100,
+    standard_savings: Math.round(buckets.standard_savings * 100) / 100,
     penalty_due: Math.round(buckets.penalty_due * 100) / 100,
     other_charges: Math.round(buckets.other_charges * 100) / 100,
     custom_charges: customChargeBreakdown(incomeTxList),
@@ -807,9 +861,12 @@ export const CATEGORY_LABEL = {
   penalty_payment: 'Penalty Payment',
   cbu: 'CBU Deposit',
   membership_cbu: 'Membership CBU',
+  standard_cbu: 'Standard CBU',
+  cbu_completion: 'CBU Completion',
   cbu_withdrawal: 'CBU Withdrawal',
   savings: 'Savings Deposit',
   membership_savings: 'Membership Savings',
+  standard_savings: 'Standard Savings',
   savings_withdrawal: 'Savings Withdrawal',
   membership: 'Membership Fee',
   penalty: 'Penalty Payment',
@@ -830,9 +887,12 @@ export const CATEGORY_COLOR = {
   penalty_payment: 'text-red-700 bg-red-50',
   cbu: 'text-green-700 bg-green-50',
   membership_cbu: 'text-green-700 bg-green-50',
+  standard_cbu: 'text-emerald-700 bg-emerald-50',
+  cbu_completion: 'text-teal-700 bg-teal-50',
   cbu_withdrawal: 'text-red-700 bg-red-50',
   savings: 'text-blue-700 bg-blue-50',
   membership_savings: 'text-blue-700 bg-blue-50',
+  standard_savings: 'text-sky-700 bg-sky-50',
   savings_withdrawal: 'text-red-700 bg-red-50',
   membership: 'text-purple-700 bg-purple-50',
   penalty: 'text-red-700 bg-red-50',

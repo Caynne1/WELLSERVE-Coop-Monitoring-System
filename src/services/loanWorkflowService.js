@@ -32,12 +32,50 @@ function dateOnly(value) {
   return String(value || '').split('T')[0];
 }
 
+function sumLoanDeductionColumns(loan, deductions = {}) {
+  const membership = deductions?.membership_deduction || {};
+  const membershipTotal = membership?.enabled
+    ? round2(
+        Number(membership.total || 0) ||
+        (
+          Number(membership.membership_fee || 0) +
+          Number(membership.wellife_vip || 0) +
+          Number(membership.cbu || 0) +
+          Number(membership.savings || 0) +
+          Number(membership.other_fee || 0)
+        )
+      )
+    : 0;
+
+  const regularDeductions =
+    Number(loan?.service_fee || 0) +
+    Number(loan?.loan_insurance || 0) +
+    Number(loan?.notarial_fee || 0) +
+    Number(loan?.share_capital || 0) +
+    Number(loan?.regular_savings || 0) +
+    Number(loan?.annual_dues || 0) +
+    Number(loan?.penalty_due || 0) +
+    Number(loan?.petty_cash || 0) +
+    Number(loan?.cbu_completion || 0);
+
+  const membershipColumns =
+    Number(loan?.membership_regulatory_fee || 0) +
+    Number(loan?.membership_initial_savings || 0) +
+    Number(loan?.membership_vip_card || 0);
+
+  return round2(regularDeductions + (membershipTotal > 0 ? membershipTotal : membershipColumns));
+}
+
 export function getLoanNetProceeds(loan) {
   const deductions = parseJSONSafe(loan?.preview_deductions_json, {});
   const fromPreview = Number(deductions.net_proceeds || 0);
   if (fromPreview > 0) return round2(fromPreview);
 
-  const totalDeductions = Number(deductions.total_deductions || 0);
+  const previewTotalDeductions = Number(deductions.total_deductions || 0);
+  const totalDeductions = previewTotalDeductions > 0
+    ? previewTotalDeductions
+    : sumLoanDeductionColumns(loan, deductions);
+
   return round2(Math.max(0, Number(loan?.amount || 0) - totalDeductions));
 }
 
@@ -429,87 +467,21 @@ export async function releaseLoanFromCheck(check, userId, selectedLoanId = null)
   if (voucherError) throw voucherError;
 
   const loan = await resolveLinkedLoanForRelease(check, voucher, selectedLoanId);
-  if (round2(check.amount) !== round2(getLoanNetProceeds(loan))) {
-    throw new Error('The check amount does not match the selected loan net proceeds. Please review the check and voucher amounts.');
-  }
-  // Persist the resolved link before posting, so a retry targets the same loan.
-  const { error: linkError } = await supabase.from('vouchers')
-    .update({ reference: loan.id, member_id: loan.member_id }).eq('id', voucher.id);
-  if (linkError) throw linkError;
   const releaseDate =
     dateOnly(check.date) ||
     dateOnly(loan.release_date) ||
     new Date().toISOString().split('T')[0];
 
-  if (loan.status === 'released') {
-    await supabase
-      .from('transactions')
-      .update({ transaction_date: releaseDate })
-      .eq('loan_id', loan.id)
-      .in('type', ['loan_release', 'loan_deduction']);
-
-    return updateLoan(loan.id, { release_date: releaseDate, approval_status: 'released' });
-  }
-
-  const { data: existingRelease, error: releaseLookupError } = await supabase
-    .from('transactions')
-    .select('id')
-    .eq('loan_id', loan.id)
-    .eq('type', 'loan_release')
-    .maybeSingle();
-  if (releaseLookupError) throw releaseLookupError;
-  if (existingRelease) {
-    await supabase
-      .from('transactions')
-      .update({ transaction_date: releaseDate })
-      .eq('loan_id', loan.id)
-      .in('type', ['loan_release', 'loan_deduction']);
-
-    await postLoanMembershipDeduction(loan, userId, releaseDate);
-    return updateLoan(loan.id, {
-      status: 'released',
-      approval_status: 'released',
-      release_date: releaseDate,
-    });
-  }
-
-  const netProceeds = getLoanNetProceeds(loan);
-
-  await createTransaction({
-    member_id: loan.member_id,
-    loan_id: loan.id,
-    category: 'capital',
-    type: 'loan_release',
-    amount: netProceeds,
-    reference: loan.loan_no,
-    notes: 'Loan net proceeds released to member',
-    created_by: userId ?? null,
-    transaction_date: releaseDate,
+  const { data, error } = await supabase.rpc('wellserve_release_loan_atomic', {
+    p_check_id: check.id,
+    p_voucher_id: voucher.id,
+    p_loan_id: loan.id,
+    p_release_date: releaseDate,
+    p_user_id: userId ?? null,
   });
 
-  for (const item of getLoanDeductionItems(loan)) {
-    await createTransaction({
-      member_id: loan.member_id,
-      loan_id: loan.id,
-      category: item.category,
-      type: 'loan_deduction',
-      amount: item.amount,
-      reference: loan.loan_no,
-      notes: otherChargeCategory(item.report_category) && item.other_charge_id
-        ? `${item.label} [Other charge: ${item.report_category}; id: ${item.other_charge_id}]`
-        : item.label,
-      created_by: userId ?? null,
-      transaction_date: releaseDate,
-    });
-  }
-
-  await postLoanMembershipDeduction(loan, userId, releaseDate);
-
-  return updateLoan(loan.id, {
-    status: 'released',
-    approval_status: 'released',
-    release_date: releaseDate,
-  });
+  if (error) throw error;
+  return data;
 }
 
 export async function getLoanReleaseCandidates(check, voucher) {

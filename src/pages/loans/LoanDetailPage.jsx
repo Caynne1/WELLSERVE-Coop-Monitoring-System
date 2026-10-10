@@ -470,6 +470,10 @@ export default function LoanDetailPage() {
     previewSummary?.payment_per_period ??
     loan.monthly_amortization ??
     0;
+  const totalPaidForOutstanding = historyRows.reduce((sum, row) => sum + Number(row.total_paid || 0), 0);
+  const displayedOutstandingBalance = String(loan.status || '').toLowerCase() === 'paid'
+    ? 0
+    : round2(Math.max(0, computedTotalLoanPayable - totalPaidForOutstanding));
   const totalCashOut = Number(
     previewSummary?.total_cash_out ??
     previewDeductions?.net_proceeds ??
@@ -543,7 +547,7 @@ export default function LoanDetailPage() {
           <div class="col">
             <h3>Loan Terms</h3>
             ${kvRow('Loan Amount', formatCurrency(loan.amount))}
-            ${kvRow('Outstanding Balance', formatCurrency(getLoanOutstandingComponents(loan).principal), true)}
+            ${kvRow('Outstanding Balance', formatCurrency(displayedOutstandingBalance), true)}
             ${kvRow('Monthly Interest Rate', `${round2(monthlyInterestRate)}%`)}
             ${kvRow('Weekly Interest', `${round4(weeklyInterestRate)}%`)}
             ${kvRow('Term', loan.term_months ? `${loan.term_months} months` : '—')}
@@ -716,7 +720,7 @@ export default function LoanDetailPage() {
           </div>
           <div class="hero-card red">
             <div class="hc-label">Outstanding Balance</div>
-            <div class="hc-value">${formatCurrency(getLoanOutstandingComponents(loan).principal)}</div>
+            <div class="hc-value">${formatCurrency(displayedOutstandingBalance)}</div>
           </div>
           <div class="hero-card green">
             <div class="hc-label">Payments Made</div>
@@ -885,7 +889,7 @@ export default function LoanDetailPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+    <div className="w-full max-w-none mx-0 px-5 sm:px-6 lg:px-8 py-5">
       <button
         onClick={() => navigate('/loans')}
         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 mb-4 transition-colors"
@@ -938,218 +942,236 @@ export default function LoanDetailPage() {
         }
       />
 
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Loan Summary — matching Excel header format */}
-          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-            {[
-              ['Member', memberName || '—'],
-              ['Member No.', loan.members?.member_no || '—'],
-              ['Loan Product', getLoanProductLabel(loan)],
-              ['Loan Type', <Badge key="loan_type" variant={resolvedLoanType === 'existing' ? 'warning' : 'success'}>{resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
-              ['Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund'],
-              ...(loan.funding_source === 'financing' ? [['Financing Note', loan.financing_note || '—']] : []),
-              ['Notes', resolvedLoanNotes],
-              ['Loan Principal', formatCurrency(loan.amount)],
-              ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(getLoanOutstandingComponents(loan).principal)}</span>],
-              ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
-              ['Weekly Interest', `${round4(weeklyInterestRate)}%`],
-              ['Start Date', formatDate(loan.release_date)],
-              ['Loan Term (Months)', loan.term_months ? `${loan.term_months} months` : '—'],
-              ['Payment Frequency', <Badge key="freq" variant="default">{frequencyDisplayLabel(loan.repayment_frequency || 'monthly')}</Badge>],
-              ['No. of Payments', previewSummary?.number_of_payments ?? scheduleRows.length ?? '—'],
-              ['Total Payment per Period', formatCurrency(computedPaymentPerPeriod)],
-              ['Total Cash Out (Net Proceeds)', formatCurrency(previewDeductions?.net_proceeds ?? (loan.amount - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0)))],
-              ['Total Principal Collected', formatCurrency(totalPrincipal)],
-              ['Total Interest Earned', <span key="int" className="text-emerald-700 font-semibold">{formatCurrency(computedTotalInterest)}</span>],
-              ['Total Payments Collected', formatCurrency(computedTotalLoanPayable)],
-              ['Total ROI (%)', <span key="roi" className="text-emerald-700 font-semibold">{computedRoi}%</span>],
-              ['Status', <Badge key="status" variant={statusVariant[loan.status] || 'default'}>{loan.status}</Badge>],
-              ['Purpose', loan.purpose || '—'],
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-start justify-between px-5 py-3 text-sm gap-4">
-                <span className="text-gray-400 font-medium w-52 flex-shrink-0">{label}</span>
-                <span className="text-gray-900 text-right">{value}</span>
-              </div>
-            ))}
+      <div className="mt-6 grid grid-cols-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.95fr)] gap-5">
+        {/* Loan Information */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-emerald-50 to-white border-b border-gray-100">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <FileSpreadsheet size={18} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Loan Information</h3>
+              <p className="text-xs text-gray-400">Core member and loan details</p>
+            </div>
           </div>
 
-          {/* Deductions */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setDeductionsOpen(v => !v)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet size={15} className="text-gray-400" />
-                <span className="text-sm font-semibold text-gray-700">Deductions & Net Proceeds</span>
-              </div>
-              {deductionsOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-            </button>
+          <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
+            <div className="divide-y divide-gray-50">
+              {[
+                ['Member', memberName || '—'],
+                ['Member No.', loan.members?.member_no || '—'],
+                ['Loan Product', getLoanProductLabel(loan)],
+                ['Loan Type', <Badge key="loan_type" variant={resolvedLoanType === 'existing' ? 'warning' : 'success'}>{resolvedLoanType === 'existing' ? 'Existing / Ongoing' : 'New Loan'}</Badge>],
+                ['Funding Source', loan.funding_source === 'financing' ? 'Financing' : 'Cooperative Fund'],
+                ...(loan.funding_source === 'financing' ? [['Financing Note', loan.financing_note || '—']] : []),
+                ['Notes', resolvedLoanNotes],
+                ['Start Date', formatDate(loan.release_date)],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-4 px-5 py-3 text-sm">
+                  <span className="text-gray-500 font-medium">{label}</span>
+                  <span className="text-gray-900 text-right font-medium break-words">{value}</span>
+                </div>
+              ))}
+            </div>
 
-            {deductionsOpen && (
-              <div className="border-t border-gray-100 divide-y divide-gray-50">
-                {[
-                  ['Loan Proposal', formatCurrency(loan.loan_proposal || loan.amount || 0)],
-                  [`Service Fee (${loan.service_fee_percent ?? 2}%)`, formatCurrency(previewDeductions?.service_fee ?? loan.service_fee ?? 0)],
-                  ['CBU (Share Capital)', formatCurrency(loan.share_capital ?? 0)],
-                  ['Regular Savings', formatCurrency(loan.regular_savings ?? 0)],
-                  ['Coop Loan Protection Plan', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
-                  ['Annual Dues', formatCurrency(annualDuesAmount)],
-                  ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
-                  ['Total Deductions', <span key="td" className="font-semibold text-red-600">{formatCurrency(
-                    (previewDeductions?.total_deductions ?? 0) ||
-                    ((loan.service_fee || 0) + (loan.share_capital || 0) + (loan.regular_savings || 0) + (loan.loan_insurance || 0))
-                  )}</span>],
-                  ['Net Proceeds', <span key="np" className="font-semibold text-emerald-700">{formatCurrency(
-                    previewDeductions?.net_proceeds ??
-                    ((loan.amount || 0) - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0))
-                  )}</span>],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex items-start justify-between px-5 py-3 text-sm gap-4">
-                    <span className="text-gray-400 font-medium w-52 flex-shrink-0">{label}</span>
-                    <span className="text-gray-900 text-right">{value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="divide-y divide-gray-50">
+              {[
+                ['Loan Principal', formatCurrency(loan.amount)],
+                ['Outstanding Balance', <span key="bal" className="text-lg font-bold text-red-600">{formatCurrency(displayedOutstandingBalance)}</span>],
+                ['Monthly Interest Rate', `${round2(monthlyInterestRate)}%`],
+                ['Weekly Interest', `${round4(weeklyInterestRate)}%`],
+                ['Loan Term (Months)', loan.term_months ? `${loan.term_months} months` : '—'],
+                ['Payment Frequency', <Badge key="freq" variant="default">{frequencyDisplayLabel(loan.repayment_frequency || 'monthly')}</Badge>],
+                ['No. of Payments', previewSummary?.number_of_payments ?? scheduleRows.length ?? '—'],
+                ['Status', <Badge key="status" variant={statusVariant[loan.status] || 'default'}>{loan.status}</Badge>],
+                ['Purpose', loan.purpose || '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-4 px-5 py-3 text-sm">
+                  <span className="text-gray-500 font-medium">{label}</span>
+                  <span className="text-gray-900 text-right font-medium break-words">{value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Computed Summary sidebar */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Computed Summary</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <MiniStat label="No. of Payments" value={String(previewSummary?.number_of_payments ?? scheduleRows.length ?? 0)} />
-              <MiniStat label="Rate / Period" value={`${ratePerPeriod}%`} />
-              <MiniStat label="Payment / Period" value={formatCurrency(computedPaymentPerPeriod)} highlight />
-              <MiniStat label="Method" value={titleCase(previewSummary?.loan_method ?? loan.loan_method ?? 'diminishing')} />
-              <MiniStat label="Frequency" value={frequencyDisplayLabel(previewSummary?.payment_frequency ?? loan.repayment_frequency ?? 'monthly')} />
-              <MiniStat label="ROI" value={`${computedRoi}%`} />
-              <MiniStat label="Total Interest" value={formatCurrency(computedTotalInterest)} />
-              <MiniStat label="Total Payments" value={formatCurrency(computedTotalLoanPayable)} />
+        {/* Computed Summary */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-emerald-50 to-white border-b border-gray-100">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <Tag size={18} />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Computed Summary</h3>
+              <p className="text-xs text-gray-400">Payment computation overview</p>
             </div>
           </div>
-
-          {/* Quick print card */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <p className="text-xs font-semibold text-emerald-700 mb-1">Print options</p>
-            <p className="text-xs text-emerald-600 mb-3 leading-relaxed">
-              <strong>Billing Statement</strong> — member-facing copy with next due highlighted.<br/>
-              <strong>Print Detail</strong> — full internal record with deductions &amp; amortization.
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={handlePrintBillingStatement}
-                className="flex items-center gap-2 text-xs font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
-              >
-                <FileText size={13} /> Billing Statement
-              </button>
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-2 text-xs font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
-              >
-                <Printer size={13} /> Full Detail &amp; Schedule
-              </button>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
+            <MiniStat label="No. of Payments" value={String(previewSummary?.number_of_payments ?? scheduleRows.length ?? 0)} />
+            <MiniStat label="Rate / Period" value={`${ratePerPeriod}%`} />
+            <MiniStat label="Payment / Period" value={formatCurrency(computedPaymentPerPeriod)} highlight />
+            <MiniStat label="Method" value={titleCase(previewSummary?.loan_method ?? loan.loan_method ?? 'diminishing')} />
+            <MiniStat label="Frequency" value={frequencyDisplayLabel(previewSummary?.payment_frequency ?? loan.repayment_frequency ?? 'monthly')} />
+            <MiniStat label="ROI" value={`${computedRoi}%`} />
+            <MiniStat label="Total Interest" value={formatCurrency(computedTotalInterest)} />
+            <MiniStat label="Total Payments" value={formatCurrency(computedTotalLoanPayable)} />
           </div>
         </div>
       </div>
 
-      {/* Amortization Schedule — Excel format */}
-      <div className="mt-6">
-        <LoanScheduleTable
-          schedule={scheduleRows}
-          frequency={loan.repayment_frequency || 'monthly'}
-          loanAmount={loan.amount || 0}
-          monthlyInterestRate={monthlyInterestRate}
-          defaultOpen={scheduleOpen}
-          showPaymentTracking={true}
-          released={isLoanReleased(loan)}
-          loanPaid={String(loan.status || '').toLowerCase() === 'paid'}
-          transactions={paymentHistory}
-          title="Amortization Schedule"
-        />
-      </div>
-
-      {/* Payment History */}
-      <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setHistoryOpen(v => !v)}
-          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <History size={15} className="text-gray-400" />
-            <span className="text-sm font-semibold text-gray-700">Payment History</span>
-            {historyRows.length > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                {historyRows.length}
+      <div className="mt-5 grid grid-cols-1 xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.35fr)] gap-5">
+        {/* Deductions */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <button
+            type="button"
+            onClick={() => setDeductionsOpen(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 bg-gradient-to-r from-red-50 to-white hover:bg-gray-50 transition-colors border-b border-gray-100"
+          >
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <FileSpreadsheet size={17} />
               </span>
-            )}
-          </div>
-          {historyOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-        </button>
+              <div className="text-left">
+                <span className="block text-sm font-semibold text-gray-800">Deductions & Net Proceeds</span>
+                <span className="block text-xs text-gray-400">Loan deductions and released amount</span>
+              </div>
+            </div>
+            {deductionsOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+          </button>
 
-        {historyOpen && (
-          <div className="border-t border-gray-100">
-            {historyLoading ? (
-              <div className="flex justify-center py-6"><Spinner /></div>
-            ) : historyError ? (
-              <p role="alert" className="px-5 py-6 text-sm text-red-700">Payment history could not be loaded. Please refresh to retry.</p>
-            ) : historyRows.length === 0 ? (
-              <div className="px-5 py-8 text-center text-sm text-gray-400">No payment records found.</div>
-            ) : (
-              <MemberPaymentNavigation memberId={loan.member_id}>
-                <LoanPaymentHistoryTable rows={historyRows} loans={[loan]} memberId={loan.member_id} />
-              </MemberPaymentNavigation>
-            )}
+          {deductionsOpen && (
+            <div className="divide-y divide-gray-50">
+              {[
+                ['Loan Proposal', formatCurrency(loan.loan_proposal || loan.amount || 0)],
+                [`Service Fee (${loan.service_fee_percent ?? 2}%)`, formatCurrency(previewDeductions?.service_fee ?? loan.service_fee ?? 0)],
+                ['CBU (Share Capital)', formatCurrency(loan.share_capital ?? 0)],
+                ['Regular Savings', formatCurrency(loan.regular_savings ?? 0)],
+                ['Coop Loan Protection Plan', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
+                ['Annual Dues', formatCurrency(annualDuesAmount)],
+                ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-4 px-5 py-3 text-sm">
+                  <span className="text-gray-600">{label}</span>
+                  <span className="text-gray-900 text-right font-medium">{value}</span>
+                </div>
+              ))}
+              <div className="flex items-start justify-between gap-4 px-5 py-3 text-sm bg-red-50">
+                <span className="text-red-700 font-semibold">Total Deductions</span>
+                <span className="text-red-700 text-right font-bold">{formatCurrency(
+                  (previewDeductions?.total_deductions ?? 0) ||
+                  ((loan.service_fee || 0) + (loan.share_capital || 0) + (loan.regular_savings || 0) + (loan.loan_insurance || 0))
+                )}</span>
+              </div>
+              <div className="flex items-start justify-between gap-4 px-5 py-3 text-sm bg-emerald-50">
+                <span className="text-emerald-700 font-semibold">Net Proceeds</span>
+                <span className="text-emerald-700 text-right font-bold">{formatCurrency(
+                  previewDeductions?.net_proceeds ??
+                  ((loan.amount || 0) - (loan.service_fee || 0) - (loan.share_capital || 0) - (loan.regular_savings || 0) - (loan.loan_insurance || 0))
+                )}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Amortization Schedule */}
+        <div className="min-w-0">
+          <LoanScheduleTable
+            schedule={scheduleRows}
+            frequency={loan.repayment_frequency || 'monthly'}
+            loanAmount={loan.amount || 0}
+            monthlyInterestRate={monthlyInterestRate}
+            defaultOpen={scheduleOpen}
+            showPaymentTracking={true}
+            released={isLoanReleased(loan)}
+            loanPaid={String(loan.status || '').toLowerCase() === 'paid'}
+            transactions={paymentHistory}
+            title="Amortization Schedule"
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {/* Payment History */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+                <History size={17} />
+              </span>
+              <div className="text-left">
+                <span className="block text-sm font-semibold text-gray-800">Payment History</span>
+                <span className="block text-xs text-gray-400">
+                  {historyRows.length > 0 ? `${historyRows.length} payment record${historyRows.length === 1 ? '' : 's'}` : 'No payment records yet'}
+                </span>
+              </div>
+            </div>
+            {historyOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+          </button>
+
+          {historyOpen && (
+            <div className="border-t border-gray-100">
+              {historyLoading ? (
+                <div className="flex justify-center py-6"><Spinner /></div>
+              ) : historyError ? (
+                <p role="alert" className="px-5 py-6 text-sm text-red-700">Payment history could not be loaded. Please refresh to retry.</p>
+              ) : historyRows.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-gray-400">No payment records found.</div>
+              ) : (
+                <MemberPaymentNavigation memberId={loan.member_id}>
+                  <LoanPaymentHistoryTable rows={historyRows} loans={[loan]} memberId={loan.member_id} />
+                </MemberPaymentNavigation>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Approval Workflow */}
+        {(loan.approval_status !== undefined || workflowLocked) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-3">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+                <CheckCircle2 size={17} />
+              </span>
+              Approval Workflow
+            </h3>
+            <div className="flex flex-wrap items-center gap-3">
+              {[
+                { value: 'draft',     label: 'Draft',     icon: Clock,         color: 'text-gray-600',  bg: 'bg-gray-100' },
+                { value: 'credit_committee_approval', label: 'For Approval', icon: Clock, color: 'text-amber-700', bg: 'bg-amber-50' },
+                { value: 'approved',  label: 'Approved',  icon: CheckCircle2,  color: 'text-green-700', bg: 'bg-green-50' },
+                { value: 'rejected',  label: 'Rejected',  icon: XCircle,       color: 'text-red-700',   bg: 'bg-red-50' },
+                { value: 'released',  label: 'Released',  icon: CheckCircle2,  color: 'text-blue-700',  bg: 'bg-blue-50' },
+              ].map(({ value, label, icon: Icon, color, bg }) => (
+                <button
+                  key={value}
+                  aria-current={approvalStage === value ? 'step' : undefined}
+                  title={workflowLocked ? 'Released loan: workflow is read-only' : value === 'released' ? 'Updated through check release' : label}
+                  disabled={
+                    approvalSaving ||
+                    workflowLocked ||
+                    value === 'released' ||
+                    approvalStage === value ||
+                    (['approved', 'rejected'].includes(value) ? !canApproveLoan : !canEdit)
+                  }
+                  onClick={() => handleApprovalChange(value)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border
+                    ${approvalStage === value
+                      ? `${bg} ${color} border-current ring-2 ring-offset-1 ring-current/30`
+                      : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
+                    }`}
+                >
+                  <Icon size={12} />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
-
-      {/* Approval Workflow */}
-      {(loan.approval_status !== undefined || workflowLocked) && (
-        <div className="mt-4 bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <CheckCircle2 size={15} className="text-gray-400" />
-            Approval Workflow
-          </h3>
-          <div className="flex flex-wrap items-center gap-3">
-            {[
-              { value: 'draft',     label: 'Draft',     icon: Clock,         color: 'text-gray-600',  bg: 'bg-gray-100' },
-              { value: 'credit_committee_approval', label: 'For Approval', icon: Clock, color: 'text-amber-700', bg: 'bg-amber-50' },
-              { value: 'approved',  label: 'Approved',  icon: CheckCircle2,  color: 'text-green-700', bg: 'bg-green-50' },
-              { value: 'rejected',  label: 'Rejected',  icon: XCircle,       color: 'text-red-700',   bg: 'bg-red-50' },
-              { value: 'released',  label: 'Released',  icon: CheckCircle2,  color: 'text-blue-700',  bg: 'bg-blue-50' },
-            ].map(({ value, label, icon: Icon, color, bg }) => (
-              <button
-                key={value}
-                aria-current={approvalStage === value ? 'step' : undefined}
-                title={workflowLocked ? 'Released loan: workflow is read-only' : value === 'released' ? 'Updated through check release' : label}
-                disabled={
-                  approvalSaving ||
-                  workflowLocked ||
-                  value === 'released' ||
-                  approvalStage === value ||
-                  (['approved', 'rejected'].includes(value) ? !canApproveLoan : !canEdit)
-                }
-                onClick={() => handleApprovalChange(value)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border
-                  ${approvalStage === value
-                    ? `${bg} ${color} border-current ring-2 ring-offset-1 ring-current/30`
-                    : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:bg-gray-100'
-                  }`}
-              >
-                <Icon size={12} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {productAssignmentOpen && <SetLoanProductModal loan={loan}
         onClose={() => setProductAssignmentOpen(false)}

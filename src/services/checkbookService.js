@@ -279,9 +279,10 @@ export async function releaseCheck(id, userId, selectedLoanId = null) {
 
   if (isLoanReleaseVoucher(voucher, expense)) {
     await releaseLoanFromCheck(check, userId, selectedLoanId);
-  } else {
-    await recordExpenseCheckRelease(check, voucher, expense, userId);
+    return getCheckbookEntryById(id);
   }
+
+  await recordExpenseCheckRelease(check, voucher, expense, userId);
 
   const { data, error } = await supabase
     .from('checkbook')

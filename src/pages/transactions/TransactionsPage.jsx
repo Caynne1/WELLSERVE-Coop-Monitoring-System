@@ -36,9 +36,28 @@ function memberName(tx) {
   return [tx.members?.first_name, tx.members?.last_name].filter(Boolean).join(' ') || '-';
 }
 
+function titleCase(value) {
+  return String(value || '').replace(/_/g, ' ').replace(/\w/g, m => m.toUpperCase());
+}
+
+function loanDeductionCategoryLabel(tx) {
+  if (String(tx?.type || '').toLowerCase() !== 'loan_deduction') return '';
+  const note = String(tx?.notes || '').split('|')[0].trim().replace(/^Loan deduction category:\s*/i, '');
+  if (note) return note;
+  return tx?.category ? titleCase(tx.category) : '';
+}
+
 function txLabel(value) {
   if (String(value || '').toLowerCase() === 'membership_payment') return 'membership';
   return String(value || '-').replace(/_/g, ' ');
+}
+
+function txDisplayLabel(tx) {
+  if (String(tx?.type || '').toLowerCase() === 'loan_deduction') {
+    const detail = loanDeductionCategoryLabel(tx);
+    return detail ? `Loan Deduction - ${detail}` : 'Loan Deduction';
+  }
+  return txLabel(tx?.type);
 }
 
 function isCashIn(tx) {
@@ -141,6 +160,8 @@ export default function TransactionsPage() {
         tx.payment_mode,
         tx.payment_mode_note,
         tx.type,
+        txDisplayLabel(tx),
+        loanDeductionCategoryLabel(tx),
         tx.category,
         tx.created_by_name,
       ].filter(Boolean).join(' ').toLowerCase();
@@ -186,7 +207,7 @@ export default function TransactionsPage() {
       return `<tr>
         <td style="white-space:nowrap">${tx.transaction_date ? formatDate(tx.transaction_date) : '-'}</td>
         <td style="white-space:nowrap">${recordedAt(tx)}</td>
-        <td style="text-transform:capitalize">${txLabel(tx.type)}</td>
+        <td style="text-transform:capitalize">${txDisplayLabel(tx)}</td>
         <td>${tx.category || '-'}</td>
         <td>${memberName(tx)}</td>
         <td style="text-align:right;font-weight:600;color:${direction === 'IN' ? '#065f46' : '#b91c1c'}">${fmt(tx.amount)}</td>
@@ -216,7 +237,7 @@ export default function TransactionsPage() {
       const rows = filtered.map(tx => ({
         transaction_date: tx.transaction_date ? formatDate(tx.transaction_date) : '',
         recorded_at: tx.created_at ? formatDateTime(tx.created_at) : '',
-        type: txLabel(tx.type),
+        type: txDisplayLabel(tx),
         category: tx.category || '',
         member: memberName(tx),
         member_no: tx.members?.member_no || '',
@@ -389,7 +410,7 @@ export default function TransactionsPage() {
                           {recordedAt(tx)}
                         </td>
                         <td className="px-4 py-3 capitalize text-gray-700 whitespace-nowrap">
-                          {txLabel(tx.type)}
+                          {txDisplayLabel(tx)}
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
@@ -465,7 +486,7 @@ export default function TransactionsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <DetailItem label="Transaction Date" value={detailTarget.transaction_date ? formatDate(detailTarget.transaction_date) : '-'} />
               <DetailItem label="Recorded At" value={recordedAt(detailTarget)} />
-              <DetailItem label="Type" value={txLabel(detailTarget.type)} />
+              <DetailItem label="Type" value={txDisplayLabel(detailTarget)} />
               <DetailItem label="Category" value={detailTarget.category || '-'} />
               <DetailItem label="Member" value={memberName(detailTarget)} />
               <DetailItem label="Amount" value={formatCurrency(detailTarget.amount)} />

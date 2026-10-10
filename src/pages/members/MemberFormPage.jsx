@@ -148,6 +148,78 @@ function formatMemberNo(value) {
   return /^\d+$/.test(text) ? text.padStart(4, '0') : text;
 }
 
+
+function money(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function getMembershipRequiredFee({ recordType, membershipType, kiddySavingsType }) {
+  if (recordType === 'old_member') {
+    const oldBreakdown = OLD_MEMBER_BREAKDOWN[membershipType];
+    if (!oldBreakdown) return 0;
+    return money((oldBreakdown.membership_fee || 0) + (oldBreakdown.cbu || 0) + (oldBreakdown.savings || 0));
+  }
+
+  const breakdown = membershipType === 'kiddy'
+    ? buildKiddyBreakdown(kiddySavingsType || 'regular_savings')
+    : NEW_MEMBER_BREAKDOWN[membershipType];
+
+  return money((breakdown?.items || []).reduce((sum, item) => sum + Number(item.amount || 0), 0));
+}
+
+async function syncMembershipRecordAfterMemberTypeChange({ memberId, values, userId }) {
+  const { data: memberships, error: membershipError } = await supabase
+    .from('member_memberships')
+    .select('id, membership_type, fee_required, fee_paid, notes, created_at')
+    .eq('member_id', memberId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (membershipError) throw membershipError;
+  const membership = memberships?.[0];
+  if (!membership) return { updated: false, reason: 'no_membership_record' };
+
+  const { count, error: paymentCountError } = await supabase
+    .from('membership_payments')
+    .select('id', { count: 'exact', head: true })
+    .eq('member_membership_id', membership.id);
+
+  if (paymentCountError) throw paymentCountError;
+
+  const hasPaymentRecord = (count || 0) > 0 || money(membership.fee_paid) > 0;
+  const nextFeeRequired = getMembershipRequiredFee({
+    recordType: values.record_type || 'new_member',
+    membershipType: values.membership_type,
+    kiddySavingsType: values.kiddy_savings_type,
+  });
+
+  const updatePayload = {
+    membership_type: values.membership_type,
+  };
+
+  if (!hasPaymentRecord && nextFeeRequired > 0) {
+    updatePayload.fee_required = nextFeeRequired;
+    updatePayload.fee_paid = 0;
+    updatePayload.notes = [
+      membership.notes,
+      `Auto-updated required fee after manual member type change; ${values.record_type === 'old_member' ? 'old' : 'new'} structure total: ₱${nextFeeRequired.toLocaleString()}.`,
+    ].filter(Boolean).join('\n');
+  }
+
+  const { error: updateError } = await supabase
+    .from('member_memberships')
+    .update(updatePayload)
+    .eq('id', membership.id);
+
+  if (updateError) throw updateError;
+
+  return {
+    updated: true,
+    feeUpdated: !hasPaymentRecord,
+    feeRequired: !hasPaymentRecord ? nextFeeRequired : money(membership.fee_required),
+  };
+}
+
 const MEMBERSHIP_CARDS = [
   {
     value: 'associate',
@@ -982,7 +1054,19 @@ export function MemberFormContent({
         if (cbuAccount) await updateAccount(cbuAccount.id, { account_no: cbuAccountNo });
         if (savingsAccount) await updateAccount(savingsAccount.id, { account_no: savingsAccountNo });
 
-        toast.success('Member updated successfully');
+        const membershipSync = await syncMembershipRecordAfterMemberTypeChange({
+          memberId,
+          values,
+          userId: user.id,
+        });
+
+        if (membershipSync.updated && membershipSync.feeUpdated) {
+          toast.success(`Member updated. Required membership fee recalculated to ${formatCurrency(membershipSync.feeRequired)}.`);
+        } else if (membershipSync.updated && !membershipSync.feeUpdated) {
+          toast.success('Member updated. Existing membership payment record was preserved.');
+        } else {
+          toast.success('Member updated successfully');
+        }
         trackActivity({ userId: user?.id, module: 'member', action: 'update', description: `Updated member: ${values.first_name} ${values.last_name}` });
 
         if (inModal) { onUpdated?.(memberId); onClose?.(); }
