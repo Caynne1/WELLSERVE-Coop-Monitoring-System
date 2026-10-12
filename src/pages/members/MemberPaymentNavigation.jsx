@@ -29,6 +29,14 @@ export function MemberPaymentNavigation({ memberId, children }) {
     if (busy.current) return;
     busy.current = true;
     try {
+      if (row.is_loan_deduction_payment) {
+        if (row.loan_id) {
+          navigate(`/loans/${row.loan_id}`);
+        } else {
+          toast.error('This loan deduction has no invoice link.');
+        }
+        return;
+      }
       if (row.is_stored_payment) {
         toast.error('This imported summary has no individual invoice link.');
         return;

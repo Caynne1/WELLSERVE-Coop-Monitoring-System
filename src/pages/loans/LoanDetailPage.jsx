@@ -444,6 +444,77 @@ export default function LoanDetailPage() {
     const item = deductionItems.find(d => matcher.test(d.label || ''));
     return item ? Number(item.amount || 0) : Number(fallback || 0);
   };
+
+  const numberValue = value => Number(String(value ?? 0).replace(/,/g, '')) || 0;
+  const normalizeMembershipDeductionRows = () => {
+    const raw = previewDeductions?.membership_deduction ?? previewDeductions?.membershipDeduction ?? null;
+    const data = typeof raw === 'string' ? parseJsonSafely(raw, {}) : (raw || {});
+    const rows = [];
+    const seen = new Set();
+    const labelMap = {
+      membership_fee: 'Membership Deduction - Membership Fee',
+      entry: 'Membership Deduction - Membership Fee',
+      entry_fee: 'Membership Deduction - Membership Fee',
+      membership: 'Membership Deduction - Membership Fee',
+      cbu: 'Membership Deduction - CBU Completion',
+      cbu_assoc: 'Membership Deduction - CBU Completion',
+      min_cbu: 'Membership Deduction - CBU Completion',
+      cbu_completion: 'Membership Deduction - CBU Completion',
+      savings: 'Membership Deduction - Savings',
+      savings_deposit: 'Membership Deduction - Savings',
+      membership_initial_savings: 'Membership Deduction - Savings',
+      vip_card: 'Membership Deduction - WELLife VIP Card',
+      wellife_vip: 'Membership Deduction - WELLife VIP Card',
+      membership_vip_card: 'Membership Deduction - WELLife VIP Card',
+      admin_fees: 'Membership Deduction - Admin & Regulatory Fees',
+      admin_regulatory: 'Membership Deduction - Admin & Regulatory Fees',
+      admin_regulatory_fee: 'Membership Deduction - Admin & Regulatory Fees',
+      membership_regulatory_fee: 'Membership Deduction - Admin & Regulatory Fees',
+      regulatory_fee: 'Membership Deduction - Admin & Regulatory Fees',
+    };
+    const normalizeKey = value => String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    const addRow = (key, label, amount) => {
+      const value = numberValue(amount);
+      if (value <= 0) return;
+      const resolvedKey = normalizeKey(key || label);
+      const resolvedLabel = labelMap[resolvedKey] || `Membership Deduction - ${titleCase(label || key)}`;
+      const dedupeKey = `${resolvedKey}|${resolvedLabel}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      rows.push({ key: resolvedKey, label: resolvedLabel, amount: value });
+    };
+
+    const breakdown = data?.breakdown || data?.items || null;
+    if (Array.isArray(breakdown)) {
+      breakdown.forEach(item => addRow(item.key || item.category || item.label, item.label || item.category || item.key, item.amount || item.value));
+    } else if (breakdown && typeof breakdown === 'object') {
+      Object.entries(breakdown).forEach(([key, amount]) => addRow(key, key, amount));
+    }
+
+    Object.keys(labelMap).forEach(key => addRow(key, key, data?.[key]));
+
+    addRow('membership_regulatory_fee', 'membership_regulatory_fee', loan.membership_regulatory_fee);
+    addRow('membership_initial_savings', 'membership_initial_savings', loan.membership_initial_savings);
+    addRow('membership_vip_card', 'membership_vip_card', loan.membership_vip_card);
+
+    const explicitTotal = numberValue(data?.total ?? data?.balance_due ?? data?.amount ?? previewDeductions?.membership_deduction_total);
+    const rowTotal = rows.reduce((sum, row) => sum + row.amount, 0);
+    if (rows.length === 0 && explicitTotal > 0) {
+      rows.push({ key: 'membership_deduction', label: 'Membership Deduction', amount: explicitTotal });
+    } else if (explicitTotal > rowTotal + 0.01) {
+      rows.push({
+        key: 'membership_deduction_other',
+        label: 'Membership Deduction - Other',
+        amount: round2(explicitTotal - rowTotal),
+      });
+    }
+    return rows;
+  };
+  const membershipDeductionRows = normalizeMembershipDeductionRows();
   const monthlyInterestRate = previewSummary?.monthly_interest_rate != null
     ? Number(previewSummary.monthly_interest_rate)
     : Number(loan.interest_rate || 0);
@@ -570,6 +641,7 @@ export default function LoanDetailPage() {
             ${kvRow('CBU', formatCurrency(loan.share_capital ?? 0))}
             ${kvRow('Regular Savings', formatCurrency(loan.regular_savings ?? 0))}
             ${kvRow('Annual Dues', formatCurrency(annualDuesAmount))}
+            ${membershipDeductionRows.map(row => kvRow(row.label, formatCurrency(row.amount))).join('')}
             ${kvRow('Total Deductions', formatCurrency(previewDeductions?.total_deductions ?? 0))}
           </div>
           <div class="col">
@@ -861,6 +933,7 @@ export default function LoanDetailPage() {
         ['CBU', loan.share_capital ?? 0],
         ['Regular Savings', loan.regular_savings ?? 0],
         ['Annual Dues', annualDuesAmount],
+        ...membershipDeductionRows.map(row => [row.label, row.amount]),
         ['Total Deductions', previewDeductions?.total_deductions ?? 0],
         ['Net Proceeds', previewDeductions?.net_proceeds ?? (loan.amount || 0)],
       ]);
@@ -1049,6 +1122,7 @@ export default function LoanDetailPage() {
                 ['Coop Loan Protection Plan', formatCurrency(previewDeductions?.insurance ?? loan.loan_insurance ?? 0)],
                 ['Annual Dues', formatCurrency(annualDuesAmount)],
                 ['Notarial Fee', formatCurrency(previewDeductions?.notarial_fee ?? loan.notarial_fee ?? 0)],
+                ...membershipDeductionRows.map(row => [row.label, formatCurrency(row.amount)]),
               ].map(([label, value]) => (
                 <div key={label} className="flex items-start justify-between gap-4 px-5 py-3 text-sm">
                   <span className="text-gray-600">{label}</span>

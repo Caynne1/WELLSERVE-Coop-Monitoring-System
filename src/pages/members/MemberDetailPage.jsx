@@ -385,12 +385,38 @@ export default function MemberDetailPage() {
     [transactionsWithInvoiceDetails]
   );
   const cbuTransactions = useMemo(
-    () => transactionsWithInvoiceDetails.filter(t => ['cbu', 'cbu_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['cbu', 'cbu_withdrawal'].includes(String(t.type || '').toLowerCase())),
-    [transactionsWithInvoiceDetails]
+    () => transactionsWithInvoiceDetails.filter(t => {
+      const category = String(t.category || '').toLowerCase();
+      const type = String(t.type || '').toLowerCase();
+      const isCbuLedgerType = ['cbu', 'cbu_withdrawal'].includes(category) ||
+        ['cbu', 'cbu_withdrawal', 'deposit', 'withdrawal'].includes(type);
+      if (!isCbuLedgerType) return false;
+
+      // Do not count loan_deduction audit rows as CBU balance rows.
+      // The actual CBU credit is the paired deposit row posted to the member's CBU account.
+      if (type === 'loan_deduction') return false;
+
+      if (cbuAccount?.id) return String(t.account_id || '') === String(cbuAccount.id);
+      return ['cbu', 'cbu_withdrawal'].includes(category) || ['cbu', 'cbu_withdrawal'].includes(type);
+    }),
+    [transactionsWithInvoiceDetails, cbuAccount?.id]
   );
   const savingsTransactions = useMemo(
-    () => transactionsWithInvoiceDetails.filter(t => ['savings', 'savings_withdrawal'].includes(String(t.category || '').toLowerCase()) || ['savings', 'savings_withdrawal'].includes(String(t.type || '').toLowerCase())),
-    [transactionsWithInvoiceDetails]
+    () => transactionsWithInvoiceDetails.filter(t => {
+      const category = String(t.category || '').toLowerCase();
+      const type = String(t.type || '').toLowerCase();
+      const isSavingsLedgerType = ['savings', 'savings_withdrawal'].includes(category) ||
+        ['savings', 'savings_withdrawal', 'deposit', 'withdrawal'].includes(type);
+      if (!isSavingsLedgerType) return false;
+
+      // Same rule as CBU: account balance should use actual Savings account ledger rows,
+      // not loan_deduction audit rows.
+      if (type === 'loan_deduction') return false;
+
+      if (savingsAccount?.id) return String(t.account_id || '') === String(savingsAccount.id);
+      return ['savings', 'savings_withdrawal'].includes(category) || ['savings', 'savings_withdrawal'].includes(type);
+    }),
+    [transactionsWithInvoiceDetails, savingsAccount?.id]
   );
   const cbuDisplayBalance = useMemo(
     () => cbuTransactions.reduce((sum, tx) => {
@@ -2682,7 +2708,28 @@ function MembershipTab({
     };
   }, [importedComponentTotals, membershipFees]);
   const displayPayments = useMemo(() => {
-    const actualPayments = payments || [];
+    const paymentText = payment => `${payment?.type || ''} ${payment?.category || ''} ${payment?.notes || ''} ${payment?.reference || ''}`.toLowerCase();
+    const isLoanMembershipDeductionPayment = payment => /loan\s+membership\s+deduction|loan\s+deduction\s+allocation|loan_deduction/.test(paymentText(payment));
+    const normalizePaymentKey = payment => [
+      isLoanMembershipDeductionPayment(payment) ? 'loan-membership-deduction' : 'membership-payment',
+      String(payment?.payment_date || '').slice(0, 10),
+      Number(payment?.amount || 0).toFixed(2),
+      displayTracingText(payment?.notes || '').replace(/\s+/g, ' ').trim().toLowerCase(),
+    ].join('|');
+    const chooseBestPaymentRecord = (existing, incoming) => {
+      if (!existing) return incoming;
+      const existingHasLink = Boolean(existing.invoice_id || existing.invoice_no || existing.reference);
+      const incomingHasLink = Boolean(incoming.invoice_id || incoming.invoice_no || incoming.reference);
+      if (!existingHasLink && incomingHasLink) return incoming;
+      if (String(incoming.created_at || '') > String(existing.created_at || '')) return incoming;
+      return existing;
+    };
+
+    const actualPayments = Object.values((payments || []).reduce((acc, payment) => {
+      const key = normalizePaymentKey(payment);
+      acc[key] = chooseBestPaymentRecord(acc[key], payment);
+      return acc;
+    }, {}));
     const actualPaymentTotal = actualPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     // Only show synthetic/imported payment rows when the stored membership total is
     // greater than actual membership payment rows. This prevents duplicate display
@@ -2763,10 +2810,41 @@ function MembershipTab({
 
       const paymentDay = String(payment.payment_date || '').slice(0, 10);
       const paymentTime = new Date(payment.created_at || payment.payment_date || 0).getTime();
+      const isLoanDeductionPayment = isLoanMembershipDeductionPayment(payment);
+      const relatedLoanDeduction = isLoanDeductionPayment
+        ? paymentTransactions
+          .filter(tx => {
+            if (String(paymentDate(tx) || '').slice(0, 10) !== paymentDay) return false;
+            const text = `${tx.category || ''} ${tx.type || ''} ${tx.notes || ''}`.toLowerCase();
+            return text.includes('loan_deduction') || text.includes('loan deduction') || text.includes('loan membership deduction');
+          })
+          .sort((a, b) => {
+            const aAmountGap = Math.abs(Number(a.amount || 0) - Number(payment.amount || 0));
+            const bAmountGap = Math.abs(Number(b.amount || 0) - Number(payment.amount || 0));
+            if (aAmountGap !== bAmountGap) return aAmountGap - bAmountGap;
+            const aDistance = Math.abs(new Date(a.created_at || paymentDate(a) || 0).getTime() - paymentTime);
+            const bDistance = Math.abs(new Date(b.created_at || paymentDate(b) || 0).getTime() - paymentTime);
+            return aDistance - bDistance;
+          })[0]
+        : null;
+
+      if (isLoanDeductionPayment) {
+        return {
+          ...payment,
+          reference: payment.reference || relatedLoanDeduction?.reference || 'FOR TRACING',
+          invoice_no: payment.invoice_no || '',
+          invoice_id: payment.invoice_id || '',
+          loan_id: payment.loan_id || relatedLoanDeduction?.loan_id || '',
+          payment_mode: payment.payment_mode || 'Loan Deduction',
+          is_loan_deduction_payment: true,
+        };
+      }
+
       const related = paymentTransactions
         .filter(tx => {
           if (String(paymentDate(tx) || '').slice(0, 10) !== paymentDay) return false;
           const text = `${tx.category || ''} ${tx.type || ''} ${tx.notes || ''}`.toLowerCase();
+          if (text.includes('loan_deduction') || text.includes('loan deduction') || text.includes('loan membership deduction')) return false;
           return text.includes('membership') || text.includes('admin') || text.includes('wellife');
         })
         .sort((a, b) => {
