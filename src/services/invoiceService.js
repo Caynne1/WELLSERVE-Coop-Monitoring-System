@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { createTransaction } from './transactionService';
+import { createTransaction, publishTransactionSideEffects } from './transactionService';
 import {
   getMembershipByMemberId,
   recordMembershipPayment,
@@ -707,6 +707,9 @@ export async function createMultiCategoryInvoice({
   // invoice never leaves a deposit or payment "stuck" on the member's
   // account with nothing to show for it.
   const rollbacks = [];
+  // A Savings Booster transaction is not complete until its payment-ledger
+  // row exists. Do not publish success logs while rollback is still possible.
+  const pendingBoosterSuccessEvents = [];
 
   async function runRollbacks() {
     for (const undo of rollbacks.reverse()) {
@@ -1271,9 +1274,10 @@ export async function createMultiCategoryInvoice({
           transaction_date: effectivePaymentDate,
           payment_mode,
           payment_mode_note,
-        });
+        }, { deferSideEffects: true });
         rollbacks.push(async () => {
-          await supabase.from('transactions').delete().eq('id', boosterTx.id);
+          const { error } = await supabase.from('transactions').delete().eq('id', boosterTx.id);
+          if (error) throw error;
         });
         const { data: boosterPayment, error: boosterPaymentErr } = await supabase
           .from('savings_booster_payments')
@@ -1293,9 +1297,12 @@ export async function createMultiCategoryInvoice({
           .select('id')
           .single();
         if (boosterPaymentErr) throw boosterPaymentErr;
+        if (!boosterPayment?.id) throw new Error('Savings Booster payment was not saved. No payment row was returned.');
         rollbacks.push(async () => {
-          await supabase.from('savings_booster_payments').delete().eq('id', boosterPayment.id);
+          const { error } = await supabase.from('savings_booster_payments').delete().eq('id', boosterPayment.id);
+          if (error) throw error;
         });
+        pendingBoosterSuccessEvents.push(boosterTx);
         ref_id = updatedBooster?.id || entry.booster.id;
         purpose = purpose || `Savings Booster Deposit${entry.booster.slot_number ? ` — Slot #${entry.booster.slot_number}` : ''}`;
         invoiceLines.push({ label: purpose, amount, payment_type: 'savings_booster', ref_id, account_id });
@@ -1312,6 +1319,16 @@ export async function createMultiCategoryInvoice({
       // and incorrectly reject the second one as a "duplicate".
     }
 
+    // All invoice lines and Savings Booster payment rows were saved.
+    // Publish success activity/notifications only now, never while a financial
+    // rollback could still be triggered by an unsuccessful save.
+    for (const boosterTx of pendingBoosterSuccessEvents) {
+      try {
+        await publishTransactionSideEffects(boosterTx);
+      } catch (error) {
+        console.error('[createMultiCategoryInvoice] post-save logging failed:', error);
+      }
+    }
     return created;
   } catch (err) {
     await runRollbacks();

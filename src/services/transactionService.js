@@ -106,7 +106,7 @@ export async function getTransactionsByMemberId(memberId) {
   return txList.map(t => ({ ...t, created_by_name: 'System' }));
 }
 
-export async function createTransaction(payload) {
+export async function createTransaction(payload, { deferSideEffects = false } = {}) {
   const currentUserId = payload.created_by || await getCurrentUserId();
   const finalPayload = {
     ...payload,
@@ -143,25 +143,38 @@ export async function createTransaction(payload) {
 
   console.log('[createTransaction] success → id:', data.id);
 
-  await trackActivity({
-    userId: data.created_by,
-    module: 'transaction',
-    action: data.type || 'create',
-    description: buildTransactionAuditDescription(data, 'recorded'),
-    recordId: data.id,
-  });
+  if (!deferSideEffects) await publishTransactionSideEffects(data);
 
-  // Fire payment notification (non-blocking)
+  return data;
+}
+
+// Use only after every related financial record has been saved successfully.
+// For Savings Booster, the invoice service defers both the activity log and
+// payment notification until the booster payment ledger has been committed.
+export async function publishTransactionSideEffects(data) {
+  try {
+    await trackActivity({
+      userId: data.created_by,
+      module: 'transaction',
+      action: data.type || 'create',
+      description: buildTransactionAuditDescription(data, 'recorded'),
+      recordId: data.id,
+    });
+  } catch (error) {
+    // Logging is supplemental: never undo a valid financial payment because of it.
+    console.error('[publishTransactionSideEffects] activity log failed:', error);
+  }
+
   try {
     const amt = Number(data.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 });
     const category = data.category || data.type || 'transaction';
     notifyPayment({
       message: `${category.charAt(0).toUpperCase() + category.slice(1)} of ₱${amt} recorded successfully.`,
       reference_id: data.id,
-    }).catch(() => {});
-  } catch (_) {}
-
-  return data;
+    }).catch(error => console.warn('[publishTransactionSideEffects] notification failed:', error));
+  } catch (error) {
+    console.warn('[publishTransactionSideEffects] notification failed:', error);
+  }
 }
 
 export async function deleteTransaction(id, { deletedBy = undefined, reason = '' } = {}) {
