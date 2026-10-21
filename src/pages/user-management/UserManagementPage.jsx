@@ -182,9 +182,37 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
     if (action === 'view' && permissions[moduleKey]?.view) {
       next[moduleKey] = { view: false, create: false, edit: false, delete: false, approve: false };
     }
+    // Enrollment creates an initial-deposit invoice. Keep these explicit
+    // permissions in sync instead of saving an unusable configuration.
+    if (moduleKey === 'savings_booster' && action === 'create' && next.savings_booster.create) {
+      next.invoices = { ...next.invoices, view: true, create: true };
+    }
+    if (moduleKey === 'savings_booster' && action === 'edit' && next.savings_booster.edit) {
+      next.invoices = { ...next.invoices, view: true, create: true };
+    }
+    if (moduleKey === 'invoices' && (!next.invoices.view || !next.invoices.create)) {
+      next.savings_booster = {
+        ...next.savings_booster,
+        create: false,
+        edit: false,
+      };
+    }
     onChange(next);
   }
+  const boosterEnabled = !!(permissions.savings_booster?.create || permissions.savings_booster?.edit);
+  const missingInvoicePermission = boosterEnabled && !permissions.invoices?.create;
   return (
+    <div>
+      <p className="mb-2 text-xs text-gray-600">
+        Savings Booster Create/Edit also needs Invoices Create to record its initial deposit.
+        Enabling either Booster permission automatically enables Invoices View and Create;
+        disabling Invoices Create disables those Booster actions. Invoice Edit controls marking existing invoices paid.
+      </p>
+      {missingInvoicePermission && (
+        <p role="alert" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          Existing permission mismatch: Savings Booster actions require Invoices Create. Enable the missing permission before saving.
+        </p>
+      )}
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full min-w-[800px] table-fixed text-sm">
         <colgroup>
@@ -229,6 +257,7 @@ function PermissionMatrix({ permissions, onChange, readOnly = false }) {
           </tbody>
         ))}
       </table>
+    </div>
     </div>
   );
 }

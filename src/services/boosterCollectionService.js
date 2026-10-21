@@ -22,6 +22,11 @@ export async function recordBoosterInitialDeposit({ requestId, memberId, slot, s
     p_payment_date: payment.paymentDate, p_payment_mode: payment.mode,
     p_reference: payment.reference.trim(), p_notes: notes || '', p_old_transaction: payment.oldTransaction,
   });
-  if (error) throw error;
+  if (error) {
+    // Keep the original PostgREST error details available to authorized staff.
+    // No retry here: a payment RPC may have already committed before a network error.
+    const detail = [error.message, error.details, error.hint].filter(Boolean).join(' — ');
+    throw new Error(`Savings Booster enrollment failed: ${detail || 'Database rejected the request.'} (code: ${error.code || 'unknown'}). Check that the member was not enrolled before retrying.`);
+  }
   return data;
 }
