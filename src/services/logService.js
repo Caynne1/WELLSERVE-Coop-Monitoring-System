@@ -91,75 +91,71 @@ async function attachAffectedMembers(logs) {
 // ─── Fetch logs with optional filters ────────────────────────────────────────
 // Two-step fetch: get activity_logs first, then resolve user names separately.
 // This prevents an RLS block on the join from killing the entire query.
-export async function getLogs({ limit = 200, search = '', dateFrom = null, dateTo = null } = {}) {
-  let query = supabase
-    .from('activity_logs')
-    .select('id, action, module, description, user_id, created_at, record_id')
-    .neq('action', 'view')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  // Date range filter — uses the btree index on created_at
-  if (dateFrom) {
-    query = query.gte('created_at', `${dateFrom}T00:00:00`);
+// Server-side filtering and paging. Counts are calculated by PostgreSQL, not the loaded rows.
+export async function getLogUsers() {
+  const users = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.from('profiles')
+      .select('id, full_name, email').order('full_name', { ascending: true }).range(offset, offset + 499);
+    if (error) throw error;
+    users.push(...(data || []));
+    if ((data || []).length < 500) break;
   }
-  if (dateTo) {
-    query = query.lte('created_at', `${dateTo}T23:59:59.999`);
-  }
+  return users;
+}
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('[logService] getLogs error:', error.code, error.message, error.hint);
-    throw error;
-  }
+export async function getLogs({ page = 1, pageSize = 25, search = '', dateFrom = null,
+  dateTo = null, userId = '', module = '', action = '' } = {}) {
+  const safeSize = Math.min(500, Math.max(1, Number(pageSize) || 25));
+  const safePage = Math.max(1, Number(page) || 1);
+  let query = supabase.from('activity_logs')
+    .select('id, action, module, description, user_id, created_at, record_id', { count: 'exact' })
+    .neq('action', 'view');
+  if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
+  if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999`);
+  if (userId) query = query.eq('user_id', userId);
+  if (module) query = query.eq('module', module);
+  if (action) query = query.eq('action', action);
 
-  const logs = data || [];
-
-  // ── Resolve user names in one extra query ──────────────────────────────────
-  const userIds = [...new Set(logs.map(l => l.user_id).filter(Boolean))];
-  let profileMap = {};
-
-  if (userIds.length > 0) {
-    const { data: profiles, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', userIds);
-
-    if (profileError) {
-      // Non-fatal — rows will show UID fallback instead of name
-      console.warn('[logService] profiles fetch error (check RLS):', profileError.message);
-    } else {
-      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+  // Search is performed BEFORE paging to avoid missing historical matches.
+  // User-name searches are mapped to actor IDs; member-name searches to UUIDs
+  // embedded in descriptions or referenced by record_id.
+  const term = search.trim();
+  if (term) {
+    const cleaned = term.replace(/[%,().*]/g, ' ').trim();
+    if (cleaned) {
+      const pattern = `%${cleaned}%`;
+      const [profiles, members] = await Promise.all([
+        supabase.from('profiles').select('id').or(`full_name.ilike.${pattern},email.ilike.${pattern}`).limit(200),
+        supabase.from('members').select('id').or(`first_name.ilike.${pattern},last_name.ilike.${pattern},member_no.ilike.${pattern}`).limit(200),
+      ]);
+      const searchClauses = [
+        `description.ilike.${pattern}`, `module.ilike.${pattern}`, `action.ilike.${pattern}`,
+        ...((profiles.data || []).map(p => `user_id.eq.${p.id}`)),
+        ...((members.data || []).flatMap(m => [`description.ilike.%${m.id}%`, `record_id.eq.${m.id}`])),
+      ];
+      query = query.or(searchClauses.join(','));
     }
   }
-
-  // Attach resolved name to each log row
-  const rows = logs.map(log => ({
+  const first = (safePage - 1) * safeSize;
+  const { data, count, error } = await query.order('created_at', { ascending: false })
+    .order('id', { ascending: false }).range(first, first + safeSize - 1);
+  if (error) throw error;
+  const logs = data || [];
+  const userIds = [...new Set(logs.map(l => l.user_id).filter(Boolean))];
+  const profileMap = {};
+  if (userIds.length) {
+    const { data: profiles, error: profileError } = await supabase.from('profiles')
+      .select('id, full_name, email').in('id', userIds);
+    if (profileError) console.warn('[logService] profiles:', profileError.message);
+    (profiles || []).forEach(p => { profileMap[p.id] = p; });
+  }
+  const rows = await attachAffectedMembers(logs.map(log => ({
     ...log,
     action: normalizeActivityAction(log.action),
-    user_name: profileMap[log.user_id]?.full_name
-            || profileMap[log.user_id]?.email
-            || null,
-  }));
-
-  const enrichedRows = await attachAffectedMembers(rows);
-
-  // Client-side text search across action, module, description, user, and member.
-  if (search.trim()) {
-    const q = search.trim().toLowerCase();
-    return enrichedRows.filter(log =>
-      (log.action      || '').toLowerCase().includes(q) ||
-      (log.module      || '').toLowerCase().includes(q) ||
-      (log.description || '').toLowerCase().includes(q) ||
-      (log.user_name   || '').toLowerCase().includes(q) ||
-      (log.member_name || '').toLowerCase().includes(q) ||
-      (log.member_no   || '').toLowerCase().includes(q) ||
-      (log.user_id     || '').toLowerCase().includes(q) ||
-      (log.record_id   || '').toLowerCase().includes(q)
-    );
-  }
-
-  return enrichedRows;
+    user_name: profileMap[log.user_id]?.full_name || profileMap[log.user_id]?.email || null,
+  })));
+  return { rows, total: count || 0 };
 }
 
 export async function createLog(payload) {

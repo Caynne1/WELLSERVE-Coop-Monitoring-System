@@ -10,8 +10,7 @@ import Button from '../../components/ui/Button';
 import Pagination from '../../components/ui/Pagination';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
-import usePagination from '../../hooks/usePagination';
-import { getLogs, subscribeToLogs, trackActivity } from '../../services/logService';
+import { getLogs, getLogUsers, subscribeToLogs, trackActivity } from '../../services/logService';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
@@ -61,7 +60,7 @@ function actionBadgeClass(action = '') {
 }
 
 function displayUser(log) {
-  return log.user_name || log.profiles?.email || log.user_id || 'System';
+  return log.user_name || log.profiles?.email || (log.user_id ? 'Unknown user' : 'System');
 }
 
 function displayText(value) {
@@ -145,6 +144,11 @@ export default function ActivityLogsPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('logs');
   const [logs, setLogs] = useState([]);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [logUsers, setLogUsers] = useState([]);
+  const [userFilter, setUserFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -165,25 +169,36 @@ export default function ActivityLogsPage() {
   const fetchLogs = useCallback(async ({ quiet = false } = {}) => {
     try {
       if (!quiet) setLoading(true);
-      const data = await getLogs({
-        limit: 2000,
-        search: appliedSearch,
-        dateFrom: dateFrom || null,
-        dateTo: dateTo || null,
+      const result = await getLogs({
+        page, pageSize, search: appliedSearch, dateFrom: dateFrom || null,
+        dateTo: dateTo || null, userId: userFilter,
+        module: moduleFilter, action: actionFilter,
       });
-      setLogs(data);
-    } catch {
-      toast.error('Failed to load activity logs');
+      setLogs(result.rows);
+      setTotalLogs(result.total);
+    } catch (error) {
+      console.error('[ActivityLogsPage]', error);
+      toast.error(error.message || 'Failed to load activity logs');
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch, dateFrom, dateTo]);
+  }, [page, pageSize, appliedSearch, dateFrom, dateTo, userFilter, moduleFilter, actionFilter]);
+
+  useEffect(() => {
+    getLogUsers().then(setLogUsers).catch(error => {
+      console.warn('[ActivityLogsPage] Could not load user filter:', error);
+      toast.error('Unable to load registered user list');
+    });
+  }, []);
 
   useEffect(() => {
     fetchLogs();
     const channel = subscribeToLogs(() => fetchLogs({ quiet: true }));
     return () => supabase.removeChannel(channel);
   }, [fetchLogs]);
+
+  // Applying any filter starts the paged query from its first page.
+  useEffect(() => { setPage(1); }, [appliedSearch, dateFrom, dateTo, userFilter, moduleFilter, actionFilter, pageSize]);
 
   const fetchTracingDocuments = useCallback(async () => {
     try {
@@ -231,26 +246,16 @@ export default function ActivityLogsPage() {
     }
   }
 
-  const filteredLogs = useMemo(() => logs.filter(log => {
-    const matchesModule = !moduleFilter || log.module === moduleFilter;
-    const matchesAction = !actionFilter || log.action === actionFilter;
-    return matchesModule && matchesAction;
-  }), [logs, moduleFilter, actionFilter]);
-
-  const moduleOptions = useMemo(() => uniqueOptions(logs, 'module'), [logs]);
-  const actionOptions = useMemo(() => activityActionOptions(logs), [logs]);
-  const userCount = useMemo(
-    () => new Set(filteredLogs.map(log => displayUser(log)).filter(Boolean)).size,
-    [filteredLogs]
-  );
+  const filteredLogs = logs; // Already filtered by Supabase before paging.
+  const moduleOptions = ['account_monitoring', 'auth', 'cbu', 'checkbook', 'expense',
+    'invoice', 'loan', 'logs', 'member', 'savings', 'savings_booster', 'time_deposit',
+    'transaction', 'user_management', 'voucher'];
+  const actionOptions = activityActionOptions(logs);
+  const userCount = new Set(filteredLogs.map(log => log.user_id).filter(Boolean)).size;
   const latestLog = filteredLogs[0]?.created_at ? formatDateTime(filteredLogs[0].created_at) : 'No activity';
-  const hasActiveFilters = appliedSearch || dateFrom || dateTo || moduleFilter || actionFilter;
-
-  const { page, setPage, pageSize, setPageSize, pageItems, totalPages } = usePagination(filteredLogs, { pageSize: 25 });
-
-  useEffect(() => {
-    setPage(1);
-  }, [filteredLogs, setPage]);
+  const hasActiveFilters = appliedSearch || dateFrom || dateTo || moduleFilter || actionFilter || userFilter;
+  const totalPages = Math.max(1, Math.ceil(totalLogs / pageSize));
+  const pageItems = filteredLogs;
 
   function handleSearch() {
     setAppliedSearch(searchInput.trim());
@@ -273,33 +278,28 @@ export default function ActivityLogsPage() {
     setDateTo('');
     setModuleFilter('');
     setActionFilter('');
+    setUserFilter('');
   }
 
   async function handleExport() {
     setExporting(true);
     try {
-      const data = await getLogs({
-        limit: 10000,
-        search: appliedSearch,
-        dateFrom: dateFrom || null,
-        dateTo: dateTo || null,
-      });
-      const scopedData = data.filter(log =>
-        (!moduleFilter || log.module === moduleFilter) &&
-        (!actionFilter || log.action === actionFilter)
-      );
-      exportLogsToCSV(scopedData);
-      toast.success(`Exported ${scopedData.length} records`);
-
-      if (user?.id) {
-        trackActivity({
-          userId: user.id,
-          module: 'logs',
-          action: 'export',
-          description: `Exported audit trail CSV (${scopedData.length} records).`,
-        });
+      const collected = [];
+      let expected = 0;
+      for (let batchPage = 1; ; batchPage++) {
+        const result = await getLogs({ page: batchPage, pageSize: 500,
+          search: appliedSearch, dateFrom: dateFrom || null, dateTo: dateTo || null,
+          userId: userFilter, module: moduleFilter, action: actionFilter });
+        if (batchPage === 1) expected = result.total;
+        collected.push(...result.rows);
+        if (collected.length >= expected || !result.rows.length) break;
       }
-    } catch {
+      exportLogsToCSV(collected);
+      toast.success(`Exported ${collected.length} records`);
+      if (user?.id) trackActivity({ userId: user.id, module: 'logs', action: 'export',
+        description: `Exported audit trail CSV (${collected.length} records).` });
+    } catch (error) {
+      console.error('[ActivityLogsPage] Export:', error);
       toast.error('Export failed');
     } finally {
       setExporting(false);
@@ -316,7 +316,7 @@ export default function ActivityLogsPage() {
     </tr>`).join('');
     const html = `
       <h1 class="report-title">Activity Logs</h1>
-      <div class="report-meta">System audit trail | ${filteredLogs.length} records | Generated: ${new Date().toLocaleString('en-PH')}</div>
+      <div class="report-meta">System audit trail | Current page: ${filteredLogs.length} of ${totalLogs} matching records | Generated: ${new Date().toLocaleString('en-PH')}</div>
       <table>
         <thead><tr><th>Date &amp; Time</th><th>User Name</th><th>Module</th><th>Action Performed</th><th>Description</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -335,7 +335,7 @@ export default function ActivityLogsPage() {
 
       <div className="mt-5 flex flex-wrap gap-2">
         {[
-          { key: 'logs', label: 'Activity Logs', count: logs.length },
+          { key: 'logs', label: 'Activity Logs', count: totalLogs },
           { key: 'tracing', label: 'Document Tracing', count: tracingDocuments.length },
         ].map(tab => (
           <button
@@ -364,8 +364,8 @@ export default function ActivityLogsPage() {
         <StatCard
           icon={<ActivitySquare size={20} />}
           label="Visible Events"
-          value={filteredLogs.length.toLocaleString('en-PH')}
-          sub={`${logs.length.toLocaleString('en-PH')} loaded`}
+          value={totalLogs.toLocaleString('en-PH')}
+          sub={`${logs.length.toLocaleString('en-PH')} on current page`}
           tone="blue"
         />
         <StatCard
@@ -379,7 +379,7 @@ export default function ActivityLogsPage() {
           icon={<User size={20} />}
           label="Users"
           value={userCount.toLocaleString('en-PH')}
-          sub="Users in current view"
+          sub="Active users on current page"
           tone="green"
         />
         <StatCard
@@ -413,6 +413,18 @@ export default function ActivityLogsPage() {
             Search
           </Button>
         </div>
+
+        <select
+          aria-label="Filter activity by user"
+          value={userFilter}
+          onChange={e => setUserFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700"
+        >
+          <option value="">All Users</option>
+          {logUsers.map(profile => (
+            <option key={profile.id} value={profile.id}>{profile.full_name || profile.email || 'Unnamed account'}</option>
+          ))}
+        </select>
 
         <select
           value={moduleFilter}
@@ -496,13 +508,19 @@ export default function ActivityLogsPage() {
               <button onClick={() => setModuleFilter('')}><X size={11} /></button>
             </span>
           )}
+          {userFilter && (
+            <span className="inline-flex items-center gap-1 text-xs bg-[#000066]/8 text-[#000066] px-2.5 py-1 rounded-full">
+              User: {logUsers.find(p => p.id === userFilter)?.full_name || 'Selected user'}
+              <button onClick={() => setUserFilter('')}><X size={11} /></button>
+            </span>
+          )}
           {actionFilter && (
             <span className="inline-flex items-center gap-1 text-xs bg-[#000066]/8 text-[#000066] px-2.5 py-1 rounded-full">
               Action: {displayText(actionFilter)}
               <button onClick={() => setActionFilter('')}><X size={11} /></button>
             </span>
           )}
-          <span className="text-xs text-gray-400 ml-1">{filteredLogs.length} result{filteredLogs.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-gray-400 ml-1">{totalLogs} result{totalLogs !== 1 ? 's' : ''}</span>
           <button onClick={clearAllFilters} className="text-xs text-gray-500 hover:text-gray-700 underline">
             Clear all
           </button>
@@ -525,7 +543,7 @@ export default function ActivityLogsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredLogs.length === 0 ? (
+                {totalLogs === 0 ? (
                   <tr>
                     <td colSpan={5} className="text-center py-16 text-gray-400">
                       <FileText size={32} className="mx-auto mb-2 text-gray-200" />
@@ -539,9 +557,7 @@ export default function ActivityLogsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-gray-700 font-medium">{displayUser(log)}</span>
-                      {!log.user_name && log.user_id && (
-                        <p className="text-[10px] text-gray-400 font-mono">{log.user_id.slice(0, 8)}...</p>
-                      )}
+
                     </td>
                     <td className="px-4 py-3">
                       {log.module ? (
@@ -566,14 +582,14 @@ export default function ActivityLogsPage() {
 
           {filteredLogs.length > 0 && (
             <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-xs text-gray-400 text-right">
-              Showing {filteredLogs.length} of {logs.length} record{logs.length !== 1 ? 's' : ''}
+              Showing {logs.length} on this page of {totalLogs} matching records
             </div>
           )}
 
           <Pagination
             page={page}
             totalPages={totalPages}
-            totalItems={filteredLogs.length}
+            totalItems={totalLogs}
             pageSize={pageSize}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
