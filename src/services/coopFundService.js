@@ -678,7 +678,7 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     supabase.from('loans').select('id, member_id, loan_no, preview_schedule_json'),
     fetchInterestPayments(),
     fetchTransactions(),
-    getBoosterCollections({ from, to }),
+    getBoosterCollections({ from, to }, { includeDetails: true }),
   ]);
   const { data: loans = [], error: loanErr } = loanResult;
   const { data: txList = [], error: txErr } = txResult;
@@ -967,7 +967,16 @@ export async function getIncomeBreakdown({ from = null, to = null } = {}) {
     vip_card: Math.round(buckets.vip_card * 100) / 100,
     admin_regulatory_fees: Math.round(buckets.admin_regulatory_fees * 100) / 100,
     total_income: Math.round(totalIncome * 100) / 100,
-    booster_collections: boosterCollections,
+    booster_collections: boosterCollections.summary,
+    booster_collection_rows: boosterCollections.rows.map(row => ({
+      ...row,
+      member_name: memberMap[row.member_id]?.member_name || '',
+      member_no: memberMap[row.member_id]?.member_no || '',
+      ref_no: row.reference || null,
+      created_by: profileMap[row.created_by] || row.created_by || 'System',
+      description: row.notes || 'Savings Booster deposit',
+      source: 'Savings Booster',
+    })),
     details,
     loan_count: loans.length,
     tx_count: incomeTxList.length,

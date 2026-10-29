@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import PesoSign from '../../components/shared/PesoSign';
-import { groupExpenseCards } from '../../utils/expenseCards';
+import { groupExpenseCards, expenseCardCategory } from '../../utils/expenseCards';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/layout/PageHeader';
 import Spinner from '../../components/ui/Spinner';
@@ -1549,7 +1549,12 @@ export default function CoopMonitoringPage() {
   const selectedIncomeTotal = selectedIncomeRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
   const fundDetailCards = useMemo(() => {
-    const boosterRows = dateFilteredTransactions.filter(tx => tx.category === 'savings_booster');
+    // Details are allocated from complete deposit history, just like the card totals.
+    const boosterRows = incomeData?.booster_collection_rows || [];
+    const boosterInitialRows = boosterRows.filter(row => row.initial_amount > 0)
+      .map(row => ({ ...row, amount: row.initial_amount }));
+    const boosterWeeklyRows = boosterRows.filter(row => row.weekly_amount > 0)
+      .map(row => ({ ...row, amount: row.weekly_amount }));
     const details = [
       {
         key: 'current_fund_balance',
@@ -1590,14 +1595,14 @@ export default function CoopMonitoringPage() {
         key: 'booster_initial',
         label: 'Savings Booster - Initial Savings',
         value: incomeData?.booster_collections?.initial || 0,
-        rows: boosterRows.filter(tx => /initial/i.test(`${tx.description || ''} ${tx.notes || ''} ${tx.raw_category || ''}`)),
+        rows: boosterInitialRows,
         description: 'Savings Booster initial collections',
       },
       {
         key: 'booster_weekly',
         label: 'Savings Booster - Weekly Savings',
         value: incomeData?.booster_collections?.weekly || 0,
-        rows: boosterRows.filter(tx => /weekly/i.test(`${tx.description || ''} ${tx.notes || ''} ${tx.raw_category || ''}`)),
+        rows: boosterWeeklyRows,
         description: 'Savings Booster weekly collections',
       },
       {
@@ -1617,7 +1622,7 @@ export default function CoopMonitoringPage() {
       ...expenseMonitoring.cards.map(card => ({
         ...card,
         key: card.detailKey,
-        rows: expenseRows.filter(tx => tx.category === card.category),
+        rows: expenseRows.filter(tx => expenseCardCategory(tx).toLowerCase() === card.key),
         description: card.sub || 'Recorded expense category',
       })),
     ];

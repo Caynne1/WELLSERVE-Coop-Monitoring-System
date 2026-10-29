@@ -1,17 +1,21 @@
 import { supabase } from './supabase';
-import { boosterCollections } from '../utils/boosterCollections';
+import { boosterCollections, boosterCollectionAllocations } from '../utils/boosterCollections';
 
-export async function getBoosterCollections(range = {}) {
+export async function getBoosterCollections(range = {}, { includeDetails = false } = {}) {
   const rows = [];
   for (let start = 0; ; start += 1000) {
     const { data, error } = await supabase.from('transactions')
-      .select('id,member_id,category,type,amount,transaction_date,created_at')
+      .select(includeDetails
+        ? 'id,member_id,category,type,amount,transaction_date,created_at,reference,notes,created_by'
+        : 'id,member_id,category,type,amount,transaction_date,created_at')
       .eq('category', 'savings_booster').eq('type', 'deposit').order('id').range(start, start + 999);
     if (error) throw error;
     rows.push(...data);
     if (data.length < 1000) break;
   }
-  return boosterCollections(rows, range);
+  return includeDetails
+    ? { summary: boosterCollections(rows, range), rows: boosterCollectionAllocations(rows, range) }
+    : boosterCollections(rows, range);
 }
 
 export async function recordBoosterInitialDeposit({ requestId, memberId, slot, startDate, payment, notes }) {
@@ -23,8 +27,7 @@ export async function recordBoosterInitialDeposit({ requestId, memberId, slot, s
     p_reference: payment.reference.trim(), p_notes: notes || '', p_old_transaction: payment.oldTransaction,
   });
   if (error) {
-    // Keep the original PostgREST error details available to authorized staff.
-    // No retry here: a payment RPC may have already committed before a network error.
+    // Preserve database error details and never auto-retry a financial RPC.
     const detail = [error.message, error.details, error.hint].filter(Boolean).join(' — ');
     throw new Error(`Savings Booster enrollment failed: ${detail || 'Database rejected the request.'} (code: ${error.code || 'unknown'}). Check that the member was not enrolled before retrying.`);
   }
